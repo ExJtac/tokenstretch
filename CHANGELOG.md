@@ -16,6 +16,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - Adapter hooks `watch_sessions`, `model_tiers`, `is_top_model`, `model_switch_hint`, and `plan_default_model`.
 - `tokenstretch report --weekly`: per-week tokens by type and by model from local logs, cost only where the logs report it ("not reported" otherwise; nothing estimated), biggest session histories, waste spots from the watch checks, an observational before/after since setup, and bench results when a measured bench exists. `--weeks`, `--out`, `--json`.
 - `tokenstretch dashboard`: a read-only local web page (127.0.0.1 only, one-time key in the URL, Host-header check, no CORS, no external assets) with overview cards, live sessions, live watch warnings, models this week, an 8-week trend, doctor results, setup status and undo, token-saving tools and their telemetry, since-setup, and bench results. Updates every 5 seconds; Ctrl-C stops it.
+- Dashboard performance: state is built in a background thread and requests only return the last snapshot (with a "warming up / last updated" status); usage logs are read incrementally (per-file cache keyed by inode, size, and mtime; appended bytes only; files older than `--weeks` skipped unopened; cheap line filtering before JSON parsing); doctor runs in the background with per-file results cached. `report --weekly` and `watch` use the same reader and cache.
+- Faster Codex fork-replay filtering on machines with many sessions.
 - `bench --measure` saves its result as `result.json` beside the prepare manifest, so the report and dashboard can show it.
 - Claude Code logs: a per-line `costUSD` is now read as a reported cost.
 - Adapter hook `token_tools` (host): installed token savers and their telemetry state.

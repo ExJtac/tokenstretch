@@ -419,9 +419,9 @@ class CodexAdapter(Adapter):
         sessions = list((ctx.home / ".codex" / "sessions").glob("**/*")) if (ctx.home / ".codex" / "sessions").is_dir() else []
         jsonl = [p for p in sessions if p.name.endswith(".jsonl") or p.name.endswith(".jsonl.zst")]
         peaks = []
+        from ..logcache import memo_by_stat
         for p in jsonl:
-            recs = self.parse_log(p)
-            session_total = sum(r.total_input() for r in recs)
+            session_total = memo_by_stat(p, "codex-w14", lambda p=p: sum(r.total_input() for r in self.parse_log(p)))
             if session_total:
                 peaks.append(session_total)
         if not peaks:
@@ -543,17 +543,32 @@ class CodexAdapter(Adapter):
     def model_switch_hint(self, model: str) -> str:
         return "/model"
 
-    def watch_sessions(self, ctx: Context, limit: int = 5) -> list[dict] | None:
+    incremental_logs = True
+
+    def usage_log_parser(self, path: Path):
+        from ..usage import is_zst_jsonl
+        return None if is_zst_jsonl(path) else CodexRolloutParser(path, self.id)
+
+    def finish_usage_records(self, records: list) -> list:
+        from ..usage import drop_forked_replays
+        return drop_forked_replays(records)
+
+    def watch_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict] | None:
         """Per-turn usage from the newest rollout logs. Rollouts carry no Read-call paths we rely on."""
+        import time
+        from ..logcache import memo_by_stat
+        cut = time.time() - max_age_s if max_age_s else None
         paths = []
         for p in _codex_log_paths(ctx):
             try:
-                paths.append((p.stat().st_mtime, p))
+                m = p.stat().st_mtime
             except OSError:
                 continue
+            if cut is None or m >= cut:
+                paths.append((m, p))
         out = []
         for mtime, path in sorted(paths, reverse=True)[:limit]:
-            recs, _ = parse_codex_rollout(path, self.id)
+            recs, _ = memo_by_stat(path, "codex-rollout", lambda path=path: parse_codex_rollout(path, self.id))
             turns = [{
                 "ts": r.ts, "model": r.model or "", "history_tokens": r.total_input(),
                 "output_tokens": r.output_tokens, "tool_calls": None, "reads": [],
@@ -741,24 +756,38 @@ def _session_id_from_name(path: Path) -> str:
     return name
 
 
-def parse_codex_rollout(path: Path, adapter_id: str) -> tuple[list, list[str]]:
-    """Parse a Codex rollout .jsonl / .jsonl.zst. Dedupes unchanged totals and usage records."""
-    from ..usage import fingerprint, iter_jsonl, parse_ts
+_CODEX_MARKS = (b"usage", b"session_meta", b"turn_context", b"token_count", b"thread_settings_applied")
 
-    records: list = []
-    notices: list[str] = []
-    session_id = _session_id_from_name(path)
-    model = None
-    service_tier = None
-    prev_total = None
-    pending_fp = None
 
-    for obj, notice in iter_jsonl(path):
-        if notice and obj is None:
-            notices.append(notice)
-            continue
-        if not isinstance(obj, dict):
-            continue
+class CodexRolloutParser:
+    """Incremental rollout parser: feed() complete lines in order. Dedupes unchanged totals.
+
+    Only lines that mention a usage / session / model marker are JSON-parsed; the large
+    response_item lines (prompts, code, tool output) are skipped by a substring check.
+    """
+
+    def __init__(self, path: Path, adapter_id: str) -> None:
+        self.path = path
+        self.adapter_id = adapter_id
+        self.records: list = []
+        self.session_id = _session_id_from_name(path)
+        self.model = None
+        self.service_tier = None
+        self.prev_total = None
+        self.pending_fp = None
+
+    def feed(self, lines: list[bytes]) -> None:
+        from ..logcache import loads
+        for raw in lines:
+            if not any(m in raw for m in _CODEX_MARKS):
+                continue
+            obj = loads(raw.strip())
+            if isinstance(obj, dict):
+                self.feed_obj(obj)
+
+    def feed_obj(self, obj: dict) -> None:
+        from ..usage import fingerprint
+        path, records, adapter_id = self.path, self.records, self.adapter_id
         typ = obj.get("type")
         payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
         ts = obj.get("timestamp")
@@ -766,69 +795,78 @@ def parse_codex_rollout(path: Path, adapter_id: str) -> tuple[list, list[str]]:
         # Legacy one-line fixture: {model, usage: {...}} with no rollout envelope.
         if typ is None and (obj.get("usage") or obj.get("token_usage")):
             u = obj.get("usage") or obj.get("token_usage")
-            rec = _codex_rec(
+            records.append(_codex_rec(
                 adapter_id, u, ts=ts or obj.get("ts"), model=obj.get("model"),
-                session_id=session_id, extra={"path": str(path), "legacy": True},
-            )
-            records.append(rec)
-            continue
-
+                session_id=self.session_id, extra={"path": str(path), "legacy": True},
+            ))
+            return
         if typ == "session_meta":
-            session_id = (
-                payload.get("id") or payload.get("session_id") or payload.get("thread_id") or session_id
+            self.session_id = (
+                payload.get("id") or payload.get("session_id") or payload.get("thread_id") or self.session_id
             )
-            continue
+            return
         if typ == "turn_context":
-            model = payload.get("model") or model
-            continue
+            self.model = payload.get("model") or self.model
+            return
 
         ev_type = typ
         ev_payload = payload
         if typ == "event_msg":
             ev_type = payload.get("type")
-            ev_payload = payload
 
         if ev_type == "thread_settings_applied":
             settings = ev_payload.get("thread_settings") or ev_payload
             if isinstance(settings, dict):
-                service_tier = settings.get("service_tier") or service_tier
-            continue
-
+                self.service_tier = settings.get("service_tier") or self.service_tier
+            return
+        tier = {"service_tier": self.service_tier} if self.service_tier else {}
         if ev_type == "token_count":
             info = ev_payload.get("info") if isinstance(ev_payload, dict) else None
             if not info:
-                continue
+                return
             total = info.get("total_token_usage") or {}
             last = info.get("last_token_usage")
             total_fp = _usage_tuple(total) if total else None
-            if prev_total is not None and total_fp == prev_total:
-                continue  # unchanged totals (rate-limit-only update)
+            if self.prev_total is not None and total_fp == self.prev_total:
+                return  # unchanged totals (rate-limit-only update)
             src = last if last else total
-            rec = _codex_rec(
-                adapter_id, src, ts=ts, model=model, session_id=session_id,
-                extra={"path": str(path), **({"service_tier": service_tier} if service_tier else {})},
-            )
-            prev_total = total_fp if total_fp is not None else prev_total
+            rec = _codex_rec(adapter_id, src, ts=ts, model=self.model, session_id=self.session_id,
+                             extra={"path": str(path), **tier})
+            self.prev_total = total_fp if total_fp is not None else self.prev_total
             records.append(rec)
-            pending_fp = fingerprint(rec)
-            continue
-
+            self.pending_fp = fingerprint(rec)
+            return
         if typ == "token_usage_record" or ev_type == "token_usage_record":
             u = ev_payload.get("usage") or payload.get("usage") or {}
             rec = _codex_rec(
-                adapter_id, u, ts=ts, model=model,
-                session_id=ev_payload.get("session_id") or ev_payload.get("thread_id") or session_id,
+                adapter_id, u, ts=ts, model=self.model,
+                session_id=ev_payload.get("session_id") or ev_payload.get("thread_id") or self.session_id,
                 task_id=ev_payload.get("response_id") or ev_payload.get("turn_id"),
-                extra={"path": str(path), **({"service_tier": service_tier} if service_tier else {})},
+                extra={"path": str(path), **tier},
             )
-            if pending_fp is not None and fingerprint(rec) == pending_fp:
-                pending_fp = None
-                continue  # already counted from last_token_usage
+            if self.pending_fp is not None and fingerprint(rec) == self.pending_fp:
+                self.pending_fp = None
+                return  # already counted from last_token_usage
             records.append(rec)
-            pending_fp = None
-            if ev_payload.get("usage") and ev_payload.get("thread_token_usage"):
-                # Prefer per-response usage; do not also add thread totals.
-                pass
-            continue
+            self.pending_fp = None
 
-    return records, notices
+
+def parse_codex_rollout(path: Path, adapter_id: str) -> tuple[list, list[str]]:
+    """Parse a Codex rollout .jsonl / .jsonl.zst. Dedupes unchanged totals and usage records."""
+    from ..usage import is_zst_jsonl, iter_jsonl
+    parser = CodexRolloutParser(path, adapter_id)
+    notices: list[str] = []
+    if is_zst_jsonl(path):
+        for obj, notice in iter_jsonl(path):
+            if notice and obj is None:
+                notices.append(notice)
+                continue
+            if isinstance(obj, dict):
+                parser.feed_obj(obj)
+        return parser.records, notices
+    from ..logcache import read_lines_from
+    try:
+        read_lines_from(path, 0, parser.feed)
+    except OSError as exc:
+        return [], [f"skipped {path}: {exc}"]
+    return parser.records, notices

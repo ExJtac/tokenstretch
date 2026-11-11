@@ -259,6 +259,17 @@ class Adapter:
     def parse_log(self, path: Path) -> list[UsageRecord]:
         return []
 
+    # Incremental log reading (core `logcache.LogCache`). When True, `usage_log_parser(path)` returns
+    # an object with `feed(lines: list[bytes])` and a `records` list (or None for a file that must be
+    # parsed whole with `parse_log`), and `finish_usage_records` does any cross-file dedupe.
+    incremental_logs: bool = False
+
+    def usage_log_parser(self, path: Path):
+        return None
+
+    def finish_usage_records(self, records: list[UsageRecord]) -> list[UsageRecord]:
+        return records
+
     def headless_run(self, prompt: str, cwd: Path, model: str | None = None) -> HeadlessRun | None:
         return None
 
@@ -283,8 +294,8 @@ class Adapter:
         """Safe, local-only fixes for `tokenstretch setup`. Plans only; the core writes with backups."""
         return []
 
-    def live_sessions(self, ctx: Context, limit: int = 5) -> list[dict]:
-        """Newest local sessions, read-only: [{adapter, session, project, model, history_tokens, last_write, path}]."""
+    def live_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict]:
+        """Newest local sessions (written within max_age_s if given), read-only: [{adapter, session, project, model, history_tokens, last_write, path}]."""
         return []
 
     def token_tools(self, ctx: Context) -> list[dict]:
@@ -293,8 +304,9 @@ class Adapter:
         return []
 
     # ---- watch / model picker ------------------------------------------------------------
-    def watch_sessions(self, ctx: Context, limit: int = 5) -> list[dict] | None:
+    def watch_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict] | None:
         """Per-turn records for `tokenstretch watch`, read-only. None => not supported yet.
+        With max_age_s, files not written within that many seconds are skipped before opening.
 
         [{adapter, session, project, path, last_write, clear_hint, compact_hint,
           turns: [{ts, model, history_tokens, output_tokens, tool_calls (int|None), reads: [path]}]}]

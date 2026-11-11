@@ -9,6 +9,7 @@ import os
 import re
 import socket
 import threading
+import time
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -377,3 +378,68 @@ def test_busy_port_picks_a_free_one(tmp_path, loopback):
             b.server_close()
     finally:
         a.server_close()
+
+
+# ---- background builds: requests never build state ------------------------------------------
+
+def test_requests_never_build_state(tmp_path, monkeypatch):
+    from tokenstretch import dashboard as dmod
+    w = _world(tmp_path)
+    ds = DashboardState(_ctx(w))
+
+    def boom(*a, **k):
+        raise AssertionError("state was built on the request path")
+
+    for name in ("build_live", "build_usage", "build_doctor", "refresh", "snapshot"):
+        monkeypatch.setattr(ds, name, boom)
+    handler = dmod._make_handler(ds, "tok", 5.0)
+    # The page is rendered once, up front, from no state at all.
+    assert "tokenstretch dashboard" in render_page(None)
+    blob = json.loads(ds.latest_json())
+    assert blob["warming_up"] is True and blob["pending"] == ["live sessions", "usage logs", "doctor"]
+    assert blob["sessions"] is None and blob["doctor"] is None and blob["overview"]["tokens_week"] is None
+    ds.request_doctor()  # only sets a flag for the worker
+    assert json.loads(ds.latest_json())["doctor_refreshing"] is True
+    assert handler is not None
+
+
+def test_html_and_state_routes_do_not_call_builder(server_lazy):
+    srv, token, calls = server_lazy
+    t0 = time.perf_counter()
+    r, body = _get(srv, f"/{token}/")
+    assert r.status == 200 and b"tokenstretch dashboard" in body
+    r, body = _get(srv, f"/{token}/api/state")
+    assert r.status == 200 and json.loads(body)["warming_up"] is True
+    r, _ = _get(srv, f"/{token}/api/doctor", method="POST")
+    assert r.status == 200
+    assert calls == [] and time.perf_counter() - t0 < 5
+
+
+def test_worker_publishes_parts_in_background(tmp_path):
+    w = _world(tmp_path)
+    ds = DashboardState(_ctx(w), interval=0.05)
+    ds.start()
+    try:
+        deadline = time.time() + 20
+        while time.time() < deadline and not json.loads(ds.latest_json())["ready"]:
+            time.sleep(0.02)
+        st = json.loads(ds.latest_json())
+        assert st["ready"] and st["updated_local"] and st["sessions"] and st["doctor"] is not None
+        assert st["overview"]["tokens_week"] > 0
+    finally:
+        ds.stop()
+
+
+@pytest.fixture
+def server_lazy(tmp_path, loopback):
+    w = _world(tmp_path)
+    ds = DashboardState(_ctx(w))
+    calls: list[str] = []
+    for name in ("build_live", "build_usage", "build_doctor", "refresh", "snapshot"):
+        setattr(ds, name, lambda *a, _n=name, **k: calls.append(_n))
+    srv, token = make_server(ds, port=0)
+    t = threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+    t.start()
+    yield srv, token, calls
+    srv.shutdown()
+    srv.server_close()

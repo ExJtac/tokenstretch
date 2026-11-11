@@ -228,7 +228,8 @@ def cmd_dashboard(args) -> int:
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
     return run_dashboard(ctx, host=args.host, port=args.port, open_browser=not args.no_open,
-                         interval=max(2.0, float(args.interval)), out=lambda line: print(line, flush=True))
+                         interval=max(2.0, float(args.interval)), weeks=max(1, min(int(args.weeks), 52)),
+                         out=lambda line: print(line, flush=True))
 
 
 def cmd_model(args) -> int:
@@ -377,6 +378,8 @@ def main(argv=None) -> int:
     dash.add_argument("--port", type=int, default=8765, help="port (default 8765; a free one is picked if busy)")
     dash.add_argument("--no-open", action="store_true", help="print the URL instead of opening the browser")
     dash.add_argument("--interval", type=float, default=5.0, help="seconds between page refreshes (default 5)")
+    dash.add_argument("--weeks", type=int, default=8,
+                      help="weeks of usage logs to read (default 8); older log files are skipped unopened")
 
     m = sub.add_parser("model", help="heuristic model picker and a backed-up default-model switch")
     msub = m.add_subparsers(dest="model_cmd", required=True)

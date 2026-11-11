@@ -208,6 +208,79 @@ def _transcript_paths(ctx: Context, *, subagents: bool = True) -> list[Path]:
     return paths
 
 
+def _peak_and_turns(path: Path) -> tuple[int, int]:
+    """Peak context and user-turn count for one transcript (W14). Only usage lines are JSON-parsed."""
+    from ..logcache import loads, read_lines_from
+    st = {"peak": 0, "turns": 0}
+
+    def feed(lines):
+        for raw in lines:
+            if b'"usage"' not in raw:
+                if any(m in raw for m in _USER_MARKS):
+                    st["turns"] += 1
+                continue
+            obj = loads(raw.strip())
+            if not isinstance(obj, dict):
+                continue
+            u = _usage_from_obj(obj)
+            st["peak"] = max(st["peak"], u.get("input", 0) + u.get("cache_read", 0) + u.get("cache_write", 0))
+            if obj.get("type") in {"user", "human"} or (obj.get("message") or {}).get("role") == "user":
+                st["turns"] += 1
+    try:
+        read_lines_from(path, 0, feed)
+    except OSError:
+        pass
+    return st["peak"], st["turns"]
+
+
+def _has_big_output(path: Path, limit: int = 20_000) -> bool:
+    """W15: any content block over `limit` characters. A shorter line can't hold one, so it isn't parsed."""
+    from ..logcache import loads, read_lines_from
+    found = []
+
+    def feed(lines):
+        if found:
+            return
+        for raw in lines:
+            if len(raw) <= limit:
+                continue
+            obj = loads(raw.strip())
+            if not isinstance(obj, dict):
+                continue
+            content = ((obj.get("message") or {}).get("content") or obj.get("content") or [])
+            if not isinstance(content, list):
+                if isinstance(obj.get("tool_result"), str) and len(obj["tool_result"]) > limit:
+                    found.append(True)
+                    return
+                continue
+            for block in content:
+                if isinstance(block, dict):
+                    text = block.get("content") or block.get("text") or ""
+                    if isinstance(text, str) and len(text) > limit:
+                        found.append(True)
+                        return
+    try:
+        read_lines_from(path, 0, feed)
+    except OSError:
+        pass
+    return bool(found)
+
+
+def _newest(paths: list[Path], limit: int, max_age_s: float | None) -> list[tuple[float, Path]]:
+    """[(mtime, path)] newest first; with max_age_s, older files are dropped before any open."""
+    import time
+    cut = time.time() - max_age_s if max_age_s else None
+    rows = []
+    for p in paths:
+        try:
+            m = p.stat().st_mtime
+        except OSError:
+            continue
+        if cut is None or m >= cut:
+            rows.append((m, p))
+    return sorted(rows, reverse=True)[:limit]
+
+
 def _is_subagent_file(path: Path) -> bool:
     return path.parent.name == "subagents"
 
@@ -288,6 +361,96 @@ def _usage_from_obj(obj: dict) -> dict:
         "model": obj.get("model") or (obj.get("message") or {}).get("model"),
         "ts": obj.get("timestamp") or obj.get("ts"),
     }
+
+
+_USER_MARKS = (b'"type":"user"', b'"type": "user"', b'"type":"human"', b'"type": "human"',
+               b'"role":"user"', b'"role": "user"')
+
+
+class ClaudeLogParser:
+    """Incremental transcript parser: feed() complete lines in file order; `records` stays deduped.
+
+    Lines without a `"usage"` key are not JSON-parsed (they carry no usage); user turns are
+    counted from a cheap substring check on those lines.
+    """
+
+    def __init__(self, path: Path, adapter_id: str) -> None:
+        self.path = path
+        self.adapter_id = adapter_id
+        self.sub_file = _is_subagent_file(path)
+        # subagents/agent-*.jsonl lives under <project>/<session-id>/; bill it to that session.
+        self.session_id = path.parent.parent.name if self.sub_file else path.stem
+        self.records: list[UsageRecord] = []
+        self.index: dict[tuple[str, str], int] = {}
+        self.turns = 0
+
+    def feed(self, lines: list[bytes]) -> None:
+        from ..logcache import loads
+        for raw in lines:
+            if b'"usage"' not in raw:
+                if any(m in raw for m in _USER_MARKS):
+                    self.turns += 1
+                continue
+            obj = loads(raw.strip())
+            if isinstance(obj, dict):
+                self.feed_obj(obj)
+
+    def feed_obj(self, obj: dict) -> None:
+        from ..usage import normalize_usage, parse_ts, record_from_normalized
+        path, records = self.path, self.records
+        if obj.get("type") in {"user", "human"} or (obj.get("message") or {}).get("role") == "user":
+            self.turns += 1
+        if obj.get("type") == "result":
+            # Session totals would double-count per-message usage; skip when we already have records.
+            if records:
+                return
+            u = _usage_from_obj(obj)
+            if not u:
+                return
+            norm = normalize_usage(
+                input_tokens=u.get("input", 0), cache_read=u.get("cache_read", 0),
+                cache_write=u.get("cache_write", 0), output=u.get("output", 0),
+                reasoning=u.get("reasoning", 0), input_includes_cache=False,
+            )
+            cost = obj.get("total_cost_usd") if obj.get("total_cost_usd") is not None else u.get("cost")
+            records.append(record_from_normalized(
+                self.adapter_id, "log", norm, session_id=self.session_id, model=u.get("model"),
+                ts=parse_ts(u.get("ts")), cost_usd=float(cost) if cost is not None else None,
+                success=obj.get("subtype") != "error", turns=self.turns,
+                extra={"path": str(path)},
+            ))
+            return
+        u = _usage_from_obj(obj)
+        if not u or not any(u.get(k) for k in ("input", "output", "cache_read", "cache_write", "reasoning")):
+            return
+        norm = normalize_usage(
+            input_tokens=u.get("input", 0), cache_read=u.get("cache_read", 0),
+            cache_write=u.get("cache_write", 0), output=u.get("output", 0),
+            reasoning=u.get("reasoning", 0), input_includes_cache=False,
+        )
+        cost = u.get("cost")
+        key = _usage_key(obj)
+        extra = {"path": str(path)}
+        if obj.get("cwd"):
+            extra["cwd"] = str(obj.get("cwd"))
+        if key:
+            extra["usage_key"] = list(key)
+        rec = record_from_normalized(
+            self.adapter_id, "log", norm, session_id=str(obj.get("sessionId") or self.session_id),
+            task_id=str((obj.get("message") or {}).get("id") or obj.get("uuid") or obj.get("id") or ""),
+            model=u.get("model"), ts=parse_ts(u.get("ts") or obj.get("timestamp")),
+            is_subagent=self.sub_file or bool(obj.get("isSidechain") or obj.get("is_sidechain")),
+            cost_usd=float(cost) if cost is not None else None,
+            turns=1, extra=extra,
+        )
+        if key and key in self.index:
+            i = self.index[key]
+            if _keep_newer(records[i].output_tokens, rec.output_tokens):
+                records[i] = rec
+            return
+        if key:
+            self.index[key] = len(records)
+        records.append(rec)
 
 
 class ClaudeCodeAdapter(Adapter):
@@ -756,13 +919,30 @@ class ClaudeCodeAdapter(Adapter):
                 "CC-COST, CC-TEAM",
                 env="CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", key="CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", value="1",
             ))
+        from ..logcache import memo_by_stat
         side = main = 0
-        recs: list[UsageRecord] = []
+        rows: list[tuple] = []
         for p in _transcript_paths(ctx):
-            recs.extend(self.parse_log(p))
-        for r in _dedupe_usage_records(recs):
-            tok = r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens
-            if r.is_subagent:
+            # Per file, only (usage key, output, tokens, is_subagent) is kept, cached until the file changes.
+            rows.extend(memo_by_stat(p, "claude-w13", lambda p=p: [
+                (tuple(r.extra.get("usage_key") or ()) or None, r.output_tokens,
+                 r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens, r.is_subagent)
+                for r in self.parse_log(p)]))
+        kept: list[list] = []
+        index: dict[tuple, int] = {}
+        for key, out_tok, tok, sub in rows:  # same rule as _dedupe_usage_records
+            if key is None:
+                kept.append([out_tok, tok, sub])
+                continue
+            if key in index:
+                i = index[key]
+                if _keep_newer(kept[i][0], out_tok):
+                    kept[i] = [out_tok, tok, sub or kept[i][2]]
+                continue
+            index[key] = len(kept)
+            kept.append([out_tok, tok, sub])
+        for _, tok, sub in kept:
+            if sub:
                 side += tok
             else:
                 main += tok
@@ -782,14 +962,9 @@ class ClaudeCodeAdapter(Adapter):
     def _w14(self, ctx: Context) -> list[Finding]:
         peaks = []
         # Peak context per main session. Repeated rows per message.id don't change a max.
+        from ..logcache import memo_by_stat
         for p in _transcript_paths(ctx, subagents=False):
-            peak = turns = 0
-            for obj in _iter_jsonl(p):
-                u = _usage_from_obj(obj)
-                ctx_tok = u.get("input", 0) + u.get("cache_read", 0) + u.get("cache_write", 0)
-                peak = max(peak, ctx_tok)
-                if obj.get("type") in {"user", "human"} or (obj.get("message") or {}).get("role") == "user":
-                    turns += 1
+            peak, turns = memo_by_stat(p, "claude-w14", lambda p=p: _peak_and_turns(p))
             if peak or turns:
                 peaks.append((p, peak, turns))
         if not peaks:
@@ -814,19 +989,12 @@ class ClaudeCodeAdapter(Adapter):
         has_rtk = any("rtk" in cmd.lower() for cmd, _ in self.hook_commands(ctx))
         if has_rtk:
             return []
+        from ..logcache import memo_by_stat
         big = False
         for p in _transcript_paths(ctx):
-            for obj in _iter_jsonl(p):
-                content = ((obj.get("message") or {}).get("content") or obj.get("content") or [])
-                if not isinstance(content, list):
-                    if isinstance(obj.get("tool_result"), str) and len(obj["tool_result"]) > 20_000:
-                        big = True
-                    continue
-                for block in content:
-                    if isinstance(block, dict):
-                        text = block.get("content") or block.get("text") or ""
-                        if isinstance(text, str) and len(text) > 20_000:
-                            big = True
+            if memo_by_stat(p, "claude-w15", lambda p=p: _has_big_output(p)):
+                big = True
+                break
         if cap is not None and not big:
             try:
                 if int(cap) <= 20_000:
@@ -1136,68 +1304,21 @@ class ClaudeCodeAdapter(Adapter):
 
     def parse_log(self, path: Path) -> list[UsageRecord]:
         """Per-assistant-message records. Claude input is already uncached (separate cache fields)."""
-        from ..usage import normalize_usage, parse_ts, record_from_normalized
-        sub_file = _is_subagent_file(path)
-        # subagents/agent-*.jsonl lives under <project>/<session-id>/; bill it to that session.
-        session_id = path.parent.parent.name if sub_file else path.stem
-        records: list[UsageRecord] = []
-        index: dict[tuple[str, str], int] = {}
-        turns = 0
-        for obj in _iter_jsonl(path):
-            if obj.get("type") in {"user", "human"} or (obj.get("message") or {}).get("role") == "user":
-                turns += 1
-            if obj.get("type") == "result":
-                # Session totals would double-count per-message usage; skip when we already have records.
-                if records:
-                    continue
-                u = _usage_from_obj(obj)
-                if not u:
-                    continue
-                norm = normalize_usage(
-                    input_tokens=u.get("input", 0), cache_read=u.get("cache_read", 0),
-                    cache_write=u.get("cache_write", 0), output=u.get("output", 0),
-                    reasoning=u.get("reasoning", 0), input_includes_cache=False,
-                )
-                cost = obj.get("total_cost_usd") if obj.get("total_cost_usd") is not None else u.get("cost")
-                records.append(record_from_normalized(
-                    self.id, "log", norm, session_id=session_id, model=u.get("model"),
-                    ts=parse_ts(u.get("ts")), cost_usd=float(cost) if cost is not None else None,
-                    success=obj.get("subtype") != "error", turns=turns,
-                    extra={"path": str(path)},
-                ))
-                continue
-            u = _usage_from_obj(obj)
-            if not u or not any(u.get(k) for k in ("input", "output", "cache_read", "cache_write", "reasoning")):
-                continue
-            norm = normalize_usage(
-                input_tokens=u.get("input", 0), cache_read=u.get("cache_read", 0),
-                cache_write=u.get("cache_write", 0), output=u.get("output", 0),
-                reasoning=u.get("reasoning", 0), input_includes_cache=False,
-            )
-            cost = u.get("cost")
-            key = _usage_key(obj)
-            extra = {"path": str(path)}
-            if obj.get("cwd"):
-                extra["cwd"] = str(obj.get("cwd"))
-            if key:
-                extra["usage_key"] = list(key)
-            rec = record_from_normalized(
-                self.id, "log", norm, session_id=str(obj.get("sessionId") or session_id),
-                task_id=str((obj.get("message") or {}).get("id") or obj.get("uuid") or obj.get("id") or ""),
-                model=u.get("model"), ts=parse_ts(u.get("ts") or obj.get("timestamp")),
-                is_subagent=sub_file or bool(obj.get("isSidechain") or obj.get("is_sidechain")),
-                cost_usd=float(cost) if cost is not None else None,
-                turns=1, extra=extra,
-            )
-            if key and key in index:
-                i = index[key]
-                if _keep_newer(records[i].output_tokens, rec.output_tokens):
-                    records[i] = rec
-                continue
-            if key:
-                index[key] = len(records)
-            records.append(rec)
-        return records
+        from ..logcache import read_lines_from
+        parser = ClaudeLogParser(path, self.id)
+        try:
+            read_lines_from(path, 0, parser.feed)
+        except OSError:
+            return []
+        return parser.records
+
+    incremental_logs = True
+
+    def usage_log_parser(self, path: Path):
+        return ClaudeLogParser(path, self.id)
+
+    def finish_usage_records(self, records: list[UsageRecord]) -> list[UsageRecord]:
+        return _dedupe_usage_records(records)
 
     def apply_model_flag(self, argv: list[str], model: str) -> list[str]:
         out = list(argv)
@@ -1315,17 +1436,12 @@ class ClaudeCodeAdapter(Adapter):
             done="added credit-saving rules to CLAUDE.md",
         )
 
-    def live_sessions(self, ctx: Context, limit: int = 5) -> list[dict]:
+    def live_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict]:
         """Newest main sessions, read from the tail of each log. Logs only; never credentials."""
-        paths = []
-        for p in _transcript_paths(ctx, subagents=False):
-            try:
-                paths.append((p.stat().st_mtime, p))
-            except OSError:
-                continue
+        from ..logcache import memo_by_stat
         out = []
-        for mtime, path in sorted(paths, reverse=True)[:limit]:
-            last = _last_assistant_usage(path)
+        for mtime, path in _newest(_transcript_paths(ctx, subagents=False), limit, max_age_s):
+            last = memo_by_stat(path, "claude-last", lambda path=path: _last_assistant_usage(path))
             if not last:
                 continue
             model, usage = last
@@ -1351,17 +1467,12 @@ class ClaudeCodeAdapter(Adapter):
     def model_switch_hint(self, model: str) -> str:
         return f"/model {model}"
 
-    def watch_sessions(self, ctx: Context, limit: int = 5) -> list[dict] | None:
+    def watch_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict] | None:
         """Per-turn usage, tool-call counts, and Read paths from the newest main sessions (logs only)."""
-        paths = []
-        for p in _transcript_paths(ctx, subagents=False):
-            try:
-                paths.append((p.stat().st_mtime, p))
-            except OSError:
-                continue
+        from ..logcache import memo_by_stat
         out = []
-        for mtime, path in sorted(paths, reverse=True)[:limit]:
-            turns = _session_turns(path)
+        for mtime, path in _newest(_transcript_paths(ctx, subagents=False), limit, max_age_s):
+            turns = memo_by_stat(path, "claude-turns", lambda path=path: _session_turns(path))
             if not turns:
                 continue
             out.append({
@@ -1573,6 +1684,8 @@ def _session_turns(path: Path, tail_bytes: int = 4_000_000) -> list[dict]:
         lines = lines[1:]
     turns: dict[str, dict] = {}
     for n, raw in enumerate(lines):
+        if b'"assistant"' not in raw:
+            continue
         try:
             obj = json.loads(raw)
         except (ValueError, UnicodeDecodeError):

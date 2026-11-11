@@ -102,6 +102,8 @@ One page, refreshed every 5 seconds while it runs:
 - **Token-saving tools** found on your machine and whether their telemetry is off.
 - **Since setup** (a before/after from your own logs, clearly labeled observational) and **bench results** if you've measured one.
 
+The page opens instantly and shows "warming up" while it reads your logs in the background; usage numbers and doctor results fill in as they're ready (seconds on a large log folder, the first time). After that it only reads what changed. `--weeks 8` sets how far back it reads.
+
 It's read-only: it never changes a file, it only shows the commands to run. It listens on 127.0.0.1 only, needs the one-time key in the link for every request, and loads nothing from the internet. Press Ctrl-C to stop it.
 
 `tokenstretch report --weekly` writes the same weekly numbers to a self-contained HTML file under `~/.tokenstretch/reports/` (`--weeks 8`, `--out FILE`, or `--json`).

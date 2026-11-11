@@ -166,33 +166,53 @@ def drop_forked_replays(records: list[UsageRecord]) -> list[UsageRecord]:
 
     drop_n: dict[str, int] = {}
     sids = list(order)
+    pos = {sid: i for i, sid in enumerate(sids)}
+    seqs = {sid: [fingerprint(r) for r in by_session[sid]] for sid in sids}
+    # A replay needs a shared prefix of at least 2 events, so only sessions whose first two
+    # fingerprints match can be candidates. Grouping on that keeps this near-linear.
+    groups: dict[tuple, list[str]] = {}
+    for sid in sids:
+        if len(seqs[sid]) >= 2:
+            groups.setdefault(tuple(seqs[sid][:2]), []).append(sid)
+    # Prefix hashes make each longest-common-prefix a binary search instead of a walk.
+    phash: dict[str, list[int]] = {}
+    for sid in {x for g in groups.values() if len(g) > 1 for x in g}:
+        h, hs = 0, []
+        for fp in seqs[sid]:
+            h = hash((h, fp))
+            hs.append(h)
+        phash[sid] = hs
+
+    def common_prefix(a: str, b: str) -> int:
+        ha, hb = phash[a], phash[b]
+        lo, hi = 0, min(len(ha), len(hb))
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if ha[mid - 1] == hb[mid - 1]:
+                lo = mid
+            else:
+                hi = mid - 1
+        return lo
+
     for i, sid in enumerate(sids):
-        seq = [fingerprint(r) for r in by_session[sid]]
-        if not seq:
+        seq = seqs[sid]
+        if len(seq) < 2:
             continue
         best = 0
-        for other in sids:
+        for other in groups.get(tuple(seq[:2]), ()):
             if other == sid:
                 continue
-            oseq = [fingerprint(r) for r in by_session[other]]
-            n = 0
-            while n < len(seq) and n < len(oseq) and seq[n] == oseq[n]:
-                n += 1
-            # Only treat it as a replay if the other session is at least as long
-            # and the shared prefix is at least one event, and this session continues
-            # or is a copy. Skip identical full copies of the shorter one? If equal
-            # length and identical, drop the later session entirely.
+            oseq = seqs[other]
+            n = common_prefix(sid, other)
             if n < 2:
-                # A single matching event is not enough to call it a fork replay
-                # (independent sessions can share the same usage numbers).
                 continue
             if n == len(seq) and n == len(oseq):
                 # full duplicate: drop the later session (higher index)
-                if sids.index(other) < i:
+                if pos[other] < i:
                     best = max(best, n)
             elif n < len(seq) and n <= len(oseq):
                 # this session starts with the other's prefix (typical fork)
-                if n == len(oseq) or sids.index(other) <= i:
+                if n == len(oseq) or pos[other] <= i:
                     best = max(best, n)
         if best:
             drop_n[sid] = best
@@ -203,7 +223,9 @@ def drop_forked_replays(records: list[UsageRecord]) -> list[UsageRecord]:
         n = drop_n.get(sid, 0)
         if n:
             for rec in recs[n:]:
-                rec.notes = list(rec.notes) + [f"dropped {n} forked-session replay prefix event(s)"]
+                note = f"dropped {n} forked-session replay prefix event(s)"
+                if note not in rec.notes:  # records may be reused from an incremental cache
+                    rec.notes = list(rec.notes) + [note]
                 out.append(rec)
         else:
             out.extend(recs)

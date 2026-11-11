@@ -21,7 +21,7 @@ python -m tokenstretch undo       # restore the latest manifest under --home
 python -m tokenstretch watch [--once] [--interval 10] [--max-context 150000] [--max-reads 3] [--notify]
 python -m tokenstretch model suggest "task" [--file F] [--json]
 python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
-python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5]
+python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8]
 python -m tokenstretch model default --tier light|mid|top [--tool claude] [--apply]
 ```
 
@@ -39,7 +39,13 @@ python -m tokenstretch model default --tier light|mid|top [--tool claude] [--app
 
 ### dashboard
 
-`tokenstretch/dashboard.py` serves one self-contained HTML page (inline CSS and JS, no fonts, images, or external URLs) and JSON from `http.server` in the standard library. The page polls `api/state` every 5 seconds (`--interval`); `POST api/doctor` re-runs doctor (otherwise cached for 5 minutes). Usage logs are re-read at most every 30 seconds; sessions and watch warnings on every poll. It never writes a file.
+`tokenstretch/dashboard.py` serves one self-contained HTML page (inline CSS and JS, no fonts, images, or external URLs) and JSON from `http.server` in the standard library. It never writes a file.
+
+Requests never compute anything. A background thread builds the state in three parts and publishes each as soon as it's done: live sessions and watch warnings (every pass, `--interval`, default 5 s; only sessions written in the last 2 hours), usage / setup / bench (at most every 30 s), and doctor (every 5 minutes, or when you press the button, which only sets a flag). The page is static HTML, and `api/state` returns the last published JSON, with `warming_up`, `pending`, and `updated_local` fields the page shows. GC is paused while a part builds (then the survivors are frozen) so a long collection can't stall the HTTP thread.
+
+Log reading is incremental (`tokenstretch/logcache.py`, core only). Each file is cached by (path, inode, size, mtime): unchanged files are skipped, files that only grew are parsed from the saved byte offset (a half-written last line waits for the next pass), and a file that shrank or was replaced is parsed again. Files whose mtime is older than the window (`--weeks`, default 8) are skipped before they're opened, which covers old Codex archived sessions. Lines are filtered with a substring check before `json.loads` (Claude: lines with `"usage"`; Codex: usage, session, model, and token-count markers), so prompts, code, and tool output are never parsed. Adapters opt in with `incremental_logs`, `usage_log_parser(path)`, and `finish_usage_records`. Session tails for watch/status and doctor's per-file log checks (W13–W15, Codex W14) are memoized by the same stat key, so a doctor re-run only reads changed files. `report --weekly` uses the same reader (fresh each run). The Codex fork-replay filter now groups sessions by their first two events and compares prefixes with hashes, instead of comparing every pair step by step.
+
+On a synthetic 1 GB Claude + 2.7 GB Codex home (8-core Linux box): the page and first `api/state` answer in a few ms; usage numbers land after about 9–10 s on the first pass (about 2 GB inside the 8-week window); doctor after about 18 s; later polls take a few ms (max 28 ms while a build runs), and an unchanged usage rebuild takes about 0.5 s.
 
 Security model:
 

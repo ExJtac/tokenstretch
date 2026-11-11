@@ -187,7 +187,7 @@ class Watcher:
         new: list[WatchWarning] = []
         cutoff = self.now() - self.cfg.active_s
         for ad in self.adapters:
-            for s in ad.watch_sessions(self.ctx) or []:
+            for s in ad.watch_sessions(self.ctx, max_age_s=self.cfg.active_s) or []:
                 if (s.get("last_write") or 0) < cutoff:
                     continue
                 for w in session_warnings(self.ctx, ad, s, self.cfg):

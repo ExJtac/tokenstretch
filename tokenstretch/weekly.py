@@ -79,15 +79,13 @@ def cost_field(total: float, with_cost: int, records: int) -> dict:
     return {"usd": round(total, 6), "label": label, "reported": with_cost, "records": records}
 
 
-def read_records(ctx: Context, *, days: int = 35, adapters=None) -> list[UsageRecord]:
+def read_records(ctx: Context, *, days: int = 35, adapters=None, cache=None) -> list[UsageRecord]:
+    """Usage records from the last `days`, through the incremental log cache (files older than the
+    window are skipped by mtime before they are opened)."""
     from .adapters import REGISTRY
-    out: list[UsageRecord] = []
-    for ad in adapters if adapters is not None else REGISTRY:
-        try:
-            out += list(ad.read_usage_logs(ctx, since_days=days) or [])
-        except (OSError, ValueError):
-            continue
-    return out
+    from .logcache import LogCache
+    cache = cache if cache is not None else LogCache()
+    return cache.records(ctx, adapters if adapters is not None else REGISTRY, since_days=days)
 
 
 def aggregate(records: list[UsageRecord], *, weeks: int = 4, now: datetime | None = None,
@@ -101,17 +99,23 @@ def aggregate(records: list[UsageRecord], *, weeks: int = 4, now: datetime | Non
     by_week_model: dict[str, dict[str, Bucket]] = {k: {} for k in keys}
     today, undated = Bucket(), 0
     today_key = _local(now, tz).date()
+    from .logcache import rec_epoch
+    tzkey = repr(tz)
     for r in records:
-        dt = _parse(r.ts)
-        if dt is None:
+        ep = rec_epoch(r)
+        if ep is None:
             undated += 1
             continue
-        wk = week_start(dt, tz)
+        cached = r.__dict__.get("_day")
+        if cached is None or cached[0] != tzkey:  # local day + week, computed once per record
+            day = _local(datetime.fromtimestamp(ep, timezone.utc), tz).date()
+            cached = r.__dict__["_day"] = (tzkey, day, (day - timedelta(days=day.weekday())).isoformat())
+        _, day, wk = cached
         if wk not in by_week:
             continue
         by_week[wk].add(r)
         by_week_model[wk].setdefault(r.model or "unknown", Bucket()).add(r)
-        if _local(dt, tz).date() == today_key:
+        if day == today_key:
             today.add(r)
     weeks_out = []
     for k in reversed(keys):
@@ -125,12 +129,12 @@ def aggregate(records: list[UsageRecord], *, weeks: int = 4, now: datetime | Non
 
 # ---- sessions and waste spots ---------------------------------------------------------
 
-def sessions(ctx: Context, adapters=None, limit: int = 10) -> list[dict]:
+def sessions(ctx: Context, adapters=None, limit: int = 10, max_age_s: float | None = None) -> list[dict]:
     """Newest sessions across tools: watch_sessions when supported, else live_sessions."""
     from .setup import detected_adapters
     rows: list[dict] = []
     for ad in adapters if adapters is not None else detected_adapters(ctx):
-        ws = ad.watch_sessions(ctx, limit=limit)
+        ws = ad.watch_sessions(ctx, limit=limit, max_age_s=max_age_s)
         if ws is not None:
             for s in ws:
                 last = (s.get("turns") or [{}])[-1]
@@ -139,7 +143,7 @@ def sessions(ctx: Context, adapters=None, limit: int = 10) -> list[dict]:
                              "history_tokens": int(last.get("history_tokens") or 0),
                              "last_write": s.get("last_write"), "clear_hint": s.get("clear_hint", "")})
             continue
-        for s in ad.live_sessions(ctx, limit=limit) or []:
+        for s in ad.live_sessions(ctx, limit=limit, max_age_s=max_age_s) or []:
             rows.append({"adapter": s.get("adapter", ad.id), "tool": ad.display_name, "session": s.get("session", ""),
                          "project": s.get("project", ""), "model": s.get("model") or "",
                          "history_tokens": int(s.get("history_tokens") or 0),
