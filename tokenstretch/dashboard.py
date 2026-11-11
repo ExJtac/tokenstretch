@@ -63,6 +63,7 @@ class DashboardState:
         self.live: dict | None = None
         self.usage: dict | None = None
         self._doctor: dict | None = None
+        self.instructions: dict | None = None
         self._doctor_at = 0.0
         self._usage_at = 0.0
         self.errors: dict[str, str] = {}
@@ -106,6 +107,16 @@ class DashboardState:
                         "install_offer": install_offer(self.ctx)}
         self._doctor_at = t
         return self._doctor
+
+    def build_instructions(self) -> dict:
+        """Read-only `trim` dry-run summary (never writes; rebuilt with doctor)."""
+        from .trim import summary
+        data = summary(self.ctx)
+        for f in data["files"]:
+            f["display"] = self._scrub(f["display"])
+        data["top"] = [self._scrub(x) for x in data["top"]]
+        self.instructions = {**data, "at": self.now()}
+        return self.instructions
 
     def doctor(self, force: bool = False) -> dict:
         if force or self._doctor is None or self.now() - self._doctor_at >= self.doctor_ttl:
@@ -160,7 +171,8 @@ class DashboardState:
     def compose(self) -> dict:
         t = self.now()
         live, usage, doc = self.live, self.usage, self._doctor
-        pending = [name for name, part in (("live sessions", live), ("usage logs", usage), ("doctor", doc))
+        pending = [name for name, part in (("live sessions", live), ("usage logs", usage), ("doctor", doc),
+                                                   ("instruction files", self.instructions))
                    if part is None]
         sess = live["sessions"] if live else []
         biggest = max(sess, key=lambda s: s["history_tokens"], default=None)
@@ -191,6 +203,8 @@ class DashboardState:
             "doctor": {k: doc[k] for k in ("refreshed_local", "counts", "findings")} if doc else None,
             "tools": ({"installed": doc["tools"], "telemetry_findings": doc["telemetry_findings"],
                        "install_offer": doc["install_offer"]} if doc else None),
+            "instructions": ({k: v for k, v in self.instructions.items() if k != "at"}
+                             if self.instructions else None),
             "setup": usage["setup"] if usage else None,
             "since_setup": usage["since_setup"] if usage else None,
             "bench": usage["bench"] if usage else None,
@@ -238,6 +252,8 @@ class DashboardState:
             if want or self._doctor is None or self.now() - self._doctor_at >= self.doctor_ttl:
                 self._doctor_wanted = False
                 self._run("doctor", self.build_doctor)
+                self.publish()
+                self._run("instruction files", self.build_instructions)
                 self.publish()
 
     def snapshot(self, *, force_doctor: bool = False) -> dict:
@@ -324,6 +340,7 @@ footer{grid-column:span 12;text-align:center;color:var(--mut);font-size:12px;pad
 <section class="card c6"><h2>Weekly trend (total tokens)</h2><div id="weekly"></div></section>
 <section class="card c7"><h2>Doctor <button id="redoc" type="button" style="float:right;text-transform:none">Re-run doctor</button></h2><div class="sub" id="doc-when"></div><div id="doctor"></div></section>
 <section class="card c5"><h2>Token-saving tools &amp; telemetry</h2><div id="tools"></div></section>
+<section class="card c12"><h2>Instruction files</h2><div id="instructions"></div></section>
 <section class="card c6"><h2>Setup status</h2><div id="setup"></div></section>
 <section class="card c6"><h2>Since setup &amp; bench</h2><div id="since"></div><div id="bench"></div></section>
 <footer>__FOOTER__ <span id="updated"></span></footer>
@@ -381,6 +398,13 @@ function render(s){
   else n.appendChild(table(["Tool","Telemetry","Note"],t.installed.map(function(x){return[x.name,el("span",x.telemetry==="on"?"on":(x.telemetry==="off"?"off":"muted"),x.telemetry),x.note]})));
   if(t.telemetry_findings.length){n.appendChild(el("div","note",t.telemetry_findings.length+" privacy finding(s) about telemetry or cloud sends; see Doctor."))}
   if(t.install_offer.length){var p=el("div","sub");p.textContent="Pinned installs setup can offer (you confirm; uses the network): "+t.install_offer.map(function(x){return x.name+" "+x.version}).join(", ");n.appendChild(p)}}
+  n=clear($("instructions"));var ins=s.instructions;
+  if(ins==null)wait(n,"Checking instruction files (read-only)...");
+  else if(!ins.files.length)empty(n,"No instruction files found for the detected tools.");
+  else{n.appendChild(table(["File","Scope","Approx. tokens","Loaded by"],ins.files.map(function(f){return[f.display,f.scope,{num:"~"+fmt(f.tokens)},f.tools.join(", ")]})));
+  n.appendChild(el("div","sub","Resent per turn: "+ins.tools.map(function(t){return t.name+" ~"+fmt(t.tokens_per_turn)+" (~"+fmt(t.per_100_turns)+" per 100 turns)"}).join(" · ")+". Approx.: characters / 4."));
+  ins.top.forEach(function(m){n.appendChild(el("div","note",m))});
+  var tp=el("p");tp.appendChild(document.createTextNode(ins.findings+" finding(s)"+(ins.saved_per_turn?"; a safe trim saves ~"+fmt(ins.saved_per_turn)+" tokens per turn (approx.)":"")+". See details: "));tp.appendChild(el("code",null,ins.command));n.appendChild(tp)}
   n=clear($("setup"));var su=s.setup;
   if(su==null)wait(n);
   else{if(!su.runs.length)empty(n,"Nothing applied yet.");

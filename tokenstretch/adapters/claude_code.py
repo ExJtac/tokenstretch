@@ -692,7 +692,8 @@ class ClaudeCodeAdapter(Adapter):
                     "W01", "claude-md-size", "med", "waste",
                     f"Your instruction file is read on every single message. It's {lines} lines; "
                     "Anthropic recommends under 200. The extra text costs you on every turn.",
-                    "Move part-specific rules into path-scoped rules; exclude vendored instruction files.",
+                    "Move part-specific rules into path-scoped rules; exclude vendored instruction files. "
+                    "Run `tokenstretch trim` to see what to cut.",
                     "CC-MEM, CC-COST, CC-SET",
                     file=str(path), key="lines", value=lines,
                 ))
@@ -700,7 +701,7 @@ class ClaudeCodeAdapter(Adapter):
             findings.append(self.finding(
                 "W01", "claude-md-size", "high", "waste",
                 f"Your instruction files total {total} bytes (over 25 KB) and are re-read on every message.",
-                "Trim standing instructions and split workflow into skills.",
+                "Trim standing instructions and split workflow into skills. Run `tokenstretch trim` to see what to cut.",
                 "CC-MEM, CC-COST",
                 file=",".join(str(p) for p, _, _ in files), key="bytes", value=total,
             ))

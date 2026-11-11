@@ -21,6 +21,9 @@ All notable changes to this project are documented here. The format follows [Kee
 - `bench --measure` saves its result as `result.json` beside the prepare manifest, so the report and dashboard can show it.
 - Claude Code logs: a per-line `costUSD` is now read as a reported cost.
 - Adapter hook `token_tools` (host): installed token savers and their telemetry state.
+- `tokenstretch trim`: lists every instruction file each detected tool loads per turn (via `list_instruction_files`, including Claude `@file` imports) with approx. tokens (characters / 4), the per-turn total, and per 100 turns. Findings with why and fix: exact and near-duplicate blocks (within a file and across files loaded together), long files (`--max-tokens`, default 2,000), big pasted code, tables, logs, and blobs, stale relative paths (stat-only, inside the project, credential-looking names skipped), extra blank lines and trailing spaces, and a duplicated rules block. The proposed edit only removes exact duplicates, tidies whitespace, and with `--move-blocks` moves big blocks to `docs/agent-notes/` with a one-line pointer; it shows a unified diff and before/after approx. tokens. Dry run by default; `--apply` asks `[y/N]` (or `--yes`) and backs up every file for `undo`. `--json`.
+- Dashboard: an "Instruction files" card from the same read-only analysis.
+- Doctor: W01, W02, and W17 fixes point to `tokenstretch trim`.
 - Contributor docs, issue and PR templates, and a CI workflow including the network-blocked run.
 
 ### Fixed

@@ -1,4 +1,4 @@
-"""CLI: dashboard is a read-only loopback page; watch is a read-only live loop; model suggest is a local heuristic and model default dry-runs unless --apply; setup explains then applies with backups; status/report are read-only; doctor is read-only; install defaults to dry-run; undo restores; bench is --from-logs, API-key --bench, or subscription --prepare/--measure."""
+"""CLI: trim dry-runs unless --apply (backed up; undo restores); dashboard is a read-only loopback page; watch is a read-only live loop; model suggest is a local heuristic and model default dry-runs unless --apply; setup explains then applies with backups; status/report are read-only; doctor is read-only; install defaults to dry-run; undo restores; bench is --from-logs, API-key --bench, or subscription --prepare/--measure."""
 from __future__ import annotations
 
 import argparse
@@ -257,6 +257,17 @@ def cmd_model(args) -> int:
     return run_default(ctx, args.tier, tool=args.tool, apply=bool(args.apply) and not args.dry_run)
 
 
+def cmd_trim(args) -> int:
+    from .trim import Options, run_trim
+
+    root = args.project or args.root
+    ctx = build_context(args.home, root, args.sys_snapshot, getattr(args, "plan", None))
+    opts = Options(max_tokens=max(1, args.max_tokens), max_block_lines=max(1, args.max_block_lines),
+                   move_blocks=bool(args.move_blocks))
+    return run_trim(ctx, opts, apply=bool(args.apply) and not args.dry_run, yes=bool(args.yes),
+                    as_json=bool(args.json), show_diff=not args.no_diff)
+
+
 def _add_context_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--home", type=Path)
     parser.add_argument("--root", type=Path)
@@ -381,6 +392,19 @@ def main(argv=None) -> int:
     dash.add_argument("--weeks", type=int, default=8,
                       help="weeks of usage logs to read (default 8); older log files are skipped unopened")
 
+    tr = sub.add_parser("trim", help="find waste in instruction files resent every turn; propose a safe trim (dry-run unless --apply)")
+    _add_context_args(tr)
+    tr.add_argument("--project", type=Path, help="project folder (default: the current folder; same as --root)")
+    tr.add_argument("--max-tokens", type=int, default=2000, help="flag files over this many approx. tokens (default 2000)")
+    tr.add_argument("--max-block-lines", type=int, default=30, help="flag fenced code blocks over this many lines (default 30)")
+    tr.add_argument("--move-blocks", action="store_true",
+                    help="also move big code blocks and logs from project files to docs/agent-notes/ with a pointer")
+    tr.add_argument("--apply", action="store_true", help="write the proposed edit (backed up; undo restores it)")
+    tr.add_argument("--dry-run", action="store_true", help="show the analysis and diff only (the default)")
+    tr.add_argument("--yes", "-y", action="store_true", help="with --apply, don't ask")
+    tr.add_argument("--no-diff", action="store_true", help="don't print the unified diff")
+    tr.add_argument("--json", action="store_true")
+
     m = sub.add_parser("model", help="heuristic model picker and a backed-up default-model switch")
     msub = m.add_subparsers(dest="model_cmd", required=True)
     ms = msub.add_parser("suggest", help="suggest light / mid / top for a task (local rules, no model calls)")
@@ -418,5 +442,7 @@ def main(argv=None) -> int:
         return cmd_dashboard(a)
     if a.cmd == "model":
         return cmd_model(a)
+    if a.cmd == "trim":
+        return cmd_trim(a)
     print(f"{a.cmd}: not implemented yet", file=sys.stderr)
     return 3

@@ -5,6 +5,7 @@
 - Smart model picker: `tokenstretch model suggest` (heuristic) and `tokenstretch model default` (backed up, undoable).
 - Weekly savings report: `tokenstretch report --weekly`.
 - Local dashboard: `tokenstretch dashboard` (loopback only, read-only, live).
+- Instruction-file trimmer: `tokenstretch trim` (dry run by default, safe mechanical edits only, backed up, undoable).
 
 ## Next
 - A Codex tier map for `model suggest` / `model default`, once the model names are verified from docs.
@@ -14,6 +15,8 @@
 
 - Codex session labels in `watch` / `dashboard`: use the rollout's working directory instead of the date folder.
 - A dashboard "copy command" button next to each fix (still read-only).
+
+- `trim`: offer moving blocks out of user-level files once each tool's import syntax is verified, and flag headings left empty after duplicates are removed.
 
 ## Good first issues
 - **Goose adapter** (doctor-only): detect the config, check the default model and telemetry. See `ADAPTERS.md` for the interface.

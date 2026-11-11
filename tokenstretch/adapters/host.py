@@ -743,7 +743,8 @@ class HostAdapter(Adapter):
             f"The same instruction text is loaded from more than one file ({sets} of duplicates, "
             f"{len(all_paths)} files; names: {_capped_list(uniq_names)}). "
             "Many agents read several of these, so you pay for the rules twice.",
-            "Keep one AGENTS.md (or the file your agent documents) and thin pointers in the others.",
+            "Keep one AGENTS.md (or the file your agent documents) and thin pointers in the others. "
+            "`tokenstretch trim` shows duplicated blocks across the files that load together.",
             "agents.md (universal instruction-file checks)",
             file=_capped_list([str(p) for p in all_paths]), key="files", value=uniq_names,
         )]

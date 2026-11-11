@@ -16,6 +16,7 @@ It doesn't replace your tools. It checks, configures, and measures them, includi
 - **Fixes it applies for you.** `setup` explains each change (what it is, why it costs you, which file and key it touches, and how to undo it), asks once, then applies it with live progress.
 - **A live view.** `status` shows what's applied, which model each tool defaults to, and how much history your newest sessions re-read on every step. It flags sessions over ~150K tokens with a "`/clear` at the next task break" tip.
 - **A live watch.** `watch` runs quietly in a terminal and warns you, once per problem, when a session's history gets too big, the top model is doing simple steps, the same file keeps getting re-read, or history is growing fast. Each warning says what's wrong, why it costs credits, and the one-line fix.
+- **An instruction-file trimmer.** `trim` lists every instruction file your agents resend on each turn (CLAUDE.md, AGENTS.md, GEMINI.md, copilot-instructions.md, and their imports) with approx. token counts, finds duplicated rules, oversized files, pasted logs and code, and stale paths, and proposes a trimmed version that only makes safe mechanical changes. It's a dry run unless you pass `--apply`, and `undo` restores it.
 - **A model picker.** `model suggest "<task>"` recommends light, mid, or top for a task and names the model for each tool you have. `model default --tier mid` changes your default model, with a backup and undo.
 - **A shareable report.** `report` writes a single self-contained HTML file with the findings, the plan, what was applied, undo commands, and current status. It loads nothing from the internet.
 - **A weekly report.** `report --weekly` adds up your local usage logs per week: tokens by type and by model, your biggest session histories, waste spots, and a before/after view since setup. Cost appears only where your logs report it.
@@ -35,6 +36,7 @@ tokenstretch watch           # live warnings while you work (Ctrl-C to stop)
 tokenstretch dashboard       # live local page in your browser (Ctrl-C to stop)
 tokenstretch report --weekly # weekly usage roll-up as a local HTML file
 tokenstretch model suggest "fix the flaky login test"
+tokenstretch trim            # what your instruction files cost per turn, and a safe trim (dry run)
 tokenstretch undo            # restores everything the last setup changed
 ```
 
@@ -114,6 +116,41 @@ It's read-only: it never changes a file, it only shows the commands to run. It l
 
 `tokenstretch report --weekly` writes the same weekly numbers to a self-contained HTML file under `~/.tokenstretch/reports/` (`--weeks 8`, `--out FILE`, or `--json`).
 
+## Trim instruction files
+
+Your CLAUDE.md, AGENTS.md, and similar files are resent on every turn, so a bloated one quietly costs credits all day. `tokenstretch trim` looks at the project you're in (or `--project DIR`) plus your user-level files, and shows what each tool loads per turn:
+
+```text
+$ tokenstretch trim --move-blocks
+Files:
+  ~/.claude/CLAUDE.md  user          ~25 tokens  Claude Code
+  CLAUDE.md            project      ~158 tokens  Claude Code
+  AGENTS.md            project       ~17 tokens  Codex
+
+Resent per turn:
+  Claude Code: ~183 tokens per turn (~18,300 per 100 turns, approx.)
+  Codex: ~17 tokens per turn (~1,700 per 100 turns, approx.)
+
+Findings (5):
+  MED  duplicate: CLAUDE.md:5 repeats ~/.claude/CLAUDE.md:3 exactly ("- Always run the full test suite before you say a task is d…").
+       Why: The same text is already in ~/.claude/CLAUDE.md, which loads in the same turn, so you pay for it twice on every turn in Claude Code.
+       Fix: Keep the first copy. trim removes this one.
+  MED  big-block: CLAUDE.md:12 has a pasted log (10 lines, ~69 tokens approx.).
+  LOW  stale-path: CLAUDE.md mentions 1 path(s) that don't exist in this project: src/legacy/main.py (line 3).
+  ...
+Proposed edit (safe mechanical changes only: exact duplicates, blank lines, trailing spaces, moved blocks; prose is never rewritten):
+  CLAUDE.md: ~158 -> ~81 tokens (-77 approx.)
+  create docs/agent-notes/claude-1.md (not loaded each turn; the agent opens it when needed)
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+...
+Dry run: nothing was changed. Add --apply to make these edits (backed up; `tokenstretch undo` restores them).
+```
+
+It checks for exact and near-duplicate paragraphs and bullets (within a file, and across files the same tool loads together), files over ~2,000 tokens (`--max-tokens`), big pasted blocks (code over 30 lines, long tables, logs and stack traces, base64 or minified blobs), relative paths that no longer exist in the project, extra blank lines and trailing spaces, and a duplicated tokenstretch rules block. Each finding says why it costs credits and how to fix it.
+
+The proposed edit never rewrites or summarizes your prose. It only removes exact duplicate blocks (keeping the first copy), collapses blank lines, and strips trailing spaces. With `--move-blocks` it also moves big code blocks and logs from project files into `docs/agent-notes/<name>.md` and leaves a one-line pointer. Token counts are approx. (characters / 4), computed from the files themselves. `--apply` asks `[y/N]` (or `--yes`), backs up every file, and `tokenstretch undo` restores them byte for byte. `--json` prints machine-readable output, and the dashboard shows the same numbers in an "Instruction files" card.
+
 ## Pick the right model
 
 ```
@@ -147,7 +184,7 @@ Your mileage will differ. Run `tokenstretch bench` on your own repo (see `LIVE-B
 
 ## Privacy promises
 
-- **No telemetry, no analytics, no phone-home, no update checks.** The package imports no network libraries, and that's checked in the test suite.
+- **No telemetry, no analytics, no phone-home, no update checks.** No outbound network libraries. The only socket tokenstretch itself opens is the optional dashboard, bound to 127.0.0.1 with a one-time key, and tests block every non-loopback connection.
 - **No network calls**, except the pinned installs you confirm in a separate prompt.
 - **Never opens credential files.** Login files and tokens are only `stat`'d (checked for existence and permissions), never read, copied, symlinked, or proxied. Tests plant canary credentials and fail if any are opened.
 - **Your prompts, code, and logs never leave your machine because of this tool.** Session logs are read locally, only to show model and history size.
@@ -170,7 +207,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 **Will it slow my agent down or cut work?** No. The biggest win is choosing the right model for the job and not re-reading old history. The top model is one `/model` command away whenever you need it.
 
-**Does it change anything without asking?** No. Doctor, status, report, watch, dashboard, and model suggest are read-only. `model default` is a dry run unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
+**Does it change anything without asking?** No. Doctor, status, report, watch, dashboard, and model suggest are read-only. `trim` and `model default` are dry runs unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
 
 **Does it touch my login or API keys?** Never.
 
@@ -180,7 +217,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 ## More
 
-- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `model`, and `undo`.
+- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `model`, `trim`, and `undo`.
 - Technical details and pins: `docs/DETAILS.md`, `ADAPTERS.md`, `tokenstretch/catalog.py`
 - Contributing: `CONTRIBUTING.md` · Roadmap: `ROADMAP.md` · Security: `SECURITY.md`
 

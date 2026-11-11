@@ -396,7 +396,7 @@ def test_requests_never_build_state(tmp_path, monkeypatch):
     # The page is rendered once, up front, from no state at all.
     assert "tokenstretch dashboard" in render_page(None)
     blob = json.loads(ds.latest_json())
-    assert blob["warming_up"] is True and blob["pending"] == ["live sessions", "usage logs", "doctor"]
+    assert blob["warming_up"] is True and blob["pending"] == ["live sessions", "usage logs", "doctor", "instruction files"]
     assert blob["sessions"] is None and blob["doctor"] is None and blob["overview"]["tokens_week"] is None
     ds.request_doctor()  # only sets a flag for the worker
     assert json.loads(ds.latest_json())["doctor_refreshing"] is True

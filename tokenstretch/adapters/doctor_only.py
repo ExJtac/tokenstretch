@@ -125,6 +125,6 @@ def instruction_size_findings(adapter_id: str, files: list[InstructionFile], *, 
     return [finding(
         adapter_id, check_id, slug, severity, "waste",
         f"Your instruction files total {total_lines} lines / {total_bytes} bytes and are re-read on every message.",
-        "Trim standing instructions; keep only the rules that matter.",
+        "Trim standing instructions; keep only the rules that matter. Run `tokenstretch trim` to see what to cut.",
         source, file=paths, key="bytes", value=str(total_bytes),
     )]
