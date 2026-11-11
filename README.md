@@ -24,6 +24,36 @@ It doesn't replace your tools. It checks, configures, and measures them, includi
 - **Real measurements, never guesses.** `bench` compares before and after on a throwaway copy of your repo, using your agent's own usage logs. If there's no data, it says `no measurement`.
 - **Full undo.** Every changed file is backed up under `~/.tokenstretch/backups/`, and each change is recorded in a manifest.
 
+## Install
+
+**Not released yet.** Until a release is pinned in `scripts/install.sh`, the installer stops and says so. Until then, install from a clone (see the quickstart).
+
+One line (macOS or Linux, Python 3.11+):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ExJtac/tokenstretch/main/scripts/install.sh | sh
+```
+
+Or inspect it first (recommended): download it, read it, preview it, then run it:
+
+```bash
+curl -fsSLo install.sh https://raw.githubusercontent.com/ExJtac/tokenstretch/main/scripts/install.sh
+less install.sh                 # the pinned tag and commit are at the top
+sh install.sh --dry-run         # prints every step; downloads and changes nothing
+sh install.sh
+```
+
+What it does:
+- It installs one pinned release, never "latest". With git, it clones the pinned tag and refuses if the tag doesn't point at the pinned commit. Without git, it downloads that commit's tarball and refuses unless its SHA-256 matches the pinned hash. That fetch is its only network use.
+- It installs into its own folder, `~/.local/share/tokenstretch`, with a private venv made by `python -m venv --without-pip`. tokenstretch has no dependencies, so there's no pip and nothing from PyPI.
+- It adds a `tokenstretch` launcher in `~/.local/bin`.
+- It never edits your shell startup files unless you pass `--add-to-path`, and it backs them up first when you do.
+- It never runs `setup` or installs other tools. There's no telemetry and no install ping.
+
+`sh install.sh --uninstall` removes exactly what it created: the folder, the launcher, and the PATH line. Your `~/.tokenstretch` backups stay, so run `tokenstretch undo` first if you want setup's changes reverted.
+
+For an immutable link, use the commit link from the release notes instead of `main`. pipx isn't used: it would download build tools from PyPI.
+
 ## 30-second quickstart
 
 ```bash

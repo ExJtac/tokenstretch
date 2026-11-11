@@ -151,6 +151,22 @@ def _collect_memory_files(ctx: Context) -> list[tuple[Path, int, int]]:
     return out
 
 
+def _is_shortcut_file(path: Path, root: Path) -> bool:
+    """A skill (`SKILL.md`) or slash command (`commands/*.md`). Subagent files (`agents/*.md`) run in
+    their own context, so their `model` field never switches the main conversation; other Markdown
+    (READMEs, skill references) has no model effect."""
+    parts = path.relative_to(root).parts
+    if "agents" in parts[:-1]:
+        return False
+    if path.name == "SKILL.md":
+        return root.name == "skills" or "skills" in parts[:-1]
+    return root.name == "commands" or "commands" in parts[:-1]
+
+
+def _shortcut_name(path: Path) -> str:
+    return path.parent.name if path.name == "SKILL.md" else "/" + path.stem
+
+
 def _frontmatter_models(ctx: Context) -> list[tuple[Path, str]]:
     hits = []
     roots = [
@@ -165,6 +181,8 @@ def _frontmatter_models(ctx: Context) -> list[tuple[Path, str]]:
         if not root.is_dir():
             continue
         for path in root.rglob("*.md"):
+            if not _is_shortcut_file(path, root):
+                continue
             text = count_lines_bytes(path)
             if not text:
                 continue
@@ -839,18 +857,22 @@ class ClaudeCodeAdapter(Adapter):
                 "CC-CACHE, CC-MODEL",
                 file=sources.get("model", "settings"), key="model", value="opusplan",
             ))
-        used_cmds = 0
-        for path, model in _frontmatter_models(ctx):
+        hits = _frontmatter_models(ctx)
+        if hits:
+            # One grouped finding: a Mac with ten such shortcuts printed the same advice ten times.
+            names = list(dict.fromkeys(f"{_shortcut_name(p)} ({m})" for p, m in hits))
+            shown = ", ".join(names[:5]) + (f" and {len(names) - 5} more" if len(names) > 5 else "")
+            what = "A shortcut you use switches" if len(names) == 1 else f"{len(names)} shortcuts you use switch"
             findings.append(self.finding(
                 "W08", "cache-model-frontmatter", "med", "waste",
-                "A shortcut you use switches the AI model mid-conversation. That throws away your saved "
+                f"{what} the AI model mid-conversation: {shown}. That throws away your saved "
                 "context discount, and the next message re-pays for the whole chat.",
-                "Remove the model field from that shortcut's frontmatter (or move the work into a subagent "
+                "Remove the model field from those shortcuts' frontmatter (or move the work into a subagent "
                 "with its own model, which has a separate context).",
                 "CC-CACHE, CC-SKILL, CC-MODEL",
-                file=str(path), key="model", value=model,
+                file=", ".join(str(p) for p, _ in hits[:5]) + (f" and {len(hits) - 5} more" if len(hits) > 5 else ""),
+                key="model", value=hits[0][1] if len({m for _, m in hits}) == 1 else sorted({str(m) for _, m in hits}),
             ))
-            used_cmds += 1
         return findings
 
     def _w09(self, ctx: Context) -> list[Finding]:
