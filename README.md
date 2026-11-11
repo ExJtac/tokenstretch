@@ -14,6 +14,8 @@ It doesn't replace your tools. It checks, configures, and measures them, includi
 - **A live watch.** `watch` runs quietly in a terminal and warns you, once per problem, when a session's history gets too big, the top model is doing simple steps, the same file keeps getting re-read, or history is growing fast. Each warning says what's wrong, why it costs credits, and the one-line fix.
 - **A model picker.** `model suggest "<task>"` recommends light, mid, or top for a task and names the model for each tool you have. `model default --tier mid` changes your default model, with a backup and undo.
 - **A shareable report.** `report` writes a single self-contained HTML file with the findings, the plan, what was applied, undo commands, and current status. It loads nothing from the internet.
+- **A weekly report.** `report --weekly` adds up your local usage logs per week: tokens by type and by model, your biggest session histories, waste spots, and a before/after view since setup. Cost appears only where your logs report it.
+- **A local dashboard.** `dashboard` opens one live page on your own machine with all of the above, updated every 5 seconds. See [Dashboard](#dashboard).
 - **Real measurements, never guesses.** `bench` compares before and after on a throwaway copy of your repo, using your agent's own usage logs. If there's no data, it says `no measurement`.
 - **Full undo.** Every changed file is backed up under `~/.tokenstretch/backups/`, and each change is recorded in a manifest.
 
@@ -26,6 +28,8 @@ tokenstretch setup           # explains the plan, asks [y/N], applies with backu
 tokenstretch status          # what's on now, plus your newest sessions
 tokenstretch report          # writes a local HTML report and prints its path
 tokenstretch watch           # live warnings while you work (Ctrl-C to stop)
+tokenstretch dashboard       # live local page in your browser (Ctrl-C to stop)
+tokenstretch report --weekly # weekly usage roll-up as a local HTML file
 tokenstretch model suggest "fix the flaky login test"
 tokenstretch undo            # restores everything the last setup changed
 ```
@@ -79,6 +83,28 @@ Shell rc files are never edited. If `ANTHROPIC_MODEL` is set in your shell, setu
 ```
 
 It's read-only and only looks at token counts, model names, tool-call counts, and the paths of files the agent read (never their contents). `--once` does a single pass. `--notify` also pops a desktop notification through your OS's own `osascript` or `notify-send`, if present. Claude Code is fully supported. Codex gets the history, top-model, and growth warnings (its logs don't record file reads). Other tools say "not supported yet".
+
+## Dashboard
+
+```bash
+tokenstretch dashboard            # opens http://127.0.0.1:8765/<one-time key>/ in your browser
+tokenstretch dashboard --no-open  # just print the link; --port 9000 to pick a port
+```
+
+One page, refreshed every 5 seconds while it runs:
+
+- **Overview:** tokens today and this week, cost (only if your logs report it), active sessions, and the biggest history.
+- **Live sessions:** tool, project, model, and history size with a bar against the 150K mark.
+- **Live warnings:** the same once-per-problem warnings as `watch`, each with its fix.
+- **Models this week** and an **8-week trend**, as simple bar charts.
+- **Doctor results** with plain-English fixes (re-run with a button; it's read-only).
+- **Setup status:** what tokenstretch applied and whether `tokenstretch undo` can restore it.
+- **Token-saving tools** found on your machine and whether their telemetry is off.
+- **Since setup** (a before/after from your own logs, clearly labeled observational) and **bench results** if you've measured one.
+
+It's read-only: it never changes a file, it only shows the commands to run. It listens on 127.0.0.1 only, needs the one-time key in the link for every request, and loads nothing from the internet. Press Ctrl-C to stop it.
+
+`tokenstretch report --weekly` writes the same weekly numbers to a self-contained HTML file under `~/.tokenstretch/reports/` (`--weeks 8`, `--out FILE`, or `--json`).
 
 ## Pick the right model
 
@@ -136,7 +162,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 **Will it slow my agent down or cut work?** No. The biggest win is choosing the right model for the job and not re-reading old history. The top model is one `/model` command away whenever you need it.
 
-**Does it change anything without asking?** No. Doctor, status, report, watch, and model suggest are read-only. `model default` is a dry run unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
+**Does it change anything without asking?** No. Doctor, status, report, watch, dashboard, and model suggest are read-only. `model default` is a dry run unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
 
 **Does it touch my login or API keys?** Never.
 

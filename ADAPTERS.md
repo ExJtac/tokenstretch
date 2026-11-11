@@ -19,6 +19,7 @@ Each adapter implements:
 | `run_headless_task(ctx, task, opts)` | Refuses unless `opts["bench"]` is true. Runs only through a runner (`FakeHeadlessRunner` in tests). |
 | `undo(ctx, manifest_path)` | Adapter stub raises `NotImplementedError`. CLI undo uses `installer.undo_manifest`. |
 | `watch_sessions(ctx, limit)` | Per-turn records for `watch` (model, history tokens, output tokens, tool-call count, Read paths only). `None` = not supported yet. Read-only. |
+| `token_tools(ctx)` | Installed token-saving helpers and their telemetry state (`off` / `on` / `not checked`) for the dashboard. Read-only; config reads only, never credentials. |
 | `model_tiers()` / `is_top_model(model)` / `model_switch_hint(model)` | Model picker facts: `{light, mid, top}` names (empty = no tier map), top-tier test, and the in-tool switch command. |
 | `plan_default_model(ctx, tier)` | **Planner only**: a `SetupItem` that sets the default model; the core applies it with backup + manifest. |
 

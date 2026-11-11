@@ -284,7 +284,7 @@ def _usage_from_obj(obj: dict) -> dict:
         "cache_read": int(u.get("cache_read_input_tokens") or u.get("cacheReadTokens") or 0),
         "cache_write": int(u.get("cache_creation_input_tokens") or u.get("cacheCreationTokens") or u.get("cache_creation_tokens") or 0),
         "reasoning": int(u.get("reasoning_tokens") or u.get("reasoningTokens") or 0),
-        "cost": u.get("cost_usd") or obj.get("total_cost_usd") or obj.get("totalCost"),
+        "cost": u.get("cost_usd") or obj.get("total_cost_usd") or obj.get("totalCost") or obj.get("costUSD"),
         "model": obj.get("model") or (obj.get("message") or {}).get("model"),
         "ts": obj.get("timestamp") or obj.get("ts"),
     }

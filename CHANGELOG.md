@@ -14,6 +14,11 @@ All notable changes to this project are documented here. The format follows [Kee
 - `tokenstretch model suggest`: a transparent keyword-and-size heuristic that recommends light / mid / top and names the model per detected tool. No model calls; not a measured claim.
 - `tokenstretch model default --tier …`: dry run by default; `--apply` changes the default model (Claude Code `settings.json` `model`) with a backup, and `undo` restores it.
 - Adapter hooks `watch_sessions`, `model_tiers`, `is_top_model`, `model_switch_hint`, and `plan_default_model`.
+- `tokenstretch report --weekly`: per-week tokens by type and by model from local logs, cost only where the logs report it ("not reported" otherwise; nothing estimated), biggest session histories, waste spots from the watch checks, an observational before/after since setup, and bench results when a measured bench exists. `--weeks`, `--out`, `--json`.
+- `tokenstretch dashboard`: a read-only local web page (127.0.0.1 only, one-time key in the URL, Host-header check, no CORS, no external assets) with overview cards, live sessions, live watch warnings, models this week, an 8-week trend, doctor results, setup status and undo, token-saving tools and their telemetry, since-setup, and bench results. Updates every 5 seconds; Ctrl-C stops it.
+- `bench --measure` saves its result as `result.json` beside the prepare manifest, so the report and dashboard can show it.
+- Claude Code logs: a per-line `costUSD` is now read as a reported cost.
+- Adapter hook `token_tools` (host): installed token savers and their telemetry state.
 - Contributor docs, issue and PR templates, and a CI workflow including the network-blocked run.
 
 ### Fixed

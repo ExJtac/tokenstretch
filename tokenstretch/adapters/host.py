@@ -558,6 +558,33 @@ class HostAdapter(Adapter):
     def _omniroute(self, ctx: Context) -> bool:
         return bool(ctx.which("omniroute") or ctx.process_matches(r"\bomniroute\b") or ctx.listener_on(20128))
 
+    def token_tools(self, ctx: Context) -> list[dict]:
+        """Third-party token savers seen on this machine, with the telemetry state doctor reads."""
+        out = []
+
+        def add(name: str, telemetry: str, note: str = "") -> None:
+            out.append({"name": name, "installed": True, "telemetry": telemetry, "note": note})
+
+        if self._rtk(ctx):
+            add("RTK", "on" if self._rtk_telemetry_on(ctx) else "off", "off by default")
+        if self._caveman_cli(ctx):
+            add("Caveman", "off" if self._caveman_telemetry_off(ctx) else "on",
+                "" if self._caveman_telemetry_off(ctx) else "run `caveman telemetry off` or set DO_NOT_TRACK=1")
+        if self._headroom(ctx):
+            add("Headroom", "off" if self._headroom_telemetry_off(ctx) else "on",
+                "" if self._headroom_telemetry_off(ctx) else "set HEADROOM_OFFLINE=1 (covers beacon and update check)")
+        if self._claude_mem(ctx):
+            tel = self._mem_key(self._claude_mem_settings(ctx), "telemetry", "telemetryEnabled", "telemetry_enabled",
+                                "analytics", "analyticsEnabled")
+            on = tel is None or _truthy(tel) or str(tel).lower() in {"on", "enabled"}
+            add("claude-mem", "on" if on else "off", "`npx claude-mem telemetry disable`" if on else "")
+        for name, present in (("Kompressor", self._kompressor), ("llm-router", self._llm_router),
+                              ("magpie", self._magpie), ("tamp", self._tamp), ("squeezr", self._squeezr),
+                              ("OmniRoute", self._omniroute)):
+            if present(ctx):
+                add(name, "not checked", "see doctor findings for this tool")
+        return out
+
     # ---- W10 port map / chain ------------------------------------------------
     def _w10(self, ctx: Context) -> list:
         hops: list[tuple[str, str, str]] = []  # (label, where, key)

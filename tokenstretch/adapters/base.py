@@ -287,6 +287,11 @@ class Adapter:
         """Newest local sessions, read-only: [{adapter, session, project, model, history_tokens, last_write, path}]."""
         return []
 
+    def token_tools(self, ctx: Context) -> list[dict]:
+        """Installed token-saving helpers and their telemetry, read-only:
+        [{name, installed: True, telemetry: "off" | "on" | "not checked", note}]."""
+        return []
+
     # ---- watch / model picker ------------------------------------------------------------
     def watch_sessions(self, ctx: Context, limit: int = 5) -> list[dict] | None:
         """Per-turn records for `tokenstretch watch`, read-only. None => not supported yet.

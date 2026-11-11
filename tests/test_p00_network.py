@@ -42,7 +42,9 @@ def test_p00_suite_under_unshare_rn():
     env["TOKENSTRETCH_P00_INNER"] = "1"
     proc = subprocess.run(
         [
-            "unshare", "-rn",
+            # No route off the machine; loopback is brought up (when `ip` exists) so the
+            # dashboard's 127.0.0.1 server tests run here too instead of skipping.
+            "unshare", "-rn", "sh", "-c", 'ip link set lo up 2>/dev/null || true; exec "$@"', "sh",
             sys.executable, "-m", "pytest", "-q", "--tb=short",
             "-p", "no:cacheprovider",
             "-m", "not p00_outer",

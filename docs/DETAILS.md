@@ -20,6 +20,8 @@ python -m tokenstretch install --profile api-proxy --proxy headroom   # dry-run;
 python -m tokenstretch undo       # restore the latest manifest under --home
 python -m tokenstretch watch [--once] [--interval 10] [--max-context 150000] [--max-reads 3] [--notify]
 python -m tokenstretch model suggest "task" [--file F] [--json]
+python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
+python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5]
 python -m tokenstretch model default --tier light|mid|top [--tool claude] [--apply]
 ```
 
@@ -30,6 +32,25 @@ python -m tokenstretch model default --tier light|mid|top [--tool claude] [--app
 ### model
 
 `tokenstretch/models.py`: `suggest_tier` adds +2 per top rule hit (architecture/design, broad refactor, migration/rewrite, concurrency/leak, security, hard debugging, performance, distributed/scale), -2 per light rule hit (rename, typo, formatting/lint, docs/comments, version bump, lookup/summary), -1 per mid hint (tests, small fix), +1 for 5+ file names, +1 for 150+ words, and -1 for a short single-target ask. Score ≥ 2 is top, ≤ -2 is light, else mid. It's a heuristic, not a measured claim. `model default` asks each adapter's `plan_default_model(ctx, tier)` for a `SetupItem` and applies it with `setup.apply_plan` (backup + manifest), so `undo` restores it. Claude Code's tiers are haiku / sonnet / opus and it edits `model` in the last settings file that sets it (else `~/.claude/settings.json`). Codex has no tier map until model names are verified.
+
+### report --weekly
+
+`tokenstretch/weekly.py` is core only. Records come from every adapter's `read_usage_logs`; weeks start Monday in local time; empty weeks are kept; records without a timestamp are counted as undated and left out of every week. Per week it sums uncached input, cache read, cache write, output, and reasoning tokens, overall and per model. Cost is the sum of `cost_usd` from records whose logs report one (Claude `costUSD` / `total_cost_usd` / `cost_usd`, Codex `cost_usd`, host logs), labeled "reported for N of M steps" when only some do, and "not reported" when none do. There is no price table, so nothing is estimated. Top sessions and waste spots reuse `watch_sessions` and `watch.session_warnings` over the newest sessions (not only active ones). "Since setup" compares equal windows (up to 28 days) before and after the earliest recorded setup/install manifest: steps, average input and output per step, and the share of top-model steps. It's labeled observational, not a bench claim. Bench results are shown only from `~/.tokenstretch/benches/*/result.json`, which `bench --measure` now saves beside its prepare manifest.
+
+### dashboard
+
+`tokenstretch/dashboard.py` serves one self-contained HTML page (inline CSS and JS, no fonts, images, or external URLs) and JSON from `http.server` in the standard library. The page polls `api/state` every 5 seconds (`--interval`); `POST api/doctor` re-runs doctor (otherwise cached for 5 minutes). Usage logs are re-read at most every 30 seconds; sessions and watch warnings on every poll. It never writes a file.
+
+Security model:
+
+- **Loopback only.** It binds `127.0.0.1` and refuses any other `--host` (exit 2). If the port is busy it binds a free one and says so. `SO_REUSEADDR` is off so it can't share a port with another listener.
+- **Per-run token.** Each run makes a random 32-character key (`secrets.token_urlsafe(24)`) and puts it in the URL path: `http://127.0.0.1:PORT/KEY/`. Every request without the exact key (constant-time compare) gets 403, so other local programs' pages and websites you visit can't read it.
+- **Host header check.** The `Host` header must be `127.0.0.1` or `localhost` (with or without the port), else 403. That blocks DNS-rebinding pages that resolve their own name to 127.0.0.1.
+- **No cross-origin access.** No CORS headers are ever sent, preflight `OPTIONS` is refused, and a request with a foreign `Origin` header gets 403.
+- **Headers.** `Content-Security-Policy: default-src 'none'` with only inline script/style and same-origin fetch allowed, `Referrer-Policy: no-referrer` (the key never leaks in a Referer), `X-Frame-Options: DENY`, `Cache-Control: no-store`, `nosniff`. Request logging is off so the key isn't printed per request.
+- **What it shows.** Paths under your home are shown as `~/…`, finding text goes through the same secret masking as doctor, and credential files are only ever stat'd.
+
+Tests run the server on 127.0.0.1 with the socket guard narrowed to loopback only. Under `unshare -rn` the `p00_outer` run brings up `lo` (`ip link set lo up`) so they run there too; in a namespace without loopback they skip with the reason `LOOPBACK-UNAVAILABLE` instead of passing silently.
 
 `doctor` is read-only. Exit codes: 0 = clean (or info only), 1 = waste findings, 2 = a ToS or privacy high.
 

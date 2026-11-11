@@ -1,4 +1,4 @@
-"""CLI: watch is a read-only live loop; model suggest is a local heuristic and model default dry-runs unless --apply; setup explains then applies with backups; status/report are read-only; doctor is read-only; install defaults to dry-run; undo restores; bench is --from-logs, API-key --bench, or subscription --prepare/--measure."""
+"""CLI: dashboard is a read-only loopback page; watch is a read-only live loop; model suggest is a local heuristic and model default dry-runs unless --apply; setup explains then applies with backups; status/report are read-only; doctor is read-only; install defaults to dry-run; undo restores; bench is --from-logs, API-key --bench, or subscription --prepare/--measure."""
 from __future__ import annotations
 
 import argparse
@@ -151,6 +151,7 @@ def cmd_bench(args) -> int:
         else:
             path = Path(raw)
         report = measure_bench(ctx, path)
+        _save_bench_result(path, report)
         if args.json:
             print(json.dumps(report.to_json(), indent=2, default=str))
         else:
@@ -162,6 +163,15 @@ def cmd_bench(args) -> int:
     else:
         print(format_live_bench(report), end="")
     return 0 if report.ok else 1
+
+
+def _save_bench_result(path: Path, report) -> None:
+    """Keep the measured result beside its prepare manifest (tokenstretch state dir) for report/dashboard."""
+    d = path if path.is_dir() else path.parent
+    try:
+        (d / "result.json").write_text(json.dumps(report.to_json(), indent=2, default=str), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def cmd_setup(args) -> int:
@@ -191,6 +201,15 @@ def cmd_report(args) -> int:
     from .setup import write_report
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    if getattr(args, "weekly", False):
+        from .weekly import build_weekly, write_weekly
+        weeks = max(1, min(int(args.weeks or 4), 52))
+        if args.json:
+            print(json.dumps(build_weekly(ctx, weeks=weeks), indent=2, default=str))
+            return 0
+        path = write_weekly(ctx, args.out, weeks=weeks)
+        print(f"Weekly report written (local file, no network): {path}")
+        return 0
     path = write_report(ctx, args.out)
     print(f"Report written (local file, no network): {path}")
     return 0
@@ -202,6 +221,14 @@ def cmd_watch(args) -> int:
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
     cfg = WatchConfig(max_context=args.max_context, max_reads=args.max_reads)
     return run_watch(ctx, cfg, interval=max(1.0, args.interval), once=bool(args.once), notify=bool(args.notify))
+
+
+def cmd_dashboard(args) -> int:
+    from .dashboard import run_dashboard
+
+    ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    return run_dashboard(ctx, host=args.host, port=args.port, open_browser=not args.no_open,
+                         interval=max(2.0, float(args.interval)), out=lambda line: print(line, flush=True))
 
 
 def cmd_model(args) -> int:
@@ -302,6 +329,10 @@ def main(argv=None) -> int:
     rep = sub.add_parser("report", help="write a self-contained local HTML report and print its path")
     _add_context_args(rep)
     rep.add_argument("--out", type=Path, help=f"output file (default ~/{STATE_DIRNAME}/reports/report-<time>.html)")
+    rep.add_argument("--weekly", action="store_true",
+                     help="weekly usage roll-up from local logs: tokens by type and model, waste spots, since-setup")
+    rep.add_argument("--weeks", type=int, default=4, help="weeks to include with --weekly (default 4)")
+    rep.add_argument("--json", action="store_true", help="with --weekly, print the data as JSON instead of writing HTML")
 
     und = sub.add_parser("undo", help="restore files from the latest setup run or install manifest")
     _add_context_args(und)
@@ -340,6 +371,13 @@ def main(argv=None) -> int:
     w.add_argument("--max-reads", type=int, default=3, help="warn when one file is read this many times (default 3)")
     w.add_argument("--notify", action="store_true", help="also show a local desktop notification (osascript/notify-send)")
 
+    dash = sub.add_parser("dashboard", help="read-only local web page with live usage, warnings, and doctor results")
+    _add_context_args(dash)
+    dash.add_argument("--host", default="127.0.0.1", help="only 127.0.0.1 is accepted (loopback only)")
+    dash.add_argument("--port", type=int, default=8765, help="port (default 8765; a free one is picked if busy)")
+    dash.add_argument("--no-open", action="store_true", help="print the URL instead of opening the browser")
+    dash.add_argument("--interval", type=float, default=5.0, help="seconds between page refreshes (default 5)")
+
     m = sub.add_parser("model", help="heuristic model picker and a backed-up default-model switch")
     msub = m.add_subparsers(dest="model_cmd", required=True)
     ms = msub.add_parser("suggest", help="suggest light / mid / top for a task (local rules, no model calls)")
@@ -373,6 +411,8 @@ def main(argv=None) -> int:
         return cmd_report(a)
     if a.cmd == "watch":
         return cmd_watch(a)
+    if a.cmd == "dashboard":
+        return cmd_dashboard(a)
     if a.cmd == "model":
         return cmd_model(a)
     print(f"{a.cmd}: not implemented yet", file=sys.stderr)

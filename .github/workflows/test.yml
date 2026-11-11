@@ -28,4 +28,4 @@ jobs:
         run: |
           # Ubuntu 24.04 restricts unprivileged user namespaces by default; allow them for unshare -rn.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          unshare -rn .venv/bin/python -m pytest -q -m 'not p00_outer'
+          unshare -rn .venv/bin/python -m pytest -q -rs -m 'not p00_outer'
