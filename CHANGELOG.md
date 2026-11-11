@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Added
+- Gemini CLI and GitHub Copilot CLI are now tier 1. Gemini CLI: usage from `~/.gemini/tmp/<project>/chats/**` session records (incremental, per-turn; `watch`, `status`, `report --weekly`, `dashboard`), `bench --bench` (`gemini -p … --output-format stream-json`, `GEMINI_API_KEY`, usage statistics off in the sandbox) and `bench --prepare`, a Clean-profile SessionStart note (a `systemMessage`, not added to the model's context) and a native `.geminiignore` read gate, setup items (usage statistics off; rules block in an existing `GEMINI.md`), `model default` (`flash-lite` / `flash` / `pro`), and new doctor checks: W14 long sessions, W16 `billing.overageStrategy: "always"`, W20 `model.compressionThreshold` ≥ 0.9, P01 OpenTelemetry export off the machine (high when prompts are logged), P03 local telemetry file with prompts, P05 auto-update. Copilot CLI: usage from `session-state/*/events.jsonl` totals and per-turn `chat` spans from the local OTel file export (spans win for the same session; `watch` needs the file export), `bench --bench` (`COPILOT_GITHUB_TOKEN`, `--disable-client-telemetry`, `--sync-session=off`, a sandbox `COPILOT_HOME`, a fixed `--session-id`, and a local OTel file with content capture off), a rules block in an existing `.github/copilot-instructions.md`, and doctor checks W05 (Opus default), W06 (`effortLevel` xhigh/max; the old adapter read undocumented keys), W13, W16 (`continueOnAutoMode`), W18 (allow-all), P01 (client telemetry unknown unless an alias passes `--disable-client-telemetry`; OTLP HTTP export), P02 (`remoteSessions`), P05 (`autoUpdate`), P06 (`storeTokenPlaintext`; `config.json` is never opened).
+- `Adapter.undo(ctx, manifest)` restores a run through the core installer (it raised before).
 - `tokenstretch setup`: runs doctor, prints a plain-English plan (what, why, exact file and key, how to undo), asks once (`[y/N]`, or `--yes`), then applies with backups and live progress. Without a terminal and without `--yes`, it's a dry run. Pinned installs (rtk-oss, Caveman skill only) are offered behind a separate prompt because they use the network.
 - `tokenstretch status`: what's applied (with per-file state), current default models, and the newest local sessions' history size, with a `/clear` tip over ~150K tokens.
 - `tokenstretch report`: a self-contained local HTML report (no external assets).
@@ -29,6 +31,9 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Fixed
 - `bench --measure` no longer labels subscription runs as "API-key mode", and it shows the after-side model.
 - W17 (duplicate instruction files) is one grouped finding with a count and up to 5 example paths, instead of one finding per duplicate set.
+- Hook scripts planned by `install` keep their executable mode (the installer dropped `mode` from adapter changes).
+- Copilot OTel `invoke_agent` spans are no longer counted on top of their `chat` spans, and Copilot log paths moved from the host adapter into the Copilot adapter.
+- Gemini CLI and Copilot CLI privacy findings are no longer reported twice by `doctor`.
 
 ## [0.1.0] - 2026-11-10
 

@@ -15,7 +15,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 CRED_NAMES = {
     ".credentials.json", "auth.json", "credentials", "token",
     "oauth_creds.json", "gemini-credentials.json", "google_accounts.json",
-    "oauth-keys.env",
+    "oauth-keys.env", "mcp-oauth-tokens.json", "a2a-oauth-tokens.json",
 }
 CANARIES = (
     "CANARY_CREDENTIAL_DO_NOT_READ_CLAUDE",
@@ -43,7 +43,10 @@ def is_credential_path(path) -> bool:
     parts = set(p.parts)
     if p.name in {".credentials.json", "auth.json", "credentials"} and parts & {".claude", ".codex", ".caveman"}:
         return True
-    if p.name in {"oauth_creds.json", "gemini-credentials.json", "google_accounts.json"} and ".gemini" in parts:
+    if p.name in {"oauth_creds.json", "gemini-credentials.json", "google_accounts.json",
+                  "mcp-oauth-tokens.json", "a2a-oauth-tokens.json", ".env"} and ".gemini" in parts:
+        return True
+    if p.name in {"config.json", "providers.json"} and ".copilot" in parts:  # may hold plaintext tokens / BYOK keys
         return True
     if p.name == "oauth-keys.env" and ".aider" in parts:
         return True

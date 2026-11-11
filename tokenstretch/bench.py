@@ -415,9 +415,24 @@ def _key_name_present(name: str) -> bool:
     return name in os.environ
 
 
-def _official_argv(adapter_id: str, prompt: str) -> list[str] | None:
+def _official_argv(adapter, prompt: str) -> list[str] | None:
+    """Official headless command. Adapters may supply their own via `official_command(prompt)`."""
+    adapter_id = adapter if isinstance(adapter, str) else adapter.id
     fn = OFFICIAL_COMMANDS.get(adapter_id)
-    return fn(prompt) if fn else None
+    if fn:
+        return fn(prompt)
+    own = getattr(adapter, "official_command", None)
+    return own(prompt) if callable(own) else None
+
+
+def _bench_key_env(adapter) -> str | None:
+    return API_KEY_ENV.get(adapter.id) or getattr(adapter, "bench_key_env", None)
+
+
+def _prepare_agent(adapter) -> bool:
+    if adapter.id in OFFICIAL_COMMANDS:
+        return True
+    return adapter.tier == 1 and getattr(adapter, "supports_prepare", True) and callable(getattr(adapter, "official_command", None))
 
 
 def _format_cmd(argv: list[str]) -> str:
@@ -444,7 +459,8 @@ def live_bench(
     """
     task = task or {"prompt": "List the files in this repository and summarize the README in one sentence."}
     runner = runner if runner is not None else default_headless_runner()
-    agents = [a for a in (adapters or REGISTRY) if a.tier == 1 or a.id in {"claude-code", "codex"}]
+    agents = [a for a in (adapters or REGISTRY)
+              if a.id in {"claude-code", "codex"} or (a.tier == 1 and a.detect(ctx))]
     if adapters:
         agents = list(adapters)
 
@@ -478,7 +494,7 @@ def live_bench(
     def run_once(label: str, c: Context) -> dict[str, Any]:
         recs: list[UsageRecord] = []
         for ad in agents:
-            key_name = API_KEY_ENV.get(ad.id)
+            key_name = _bench_key_env(ad)
             if key_name and not _key_name_present(key_name):
                 notices.append(
                     f"{ad.id} ({label}): {key_name} is not set in the environment, "
@@ -597,9 +613,8 @@ def prepare_bench(ctx: Context, task: dict | None = None, *, adapters=None, dest
     """
     task = task or {"prompt": "List the files in this repository and summarize the README in one sentence."}
     prompt = task.get("prompt") or ""
-    agents = [a for a in (adapters or REGISTRY) if a.id in {"claude-code", "codex"}]
-    if adapters:
-        agents = [a for a in adapters if a.id in {"claude-code", "codex"}]
+    agents = [a for a in (adapters or REGISTRY)
+              if _prepare_agent(a) and (adapters or a.id in OFFICIAL_COMMANDS or a.detect(ctx))]
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     dest = Path(dest) if dest is not None else state_dir(ctx.home) / "benches" / stamp
     before_repo = dest / "before" / "repo"
@@ -637,7 +652,7 @@ def prepare_bench(ctx: Context, task: dict | None = None, *, adapters=None, dest
     commands = {"before": [], "after": []}
     for label, repo in (("before", before_repo), ("after", after_repo)):
         for ad in agents:
-            argv = _official_argv(ad.id, prompt)
+            argv = _official_argv(ad, prompt)
             if not argv:
                 continue
             if label == "after" and after_model:

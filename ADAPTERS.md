@@ -17,11 +17,13 @@ Each adapter implements:
 | `read_usage_logs(ctx, since_days=30)` | Local usage records, already normalized. |
 | `install_hooks(ctx, plan, dry_run=True)` | **Planner only** — returns file changes, writes nothing. The installer applies backups and the manifest. |
 | `run_headless_task(ctx, task, opts)` | Refuses unless `opts["bench"]` is true. Runs only through a runner (`FakeHeadlessRunner` in tests). |
-| `undo(ctx, manifest_path)` | Adapter stub raises `NotImplementedError`. CLI undo uses `installer.undo_manifest`. |
+| `undo(ctx, manifest_path)` | Restores one run through the core's `installer.undo_manifest` (default: newest manifest). Raises `FileNotFoundError` if there is none. |
 | `watch_sessions(ctx, limit)` | Per-turn records for `watch` (model, history tokens, output tokens, tool-call count, Read paths only). `None` = not supported yet. Read-only. |
 | `token_tools(ctx)` | Installed token-saving helpers and their telemetry state (`off` / `on` / `not checked`) for the dashboard. Read-only; config reads only, never credentials. |
 | `model_tiers()` / `is_top_model(model)` / `model_switch_hint(model)` | Model picker facts: `{light, mid, top}` names (empty = no tier map), top-tier test, and the in-tool switch command. |
 | `plan_default_model(ctx, tier)` | **Planner only**: a `SetupItem` that sets the default model; the core applies it with backup + manifest. |
+| `official_command(prompt)` / `bench_key_env` / `supports_prepare` | Optional bench facts: the adapter's official headless argv, the env var *name* the API-key bench needs (its value is never read), and whether `bench --prepare` can scope that tool's logs to a repo. |
+| `watch_hint` | Optional: why `watch` cannot cover this tool yet, shown next to "not supported yet". |
 
 Normalized `UsageRecord` fields: `ts`, `session_id`, `model`, `is_subagent`, `input_tokens` (uncached), `cache_read_tokens`, `cache_write_tokens`, `output_tokens`, `reasoning_tokens`, `cost_usd` (only when the log actually has it), `source`.
 
@@ -29,7 +31,7 @@ HookPlan items, mapped inside the adapters (not the core): `pre_tool_shell_filte
 
 Privacy contract: adapters never fetch, never copy or symlink credential files, never open them (stat only: presence, mode, and permissions via `ctx.exists()` / `ctx.file_stat()`), and never invent savings. Cursor `state.vscdb` is never opened.
 
-`REGISTRY` is Host, Claude Code, Codex, then the doctor-only adapters (Gemini CLI, Copilot CLI, Cursor, Aider, OpenCode, Cline). Claude and Codex are tier 1. Host and the doctor-only adapters are tier 2. Doctor-only adapters implement `detect`, `read_config`, `list_instruction_files`, and `list_mcp_servers`, and plug existing check IDs. `install_hooks` returns no changes (`refused: doctor-only`). `run_headless_task` raises `HeadlessRefused` even with `--bench`.
+`REGISTRY` is Host, Claude Code, Codex, Gemini CLI, Copilot CLI, then the doctor-only adapters (Cursor, Aider, OpenCode, Cline). Claude Code, Codex, Gemini CLI, and Copilot CLI are tier 1. Host and the doctor-only adapters are tier 2. Doctor-only adapters implement `detect`, `read_config`, `list_instruction_files`, and `list_mcp_servers`, and plug existing check IDs. `install_hooks` returns no changes (`refused: doctor-only`). `run_headless_task` raises `HeadlessRefused` even with `--bench`.
 
 ## Claude Code (`adapters/claude_code.py`)
 
@@ -62,15 +64,14 @@ Privacy contract: adapters never fetch, never copy or symlink credential files, 
 
 ## Host / ecosystem (`adapters/host.py`, `host_logs.py`)
 
-No single vendor home. This adapter covers third-party tools, ports, timers, and cross-agent checks, plus the tested Copilot usage parser. Cline and OpenCode log paths and parsers now live on those doctor-only adapters (`host_logs.py` still holds the parser functions).
+No single vendor home. This adapter covers third-party tools, ports, timers, and cross-agent checks, Cline and OpenCode log paths and parsers now live on those doctor-only adapters (`host_logs.py` still holds the parser functions).
 
 - **Doctor-owned paths (never opened if they are credentials):** `~/.claude/.credentials.json`, `~/.codex/auth.json`, `~/.codex/.credentials.json`, `~/.caveman/credentials`, `~/.cache/anthropic`. Caveman CLI is inferred from `~/.config/caveman` or `~/.caveman` — the installer must not create those.
 - **P06 `credential-file-exposure`:** stat only. On macOS, a present `~/.claude/.credentials.json` means the Keychain fallback wrote a plaintext file. On any OS, group- or world-readable credential files (mode shown as e.g. `0644`) are flagged. Linux existence of `~/.claude/.credentials.json` at `0600` is the normal store and is not flagged.
 - **RTK:** `~/.config/rtk/config.toml` (`telemetry = false`; proxy never enabled), `~/.config/rtk/pipeline.toml`.
 - **TokenEconomizer:** `$TOKENECONOMIZER_HOME/config.json`, default `~/.tokeneconomizer/config.json`. Clean values: `{"microskills":"off","toolprune":"propose","loopguard":"off"}`.
 - **ccusage:** wrapper `~/.tokenstretch/bin/ccusage` (always `--offline`); pin dir `~/.tokenstretch/ccusage/` (package.json + lockfile + `npm ci`); `~/.claude/ccusage.json`.
-- **Logs (host parsers):**
-  - Copilot: `$COPILOT_HOME` or `~/.copilot/session-state/*/events.jsonl`, OTel file exporter / `~/.copilot/otel/*.jsonl`
+- **Logs:** none owned by the host. Copilot log paths and parsers live in the Copilot adapter; `host_logs.py` keeps the Cline and OpenCode parsers.
 
 Kit-owned (not vendor) paths used by install/bench: `~/.tokenstretch/manifests/`, `~/.tokenstretch/backups/`, `~/.tokenstretch/hooks/`.
 
@@ -82,24 +83,39 @@ Never part of Clean. Selected only with the explicit flags above. Dry-run by def
 
 Quoted start commands (manual; the installer does not launch the proxy): `headroom proxy --host 127.0.0.1 --port 8787 --no-telemetry` (avoid `headroom deploy` / `headroom install apply`; never set `HEADROOM_ALLOW_UNAUTHENTICATED_BIND`). Settings always include `HEADROOM_BEACON=off HEADROOM_TELEMETRY=off HEADROOM_UPDATE_CHECK=off DO_NOT_TRACK=1 HEADROOM_OFFLINE=1`. Optional container path: `ghcr.io/headroomlabs-ai/headroom:0.44.0@sha256:10ef5f71c4cae3a02ca28107dfcf379aa73314ff26544c1f9988140e71f732f4` (do not pin `:latest`). `kompressor serve --listen 127.0.0.1:8817` (never `kompressor wrap`, never Desktop intercept, never `/etc/kompressor/config.toml` which turns intercept ON, never the in-tree Dockerfile which binds `0.0.0.0:8817`). User config writes `[server] listen = "127.0.0.1:8817"` (`KOMPRESSOR__SERVER__LISTEN`) and `[proxy] websocket_relay = false`. Keep-warm is left unset (default off). A cargo fallback, if needed, is `cargo install --locked --git … --tag 1.5.14 --rev 9e4721abb1e11547a63205d60db870fde25f0c61 kompressor-cli`; the crate is not on crates.io. Headroom v0.44.0 source sets Claude `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` (no path) and Codex/OpenAI `http://127.0.0.1:8787/v1`. Doctor W10/P02 still recognize the `/v1` form. Kompressor URLs stay pathless.
 
-## Gemini CLI (`adapters/gemini_cli.py`) — doctor-only
+## Gemini CLI (`adapters/gemini_cli.py`) — tier 1
+
+Sources: gemini-cli docs (`docs/reference/configuration.md`, `docs/hooks/reference.md`, `docs/cli/headless.md`, `docs/cli/telemetry.md`, `docs/cli/gemini-ignore.md`, `docs/cli/model.md`) and source (`chatRecordingService.ts`, `config/storage.ts`, `config/projectRegistry.ts`, `output/types.ts`).
 
 - **Detect:** `gemini` on PATH, `~/.gemini/` (relocated by `GEMINI_CLI_HOME`), or project `.gemini/settings.json`.
-- **Settings:** system-defaults < user < project < system. Paths: `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` (else `<system-dir>/system-defaults.json`), `~/.gemini/settings.json`, project `.gemini/settings.json`, `GEMINI_CLI_SYSTEM_SETTINGS_PATH` (else `/etc/gemini-cli/settings.json`, macOS `/Library/Application Support/GeminiCli/settings.json`, Windows `%PROGRAMDATA%/gemini-cli/settings.json`). `$VAR` / `${VAR:-default}` in settings are expanded except secret-named vars (`API_KEY`, `TOKEN`, …), which are left literal and never logged.
+- **Settings:** system-defaults < user < project < system. Paths: `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` (else `<system-dir>/system-defaults.json`), `~/.gemini/settings.json`, project `.gemini/settings.json`, `GEMINI_CLI_SYSTEM_SETTINGS_PATH` (else `/etc/gemini-cli/settings.json`, macOS `/Library/Application Support/GeminiCli/settings.json`, Windows `%PROGRAMDATA%/gemini-cli/settings.json`). `$VAR` / `${VAR:-default}` in settings are expanded except secret-named vars (`API_KEY`, `TOKEN`, …), which are left literal and never logged. Edits are planned only for files that are plain JSON objects; a settings file with comments is left alone.
 - **Instructions:** `context.fileName` (default `GEMINI.md`): global `~/.gemini/<name>`, upward walk from cwd until `memoryBoundaryMarkers` (default `.git`) or home, downward scan capped by `discoveryMaxDirs` (default 200), and `@path` imports to depth 5 (counts toward W01 size).
-- **Auth (stat / env names only):** `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `GOOGLE_GENAI_USE_VERTEXAI` ⇒ api-key. Else presence of `~/.gemini/oauth_creds.json`, `gemini-credentials.json`, or `google_accounts.json` ⇒ subscription. Those files are never opened.
-- **MCP:** `mcpServers` in the merged settings files.
-- **Checks:** W01 (GEMINI.md size including @imports), W02 (AGENTS.md if listed), W05 (Pro-tier or `auto` model IDs; prices not hard-coded), W06 (`thinkingBudget` at the documented ceiling, `thinkingLevel` HIGH, or both set), W09 (OAuth/subscription without an API-key env name: token caching unavailable), P01 (`privacy.usageStatisticsEnabled` defaults to true; info), P02 (remote MCP), P03 (`~/.gemini/tmp/…/chats/` if present).
-- **Not flagged:** T01 OAuth-reuse by a third-party tool (would need a quoted reader of these files, not just presence).
+- **Auth (stat / env names only):** `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `GOOGLE_GENAI_USE_VERTEXAI` ⇒ api-key. Else presence of `~/.gemini/oauth_creds.json`, `gemini-credentials.json`, or `google_accounts.json` ⇒ subscription. Never opened: those files, `mcp-oauth-tokens.json`, `a2a-oauth-tokens.json`, and `~/.gemini/.env`.
+- **Base URLs:** `GOOGLE_GEMINI_BASE_URL` / `GOOGLE_VERTEX_BASE_URL` (documented; API-key and Vertex auth only), for the host's proxy checks.
+- **Usage logs:** `~/.gemini/tmp/<project>/chats/**/*.jsonl` (and legacy whole-file `*.json`). The first line is session metadata (`sessionId`, `kind`); messages with `type: "gemini"` carry `tokens {input, output, cached, thoughts, tool, total}` and `model`. A message id can be appended again with tokens filled in; the last copy wins. `$set.messages` is read; `$rewindTo` / `$patch` don't remove spent tokens. Project path comes from `<project>/.project_root` (a path only); older hash-named dirs are matched by `sha256(project root)`. Lines are prefiltered on `"tokens"` / `"sessionId"`, and only ids, timestamps, models, token counts, and tool-call counts are kept. Incremental through `logcache`.
+- **Watch / status:** per-turn history = `tokens.input + tokens.tool` (includes cached), tool-call count from `toolCalls`, no read paths. Hints: `/clear`, `/compress`.
+- **Bench:** `gemini -p PROMPT --output-format stream-json [--model M]`, `HOME` and `GEMINI_CLI_HOME` set to the sandbox; `privacy.usageStatisticsEnabled: false` is written to the sandbox settings first. Usage from the final `{"type":"result","stats":{input_tokens, cached, output_tokens, models}}` event. API-key bench needs `GEMINI_API_KEY` (name only). `bench --prepare` prints the same command; `--measure` scopes records by the `.project_root` path.
+- **Hooks (Clean profile):** `session_start_note` ⇒ `hooks.SessionStart` in `~/.gemini/settings.json` running `sh ~/.tokenstretch/hooks/gemini-session-start.sh`, which prints `{"systemMessage": …}` (shown to you, not added to context). `pre_read_gate` ⇒ project `.geminiignore` with dependency/build folders not already in `.gitignore`. `pre_tool_shell_filter` is RTK's own `rtk init -g --gemini` (BeforeTool), listed by `install_steps`.
+- **Setup:** usage statistics off; rules block in an existing project `GEMINI.md` (skipped when another file Gemini loads already has one).
+- **Models:** tiers `flash-lite` / `flash` / `pro`; `plan_default_model` edits `model.name`. Top model: Pro IDs.
+- **Checks:** W01, W02, W05 (Pro or `auto`), W06 (thinking budget/level), W09 (OAuth: caching unavailable), W14 (median session peak history over 150K), W16 (`billing.overageStrategy: "always"`), W20 (`model.compressionThreshold` ≥ 0.9), P01 (usage statistics default on; OpenTelemetry export to GCP or a non-loopback endpoint, high when `logPrompts` is on, with `GEMINI_TELEMETRY_*` env overrides), P02 (remote MCP), P03 (chat retention; local telemetry file with prompts), P05 (`general.enableAutoUpdate` default true).
+- **Not flagged:** T01 OAuth reuse by a third-party tool (would need a quoted reader of these files, not just presence).
 
-## GitHub Copilot CLI (`adapters/copilot_cli.py`) — doctor-only
+## GitHub Copilot CLI (`adapters/copilot_cli.py`) — tier 1
+
+Sources: docs.github.com Copilot CLI command reference, configuration-directory reference, hooks configuration, OpenTelemetry reference, programmatic reference, and Chronicle. `events.jsonl` token fields follow ccusage.
 
 - **Home / env:** `$COPILOT_HOME` or `~/.copilot`.
-- **Settings:** `~/.copilot/settings.json`, plus project `.github/copilot/settings.json` and `settings.local.json` when present. BYOK if `COPILOT_PROVIDERS_CONFIG` is set.
+- **Settings:** user `~/.copilot/settings.json` < repo `.github/copilot/settings.json` < `settings.local.json` < managed (`/Library/Application Support/GitHubCopilot/managed-settings.json` on macOS, `/etc/github-copilot/managed-settings.json` on Linux). Keys read: `model` (legacy `permissions.model`; `COPILOT_MODEL` wins), `effortLevel`, `remoteExport`, `remoteSessions`, `storeTokenPlaintext`, `autoUpdate` (`COPILOT_AUTO_UPDATE`), `continueOnAutoMode`, `defaultPermissionMode`, `subagents.maxConcurrency` (`COPILOT_SUBAGENT_MAX_CONCURRENT`). BYOK if `COPILOT_PROVIDERS_CONFIG` or `providers.json` exists. Never opened: `config.json` (can hold plaintext tokens) and `providers.json`.
 - **Instructions:** `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`, project `AGENTS.md`, or root `CLAUDE.md` / `GEMINI.md`.
-- **MCP:** `~/.copilot/mcp-config.json`.
-- **Checks:** W01 / W02 (instruction size), W06 if `effort` or `reasoning-effort` is `max` (CLI flags are documented; the JSON key names are read only when present), P02 (`remoteExport` defaults to true — session history may sync to the account — and remote MCP), P03 (`logs/` or `session-state/` if present).
-- **Not flagged (unverified):** settings.json key for `--disable-client-telemetry`; `--fleet` key. Usage logs remain on the host parser (ccusage-only events.jsonl).
+- **MCP:** `~/.copilot/mcp-config.json`. **Hooks read:** `~/.copilot/hooks/*.json`, `.github/hooks/*.json`.
+- **Usage logs:** `session-state/<id>/events.jsonl` `session.shutdown` totals per model (ccusage-only, unverified semantics), plus `chat` spans from the OTel file export (`COPILOT_OTEL_FILE_EXPORTER_PATH`, or `~/.copilot/otel/*.jsonl`): `gen_ai.usage.{input_tokens, output_tokens, cache_read.input_tokens, cache_write.input_tokens, reasoning.output_tokens}`, `gen_ai.response.model`, `gen_ai.conversation.id`. Spans win over the same session's shutdown totals; `invoke_agent` spans are skipped (they repeat the chat totals). Content attributes are never read.
+- **Watch / status:** only from OTel `chat` spans; without the file export `watch` says it's not supported (with a hint).
+- **Bench:** `copilot -p PROMPT --output-format json --disable-client-telemetry --sync-session=off [--model=M] --session-id <uuid>`, `COPILOT_HOME` in the sandbox, and `COPILOT_OTEL_FILE_EXPORTER_PATH` / `COPILOT_OTEL_EXPORTER_TYPE=file` / content capture off for that run only. Usage from that session's spans, else its `events.jsonl`. No `--allow-all-tools`. API-key bench needs `COPILOT_GITHUB_TOKEN` (name only). Not in `bench --prepare`.
+- **Hooks (Clean profile):** none planned. `sessionStart` output only feeds the model (extra tokens), and there is no native read deny list. RTK is `rtk init -g --copilot` (deny-with-suggestion in the CLI), listed by `install_steps`.
+- **Setup:** rules block in an existing `.github/copilot-instructions.md`, skipped when `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` already has one.
+- **Models:** no tier map yet; top model test: Opus.
+- **Checks:** W01 / W02, W05 (Opus default; info), W06 (`effortLevel` xhigh or max), W13 (subagent concurrency over 8), W16 (`continueOnAutoMode`), W18 (`defaultPermissionMode: "allow-all"` or `COPILOT_ALLOW_ALL`), P01 (client telemetry: unknown unless an rc alias passes `--disable-client-telemetry`; OTLP HTTP export, high with content capture), P02 (`remoteExport` default true; `remoteSessions` med; remote MCP), P03 (`logs/` / `session-state/`; local OTel file with content capture), P05 (`autoUpdate` default true), P06 (`storeTokenPlaintext: true`, high; `config.json` stat only).
 
 ## Cursor (`adapters/cursor.py`) — doctor-only
 

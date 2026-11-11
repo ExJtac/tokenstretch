@@ -13,6 +13,7 @@ import pytest
 
 from conftest import copy_fixture
 from tokenstretch.adapters.base import HeadlessRefused
+from tokenstretch.adapters.copilot_cli import CopilotCliAdapter
 from tokenstretch.adapters.claude_code import ClaudeCodeAdapter
 from tokenstretch.adapters.codex import CodexAdapter
 from tokenstretch.adapters.cline import ClineAdapter
@@ -272,7 +273,8 @@ def test_host_parsers_copilot_cline_opencode(tmp_path):
     _write_host_logs(home)
     ctx = build_context(home, root, sysd)
     recs = []
-    recs.extend(HostAdapter().read_usage_logs(ctx, since_days=400))
+    assert HostAdapter().read_usage_logs(ctx, since_days=400) == []  # Copilot paths moved to its adapter
+    recs.extend(CopilotCliAdapter().read_usage_logs(ctx, since_days=400))
     recs.extend(ClineAdapter().read_usage_logs(ctx, since_days=400))
     recs.extend(OpenCodeAdapter().read_usage_logs(ctx, since_days=400))
 
@@ -325,11 +327,11 @@ def test_host_parsers_copilot_cline_opencode(tmp_path):
     report = from_logs(ctx, since_days=365)
     text = format_from_logs(report)
     assert "unverified semantics" in text
-    host = next(s for s in report.adapters if s.adapter_id == "host")
-    assert host.unverified_semantics is True
+    cop = next(s for s in report.adapters if s.adapter_id == "copilot-cli")
+    assert cop.unverified_semantics is True
     # Never sum vendor cost with a computed cost — only report cost when every record has one.
-    # Copilot shutdown has no cost_usd, so host cost must be no measurement.
-    assert host.cost_usd is None
+    # Copilot shutdown has no cost_usd, so its cost must be no measurement.
+    assert cop.cost_usd is None
     assert f"cost_usd: {NO_MEASUREMENT}" in text
 
 

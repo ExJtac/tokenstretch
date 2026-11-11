@@ -338,12 +338,15 @@ def plan_file_changes(ctx: Context, plan: HookPlan | None = None, tool_ids: set[
             if not key or key in seen:
                 continue
             seen.add(key)
-            changes.append({
+            item = {
                 "path": key,
                 "kind": ch.get("kind") or "modify",
                 "content": ch.get("content") or "",
                 "reason": ch.get("reason") or "",
-            })
+            }
+            if ch.get("mode") is not None:
+                item["mode"] = ch["mode"]
+            changes.append(item)
         extra = getattr(ad, "planned_support_files", None)
         if callable(extra):
             for ch in extra(ctx, wanted) or []:

@@ -180,7 +180,11 @@ class Watcher:
         for ad in self.adapters:
             if ad.id == "host":
                 continue
-            (yes if ad.watch_sessions(self.ctx, limit=0) is not None else no).append(ad.display_name)
+            if ad.watch_sessions(self.ctx, limit=0) is not None:
+                yes.append(ad.display_name)
+            else:
+                hint = getattr(ad, "watch_hint", "")
+                no.append(f"{ad.display_name} ({hint})" if hint else ad.display_name)
         return yes, no
 
     def scan(self) -> list[WatchWarning]:

@@ -114,8 +114,8 @@ def test_run_headless_task_refuses_without_bench():
         ad.run_headless_task(ctx, {"prompt": "hi"}, opts={"bench": False})
 
 
-def test_undo_stub_raises():
-    with pytest.raises(NotImplementedError):
+def test_undo_without_manifest_raises():
+    with pytest.raises(FileNotFoundError):
         next(a for a in REGISTRY if a.id == "claude-code").undo(build_context(), manifest_path="/nonexistent/manifest.json")
 
 

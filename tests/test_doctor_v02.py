@@ -1,4 +1,4 @@
-"""Doctor-only adapters for Gemini CLI, Copilot CLI, Cursor, and Aider."""
+"""Doctor checks for Gemini CLI and Copilot CLI, and the doctor-only Cursor, Aider, OpenCode, and Cline adapters."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,7 +18,7 @@ def _ad(aid: str):
 def test_new_adapters_are_doctor_only():
     ids = {ad.id for ad in REGISTRY}
     assert {"gemini-cli", "copilot-cli", "cursor", "aider", "opencode", "cline"} <= ids
-    for aid in ("gemini-cli", "copilot-cli", "cursor", "aider", "opencode", "cline"):
+    for aid in ("cursor", "aider", "opencode", "cline"):  # Gemini CLI and Copilot CLI are tier 1 now
         ad = _ad(aid)
         assert ad.tier == 2
         ctx = build_context()

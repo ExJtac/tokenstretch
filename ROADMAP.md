@@ -10,7 +10,9 @@
 ## Next
 - A Codex tier map for `model suggest` / `model default`, once the model names are verified from docs.
 - One-key setup for more tools: a mid-tier default model for Codex (once the model names are verified from docs).
-- Verify Copilot, Cline, and OpenCode log paths and token fields against real installs (they're marked unverified today).
+- Verify Copilot, Cline, and OpenCode log paths and token fields against real installs (they're marked unverified today). Copilot: whether `events.jsonl` input includes cache, the OTel file line envelope, and a documented usage record in `-p --output-format json`.
+- A Copilot CLI tier map for `model default`, once GitHub's model list and multipliers can be pinned from docs.
+- Gemini CLI and Copilot CLI: use `install_steps` (RTK `--gemini` / `--copilot`) from setup's pinned-install step instead of asking you to run them.
 - Exercise the live pinned installs on macOS and Linux outside the test suite.
 
 - Codex session labels in `watch` / `dashboard`: use the rollout's working directory instead of the date folder.

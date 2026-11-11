@@ -62,7 +62,8 @@ Setup only proposes a change when it applies to your machine, and it always show
 | Change | File | Why |
 |---|---|---|
 | Default Claude Code model → `sonnet` (only if the default is Opus/Fable or unset) | `~/.claude/settings.json` (or the project settings file that sets `model`), key `model` | The top model costs several times more per step. You can still use it for hard work with `/model opus`. |
-| 5 short credit-saving rules: start each task fresh, read narrowly, don't re-read, run subagents on the mid-tier model, keep replies short | project `CLAUDE.md` (and `AGENTS.md` if Codex is installed), in a marked block | Long sessions re-read their whole history on every step. |
+| 5 short credit-saving rules: start each task fresh, read narrowly, don't re-read, run subagents on the mid-tier model, keep replies short | project `CLAUDE.md` (and `AGENTS.md` if Codex is installed; an existing `GEMINI.md` for Gemini CLI or `.github/copilot-instructions.md` for Copilot CLI, unless Copilot already loads a rules block from `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`), in a marked block. Setup never creates a new Gemini or Copilot instruction file. | Long sessions re-read their whole history on every step. |
+| Gemini CLI usage statistics off | `~/.gemini/settings.json`, key `privacy.usageStatisticsEnabled` | It defaults to on and sends usage statistics to Google. |
 | Caveman telemetry off | `~/.caveman/cloud.json`, key `telemetry.enabled` | The Caveman CLI reports usage, including your IP, by default. |
 | RTK telemetry back off (only if someone turned it on) | `~/.config/rtk/config.toml`, key `telemetry` | Privacy. |
 | *Optional, asked separately because it downloads:* pinned installs of RTK OSS v1.2.0 (`RTK_EDITION=oss`, commit `e288a18`) and the Caveman **skill only** v4.1.0 (commit `1e91f13`) | pinned in `tokenstretch/catalog.py` | Shell-output compression and terse replies, from pinned, hash-checked sources. |
@@ -163,7 +164,7 @@ Why: +2 mentions concurrency/leak bug (score +2).
 
 `model suggest` scores the task with simple rules you can read in `tokenstretch/models.py`: words like architecture, broad refactor, migration, race condition, security, or root cause push toward **top**; rename, typo, formatting, docs, or a version bump push toward **light**; tests and small fixes lean **mid**; naming many files or a long description pushes up. It makes no model calls. **It's a rule of thumb, not a measured result**, so move up a tier if the answer comes back wrong. `--file prompt.txt` reads the task from a file and `--json` prints machine-readable output.
 
-`tokenstretch model default --tier mid` shows the change to your default model (Claude Code: `model` in `settings.json`). Add `--apply` to make it. The file is backed up first and `tokenstretch undo` restores it. `--tool claude` limits it to one tool. Codex has no tier map yet, so the picker tells you to use `/model` there.
+`tokenstretch model default --tier mid` shows the change to your default model (Claude Code: `model` in `settings.json`). Add `--apply` to make it. The file is backed up first and `tokenstretch undo` restores it. `--tool claude` limits it to one tool. Gemini CLI uses its documented aliases (`flash-lite` / `flash` / `pro`, key `model.name` in `~/.gemini/settings.json`). Codex and Copilot CLI have no tier map yet, so the picker tells you to use `/model` there.
 
 ## Honest results
 
@@ -195,8 +196,10 @@ Your mileage will differ. Run `tokenstretch bench` on your own repo (see `LIVE-B
 
 | Tier | Tools | What works |
 |---|---|---|
-| 1 (full) | **Claude Code**, **Codex** | doctor, setup, status, watch, model suggest, bench, pinned installs, undo (`model default`: Claude Code) |
-| Doctor-only | Gemini CLI, Copilot CLI, Cursor, Aider, OpenCode, Cline | doctor checks and privacy listing |
+| 1 (full) | **Claude Code**, **Codex**, **Gemini CLI**, **Copilot CLI** | doctor, setup, status, watch, report, dashboard, model suggest, bench, Clean-profile hooks, undo (`model default`: Claude Code, Gemini CLI) |
+| Doctor-only | Cursor, Aider, OpenCode, Cline | doctor checks and privacy listing |
+
+Gemini CLI and Copilot CLI limits: Copilot's per-turn usage (for `watch`) only exists when you turn on its local OpenTelemetry file export (`COPILOT_OTEL_FILE_EXPORTER_PATH`); otherwise usage comes from session totals in `~/.copilot/session-state/*/events.jsonl`, whose token fields follow ccusage rather than GitHub docs and are marked unverified. Copilot client telemetry can only be turned off with the `--disable-client-telemetry` flag, so doctor reports it as unknown unless an alias passes it. `bench --prepare` covers Gemini CLI but not Copilot CLI (its logs don't record the repo). RTK's hooks for these tools are wired by `rtk init -g --gemini` / `rtk init -g --copilot`, which you run yourself.
 | Planned | Goose, Devin (see `ROADMAP.md`) | |
 
 Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add one, see `CONTRIBUTING.md` and `ADAPTERS.md`.

@@ -213,8 +213,15 @@ class Adapter:
         return {"exitCode": ran.exit_code, "usage": usage, "rawOutput": ran.stdout or "", "stderr": ran.stderr or ""}
 
     def undo(self, ctx: Context, manifest_path: str | None = None) -> dict:
-        """Stub until undo lands. Raises so callers cannot assume a restore happened."""
-        raise NotImplementedError("undo is not implemented")
+        """Restore one install/setup run from its manifest (default: the newest one) via the core.
+
+        Raises FileNotFoundError if there is no such manifest, so callers cannot assume a restore happened.
+        """
+        from ..installer import latest_manifest, undo_manifest
+        path = Path(manifest_path) if manifest_path else latest_manifest(ctx)
+        if path is None or not path.is_file():
+            raise FileNotFoundError(f"no install manifest to undo: {path or 'none recorded'}")
+        return undo_manifest(path)
 
     # ---- discovery (compat helpers used by doctor) --------------------------------
     def config_locations(self, ctx: Context) -> list[ConfigLocation]:

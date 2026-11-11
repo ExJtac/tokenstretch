@@ -4,7 +4,7 @@ This is a short, local-only walkthrough for someone who already uses Claude Code
 
 **Subscription mode is the default for you.** tokenstretch never copies, symlinks, or opens credential files. Codex replaces `auth.json` with a `rename()`, which would break a symlink, and Anthropic’s terms say developers may not collect, store, or intermediate Claude.ai credentials. The kit therefore does not touch your login. You run the official `claude` and `codex` binaries yourself, unmodified, already signed in, as ordinary use. The kit only prepares sandbox *repo* copies and later reads the resulting session logs.
 
-There is a second, automated path — API-key mode (`bench --bench`) — if you have already exported `ANTHROPIC_API_KEY` / `CODEX_API_KEY`. That path uses `claude --bare` (which does not use a subscription login) and a throwaway `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. Use it for scripted runs; it does not measure a subscription session.
+There is a second, automated path — API-key mode (`bench --bench`) — if you have already exported `ANTHROPIC_API_KEY` / `CODEX_API_KEY` (Gemini CLI: `GEMINI_API_KEY`; Copilot CLI: `COPILOT_GITHUB_TOKEN`). That path uses `claude --bare` (which does not use a subscription login) and a throwaway `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. Use it for scripted runs; it does not measure a subscription session.
 
 ## Prerequisites
 
@@ -123,12 +123,13 @@ Credential files are **only checked with stat** (presence, mode, and permissions
 - `~/.codex/auth.json` and `~/.codex/.credentials.json`
 - `~/.caveman/credentials`
 - `~/.cache/anthropic` (the path itself; contents are not opened)
-- `~/.gemini/oauth_creds.json`, `gemini-credentials.json`, `google_accounts.json`
+- `~/.gemini/oauth_creds.json`, `gemini-credentials.json`, `google_accounts.json`, `mcp-oauth-tokens.json`, `a2a-oauth-tokens.json`, `.env`
+- `~/.copilot/config.json` (can hold plaintext tokens) and `~/.copilot/providers.json`
 - `~/.aider/oauth-keys.env`
 
 Cursor `state.vscdb` is never opened (User Rules and Privacy Mode are account/cloud settings).
 
-**`bench --from-logs` and `bench --measure`** read local usage logs only: `~/.claude/projects/**/*.jsonl`, `~/.codex/{sessions,archived_sessions}/**/*.jsonl`, and Copilot / Cline / OpenCode logs if those tools are present. `--measure` keeps only records in the prepare window that are scoped to the before/after sandbox dirs. Neither command opens credential files.
+**`bench --from-logs` and `bench --measure`** read local usage logs only: `~/.claude/projects/**/*.jsonl`, `~/.codex/{sessions,archived_sessions}/**/*.jsonl`, `~/.gemini/tmp/*/chats/**`, and Copilot / Cline / OpenCode logs if those tools are present. `--measure` keeps only records in the prepare window that are scoped to the before/after sandbox dirs. Neither command opens credential files.
 
 **`install` (dry-run)** reads the same kind of config in order to print a plan. It writes nothing unless you pass `--apply`.
 

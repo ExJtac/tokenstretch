@@ -1,9 +1,7 @@
-"""Usage-log parsers for Copilot CLI, Cline, and OpenCode.
+"""Usage-log parsers for Cline and OpenCode (Copilot parsing moved to the Copilot adapter).
 
-Copilot log paths stay here (host adapter). Cline and OpenCode paths live in
-those doctor-only adapters; this module keeps the parsers and a collect helper.
-Cline and Copilot input is
-treated as uncached and flagged `unverified_semantics`.
+Cline and OpenCode paths live in those adapters; this module keeps the parsers and a
+collect helper. Cline input is treated as uncached and flagged `unverified_semantics`.
 OpenCode input already excludes cache (verified-in-source).
 SQLite is opened read-only via a file: URI with mode=ro.
 """
@@ -23,13 +21,6 @@ from ..usage import (
 )
 
 UNVERIFIED = "unverified semantics: whether input includes cache is not confirmed"
-
-
-def _copilot_roots(ctx: Context) -> list[Path]:
-    val, _ = ctx.env_or_rc("COPILOT_HOME")
-    if val:
-        return [Path(p.strip()).expanduser() for p in val.split(",") if p.strip()]
-    return [ctx.home / ".copilot"]
 
 
 def _cline_data(ctx: Context) -> Path:
@@ -67,31 +58,8 @@ def _vscode_global_storage_roots(ctx: Context) -> list[Path]:
 
 
 def default_paths(ctx: Context) -> list[Path]:
-    out: list[Path] = []
-    for root in _copilot_roots(ctx):
-        state = root / "session-state"
-        if state.is_dir():
-            out.extend(state.glob("*/events.jsonl"))
-        otel = root / "otel"
-        if otel.is_dir():
-            out.extend(otel.glob("*.jsonl"))
-        otel_path, _ = ctx.env_or_rc("COPILOT_OTEL_FILE_EXPORTER_PATH")
-        if otel_path:
-            out.append(Path(otel_path).expanduser())
-    # Cline and OpenCode paths are collected by those adapters.
-    # unique
-    seen = set()
-    uniq = []
-    for p in out:
-        try:
-            key = p.resolve()
-        except OSError:
-            key = p
-        if key in seen:
-            continue
-        seen.add(key)
-        uniq.append(p)
-    return uniq
+    """No host-owned log paths: Copilot, Cline, and OpenCode paths live in those adapters."""
+    return []
 
 
 def sniff(path: Path, first_lines: list[str]) -> bool:
@@ -132,58 +100,10 @@ def parse_path(path: Path, adapter_id: str = "host") -> tuple[list[UsageRecord],
 
 
 def parse_copilot(path: Path, adapter_id: str) -> tuple[list[UsageRecord], list[str]]:
-    records: list[UsageRecord] = []
-    notices: list[str] = []
-    session_id = path.parent.name if path.name == "events.jsonl" else path.stem
-    for obj, notice in iter_jsonl(path):
-        if notice and obj is None:
-            notices.append(notice)
-            continue
-        if not isinstance(obj, dict):
-            continue
-        typ = obj.get("type") or obj.get("name")
-        # events.jsonl session.shutdown (ccusage-derived shape)
-        if typ == "session.shutdown":
-            data = obj.get("data") or {}
-            metrics = data.get("modelMetrics") or {}
-            ts = parse_ts(obj.get("timestamp"))
-            for model, entry in metrics.items():
-                usage = (entry or {}).get("usage") or {}
-                norm = normalize_usage(
-                    input_tokens=int(usage.get("inputTokens") or usage.get("input_tokens") or 0),
-                    cache_read=int(usage.get("cacheReadTokens") or 0),
-                    cache_write=int(usage.get("cacheWriteTokens") or 0),
-                    output=int(usage.get("outputTokens") or 0),
-                    reasoning=int(usage.get("reasoningTokens") or 0),
-                    input_includes_cache=False,
-                )
-                rec = record_from_normalized(
-                    adapter_id, "log", norm, session_id=session_id, model=str(model),
-                    ts=ts, unverified_semantics=True, notes=[UNVERIFIED],
-                    extra={"path": str(path), "event": "session.shutdown"},
-                )
-                records.append(rec)
-            continue
-        # OTel span (documented fields)
-        attrs = obj.get("attributes") or obj.get("data") or {}
-        if typ in {"chat", "invoke_agent"} or "gen_ai.usage.input_tokens" in attrs or "gen_ai.usage.output_tokens" in attrs:
-            norm = normalize_usage(
-                input_tokens=int(attrs.get("gen_ai.usage.input_tokens") or 0),
-                cache_read=int(attrs.get("gen_ai.usage.cache_read.input_tokens") or 0),
-                cache_write=int(attrs.get("gen_ai.usage.cache_creation.input_tokens") or 0),
-                output=int(attrs.get("gen_ai.usage.output_tokens") or 0),
-                reasoning=0,
-                input_includes_cache=False,
-            )
-            rec = record_from_normalized(
-                adapter_id, "log", norm, session_id=session_id,
-                model=attrs.get("gen_ai.response.model"),
-                ts=parse_ts(obj.get("timestamp") or attrs.get("ts")),
-                unverified_semantics=True, notes=[UNVERIFIED],
-                extra={"path": str(path), "span": typ or "otel"},
-            )
-            records.append(rec)
-    return records, notices
+    """Copilot events.jsonl / OTel file parsing lives in the Copilot adapter; this keeps old callers working."""
+    from .copilot_cli import parse_events, parse_otel_file
+    recs = parse_events(path, adapter_id) if path.name == "events.jsonl" else parse_otel_file(path, adapter_id)
+    return recs, []
 
 
 def parse_cline_messages(path: Path, adapter_id: str) -> tuple[list[UsageRecord], list[str]]:
