@@ -309,7 +309,7 @@ def _copilot_home(w: Path, settings: dict | None = None) -> Path:
 
 SHUTDOWN = {"type": "session.shutdown", "id": "e1", "timestamp": "2026-11-09T18:30:00.000Z",
             "data": {"modelMetrics": {"claude-sonnet-4.5": {"requests": {"count": 3}, "usage": {
-                "inputTokens": 1000, "outputTokens": 200, "cacheReadTokens": 5000, "cacheWriteTokens": 100,
+                "inputTokens": 6100, "outputTokens": 200, "cacheReadTokens": 5000, "cacheWriteTokens": 100,
                 "reasoningTokens": 0}}}}}
 
 
@@ -336,8 +336,8 @@ def test_copilot_events_and_otel_with_dedupe(tmp_path):
     otel.parent.mkdir(parents=True)
     t0 = 1_794_249_000 * 10**9
     otel.write_text("\n".join(json.dumps(x) for x in (
-        _chat_span("sess-a", t0, 300, 2000, 50),
-        _chat_span("sess-a", t0 + 10**9, 400, 2500, 60, envelope=True),
+        _chat_span("sess-a", t0, 2300, 2000, 50),  # input includes cache
+        _chat_span("sess-a", t0 + 10**9, 2900, 2500, 60, envelope=True),
         {"name": "invoke_agent", "attributes": {"gen_ai.operation.name": "invoke_agent", "gen_ai.conversation.id": "sess-a",
                                                  "gen_ai.usage.input_tokens": 700}},
     )) + "\n")
@@ -349,7 +349,8 @@ def test_copilot_events_and_otel_with_dedupe(tmp_path):
     assert len(a) == 2 and all(r.extra["span"] == "chat" for r in a)
     assert sum(r.input_tokens for r in a) == 700 and sum(r.cache_read_tokens for r in a) == 4500
     assert len(b) == 1 and b[0].input_tokens == 1000 and b[0].turns == 3
-    assert all(r.unverified_semantics for r in recs)
+    assert not any(r.unverified_semantics for r in recs)
+    assert all("UNVERIFIED" in " ".join(r.notes) for r in recs)  # events: older files; OTel: line envelope
     with credential_guard():
         ws = COP.watch_sessions(_ctx(w), limit=5)
     assert [t["history_tokens"] for t in ws[0]["turns"]] == [2300, 2900]
@@ -371,7 +372,7 @@ class _OtelWritingRunner:
     def run(self, argv, *, cwd, env=None, timeout=120):
         self.calls.append({"argv": list(argv), "env": dict(env or {})})
         sid = argv[argv.index("--session-id") + 1]
-        Path(env["COPILOT_OTEL_FILE_EXPORTER_PATH"]).write_text(json.dumps(_chat_span(sid, 10**18, 100, 900, 20)) + "\n")
+        Path(env["COPILOT_OTEL_FILE_EXPORTER_PATH"]).write_text(json.dumps(_chat_span(sid, 10**18, 1000, 900, 20)) + "\n")
         return HeadlessResult(list(argv), str(cwd), 0, '{"type":"workflow.result"}\n', "")
 
 
@@ -450,10 +451,10 @@ def test_copilot_setup_rules_and_install_steps(tmp_path):
     assert steps[0].command == ["rtk", "init", "-g", "--copilot"] and steps[0].manual
     assert GEM.install_steps("rtk-oss", ctx, {})[0].command == ["rtk", "init", "-g", "--gemini"]
     assert COP.install_hooks(ctx, HookPlan(items=list(CLEAN_HOOK_PLAN_ITEMS)))["changes"] == []
-    assert COP.model_tiers() == {}
+    assert COP.model_tiers() == {"light": "claude-haiku-5.5", "mid": "claude-sonnet-5.5", "top": "claude-opus-5.5"}
     lines: list[str] = []
     assert run_default(ctx, "mid", tool="copilot", out=lines.append, adapters=[COP]) == 0
-    assert "not supported yet" in lines[0]
+    assert any("claude-sonnet-5.5" in ln for ln in lines) and any("Dry run" in ln for ln in lines)
 
 
 def test_bench_includes_detected_gemini_and_copilot(tmp_path, monkeypatch):
@@ -464,7 +465,7 @@ def test_bench_includes_detected_gemini_and_copilot(tmp_path, monkeypatch):
     ctx = _ctx(w)
     rep = prepare_bench(ctx, {"prompt": "hi"}, dest=w / "prep")
     adapters = {c["adapter"] for c in rep.commands["before"]}
-    assert "gemini-cli" in adapters and "copilot-cli" not in adapters  # Copilot logs cannot be scoped to a repo
+    assert "gemini-cli" in adapters and "copilot-cli" in adapters  # Copilot sessions carry session.start cwd
     gem_cmd = next(c for c in rep.commands["before"] if c["adapter"] == "gemini-cli")
     assert gem_cmd["argv"][:2] == ["gemini", "-p"]
     for name in ("ANTHROPIC_API_KEY", "CODEX_API_KEY", "GEMINI_API_KEY", "COPILOT_GITHUB_TOKEN"):

@@ -5,7 +5,12 @@ Normalization rules:
 - Codex: input includes cache; uncached = input − cached − cache_write, clamped at 0.
 - OpenCode: input already excludes cache.
 - Cline metrics.inputTokens already includes cache; uncached = input − cacheRead − cacheWrite, clamped at 0. Legacy ui_messages.json tokensIn is still unverified.
-- Copilot: treat input as uncached and flag unverified semantics.
+- Copilot: input includes cache read and write (/usage help and OTel metric docs); reasoning is
+  part of output.
+- Gemini: input (promptTokenCount) includes cached; tool-use prompt tokens are added on top;
+  thoughts are separate from output.
+- `output` in a normalized record never includes `reasoning`, so the five buckets add up to the
+  total. Pass reasoning_in_output=True when the source's output count already contains reasoning.
 Never invent cost figures. Missing data is represented as None / "no measurement".
 """
 from __future__ import annotations
@@ -38,6 +43,7 @@ def normalize_usage(
     output: int = 0,
     reasoning: int = 0,
     input_includes_cache: bool = False,
+    reasoning_in_output: bool = False,
 ) -> dict[str, int]:
     if input_includes_cache:
         uncached, cache_read, cache_write = clamp_included_cache(input_tokens, cache_read, cache_write)
@@ -45,12 +51,16 @@ def normalize_usage(
         uncached = max(0, int(input_tokens or 0))
         cache_read = max(0, int(cache_read or 0))
         cache_write = max(0, int(cache_write or 0))
+    output, reasoning = max(0, int(output or 0)), max(0, int(reasoning or 0))
+    if reasoning_in_output:
+        reasoning = min(reasoning, output)
+        output -= reasoning
     return {
         "input_uncached": uncached,
         "cache_read": cache_read,
         "cache_write": cache_write,
-        "output": max(0, int(output or 0)),
-        "reasoning": max(0, int(reasoning or 0)),
+        "output": output,
+        "reasoning": reasoning,
     }
 
 

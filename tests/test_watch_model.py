@@ -204,7 +204,7 @@ def test_model_default_dry_run_then_apply_then_undo(tmp_path):
     data = json.loads(settings.read_text(encoding="utf-8"))
     assert data == {"model": "haiku", "theme": "dark"}
     assert "backed up" in out and "tokenstretch undo" in out
-    assert "already on haiku" in _cli(w, "model", "default", "--tier", "light", "--apply")
+    assert "already on the light tier (haiku)" in _cli(w, "model", "default", "--tier", "light", "--apply")
 
     _cli(w, "undo")
     assert settings.read_bytes() == original

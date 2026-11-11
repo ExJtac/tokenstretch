@@ -93,6 +93,8 @@ def tool_picks(ctx: Context, tier: str, adapters=None) -> list[dict]:
         tiers = ad.model_tiers()
         model = tiers.get(tier)
         out.append({"adapter": ad.id, "tool": ad.display_name, "detected": bool(detected), "model": model,
+                    "alternatives": list(ad.model_tier_alternatives().get(tier) or []) if model else [],
+                    "note": ad.model_tier_note() if model else "",
                     "switch": ad.model_switch_hint(model) if model else ad.model_switch_hint(""),
                     "supported": bool(tiers) or bool(ad.model_switch_hint(""))})
     return out
@@ -104,7 +106,10 @@ def format_suggestion(res: dict, picks: list[dict]) -> list[str]:
     for p in picks:
         label = p["tool"] + ("" if p["detected"] else " (not detected; example)")
         if p["model"]:
-            lines.append(f"  {label}: {p['model']}  (switch now: `{p['switch']}`)")
+            alt = f" or {', '.join(p['alternatives'])}" if p.get("alternatives") else ""
+            lines.append(f"  {label}: {p['model']}{alt}  (switch now: `{p['switch']}`)")
+            if p.get("note"):
+                lines.append(f"    ({p['note']})")
         elif p["switch"]:
             lines.append(f"  {label}: no tier names known yet; pick a {res['tier']} model with `{p['switch']}`")
         else:
@@ -131,7 +136,8 @@ def run_default(ctx: Context, tier: str, *, tool: str | None = None, apply: bool
             continue
         item = ad.plan_default_model(ctx, tier)
         if item is None:
-            out(f"{ad.display_name}: already on {ad.model_tiers()[tier]} (or its settings file is unreadable); nothing to change.")
+            out(f"{ad.display_name}: already on the {tier} tier ({ad.model_tiers()[tier]}), or its settings file "
+                "can't be edited safely; nothing to change.")
             continue
         items.append(item)
     if not items:

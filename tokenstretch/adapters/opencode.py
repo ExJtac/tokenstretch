@@ -154,7 +154,7 @@ class OpenCodeAdapter(DoctorOnlyAdapter):
     id = "opencode"
     display_name = "OpenCode"
     vendor_terms = "OpenCode (provider-dependent)"
-    implemented_checks = frozenset({"W01", "W02", "T04", "P02", "P03"})
+    implemented_checks = frozenset({"W01", "W02", "T01", "T04", "P02", "P03"})
 
     def detect(self, ctx: Context) -> DetectResult:
         binary = ctx.which("opencode")
@@ -303,9 +303,41 @@ class OpenCodeAdapter(DoctorOnlyAdapter):
                 "Keep rules in one AGENTS.md and thin or remove the CLAUDE.md copy if you do not need the fallback.",
                 "agents.md (https://opencode.ai/docs/rules; CLAUDE.md fallback double-loading)",
             ))
+        findings.extend(self._t01(ctx))
         findings.extend(self._t04(ctx))
         # privacy_checks() is run separately by doctor
         return findings
+
+    # Plugins that reuse Gemini CLI's Google OAuth. Only names with a current source are listed:
+    # opencode-gemini-auth's README says it "mirrors the official Gemini CLI OAuth flow" (adapter-gaps v0.4).
+    GEMINI_OAUTH_PLUGINS = ("opencode-gemini-auth",)
+
+    def _t01(self, ctx: Context) -> list:
+        """High ToS risk: an OpenCode plugin that piggybacks Gemini CLI OAuth (config ids and plugin file names only)."""
+        hits: list[tuple[str, str]] = []
+        for path, _scope in config_files(ctx):
+            plugins = load_jsonc(path).get("plugin")
+            for p in plugins if isinstance(plugins, list) else []:
+                name = p[0] if isinstance(p, list) and p else p
+                if isinstance(name, str) and any(g in name.lower() for g in self.GEMINI_OAUTH_PLUGINS):
+                    hits.append((str(path), name))
+        for d in (user_config_dir(ctx) / "plugins", ctx.root / ".opencode" / "plugins"):
+            if d.is_dir():
+                for f in sorted(d.iterdir()):
+                    if any(g in f.name.lower() for g in self.GEMINI_OAUTH_PLUGINS):
+                        hits.append((str(f), f.name))
+        if not hits:
+            return []
+        return [finding(
+            self.id, "T01", "tos-gemini-oauth-reuse", "high", "tos",
+            "OpenCode has a plugin that signs in with Gemini CLI's Google OAuth "
+            f"({', '.join(dict.fromkeys(n for _, n in hits))}). Google's Gemini CLI terms call using third-party "
+            "tools on that OAuth a violation that can get the account suspended.",
+            "Remove the plugin and use a Gemini API key (Google AI Studio or Vertex AI), the supported path for "
+            "third-party agents. Credentials are not read by this check.",
+            "Gemini CLI docs/resources/tos-privacy.md and faq.md (v0.68.0); opencode-gemini-auth README",
+            file=", ".join(dict.fromkeys(p for p, _ in hits)), key="plugin", value=hits[0][1],
+        )]
 
     def _t04(self, ctx: Context) -> list:
         cfg = self.read_config(ctx)

@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Added
+- Copilot CLI:
+  - `bench --bench` reads Copilot's own `--usage-output-file` (`UsageGetMetricsResult`; per-model totals, with `agentMetrics` not added again), before falling back to OTel spans and `events.jsonl`.
+  - Sessions are tied to a repo through `session.start` `data.context.cwd` or `workspace.yaml`, so `bench --prepare` / `--measure` include Copilot and `watch` labels sessions by project.
+  - `autoTier` is read. Doctor W05 notes Auto on `intelligence`, and `model default` sets `autoTier` when the model is `auto`.
+  - A recommended light / mid / top map (`claude-haiku-5.5` / `claude-sonnet-5.5` / `claude-opus-5.5`, GPT-6 alternatives), labeled as a recommendation and not a GitHub list.
+- OpenCode doctor T01 (high): the `opencode-gemini-auth` plugin, which reuses Gemini CLI's Google OAuth (against Gemini CLI's terms). Cline and Roo are not flagged on the name alone.
+- `model suggest` shows alternatives per tier (Codex light: `gpt-6-luna` or `gpt-6.1-terra`) and a note when a tier map is a recommendation.
 - `scripts/install.sh`: a one-line pinned installer for macOS and Linux. It checks for Python 3.11+. It clones the pinned tag and verifies HEAD equals the pinned commit, or downloads that commit's tarball and verifies its pinned SHA-256. It installs into `~/.local/share/tokenstretch` with a private `--without-pip` venv (no pip, no PyPI) and a launcher in `~/.local/bin`. Shell startup files are edited only with `--add-to-path` (backed up first). `--dry-run` prints every step and changes nothing, and `--uninstall` removes exactly what the installer created. No telemetry, and it never runs setup or third-party installs. The pin is empty until a release is made (see `docs/RELEASING.md`).
 - Codex sessions in `watch`, `status`, `report --weekly`, and `dashboard` are labeled by the working directory recorded in the rollout (`session_meta.cwd`, else the first `turn_context.cwd`), with your home folder shown as `~`. Only a session with no recorded directory falls back to its date. Codex now also appears under `status` → newest sessions.
 - Codex tier map for `model suggest` and `model default --tool codex`: `gpt-6-luna` / `gpt-6.1-sol` / `gpt-6-astra` (Codex models page). `model default` sets the top-level `model` in `~/.codex/config.toml`: dry run by default, `--apply` backs up first, `undo` restores. It refuses when the file isn't valid TOML or when the edit would change any other key.
@@ -32,6 +39,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - Contributor docs, issue and PR templates, and a CI workflow including the network-blocked run.
 
 ### Fixed
+- Copilot CLI input is now read as including cache read and write, and reasoning as part of output, per GitHub's `/usage` help and OTel docs. The blanket "unverified semantics" flag is gone. Older `events.jsonl` files and the OTel file's line envelope keep an UNVERIFIED note.
+- Gemini CLI token buckets are documented as verified: cached tokens are inside input, tool-use prompt tokens are added on top, and thoughts are separate from output. The buckets add up to the record's `total`.
 - Claude Code W08 (a shortcut switches the model mid-conversation) is now one finding that lists the shortcuts, instead of one finding per file. Subagent files (`agents/*.md`) and other Markdown under skills or plugins no longer count, because their `model` field doesn't switch the main conversation.
 - `bench --measure` no longer labels subscription runs as "API-key mode", and it shows the after-side model.
 - W17 (duplicate instruction files) is one grouped finding with a count and up to 5 example paths, instead of one finding per duplicate set.

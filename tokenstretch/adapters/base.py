@@ -325,6 +325,14 @@ class Adapter:
         """{"light": model, "mid": model, "top": model} for the model picker. Empty => no tier map yet."""
         return {}
 
+    def model_tier_alternatives(self) -> dict[str, list[str]]:
+        """Other good picks per tier, shown beside the main one (e.g. {"light": ["gpt-6.1-terra"]})."""
+        return {}
+
+    def model_tier_note(self) -> str:
+        """How solid the tier map is, when it isn't vendor-published (shown with the picks)."""
+        return ""
+
     def is_top_model(self, model: str) -> bool:
         return False
 

@@ -543,6 +543,10 @@ class CodexAdapter(Adapter):
     def model_tiers(self) -> dict[str, str]:
         return dict(self.MODEL_TIERS)
 
+    def model_tier_alternatives(self) -> dict[str, list[str]]:
+        # GPT-6.1 Terra: "a fast, efficient model" (models page); needs Codex CLI 0.159.0+.
+        return {"light": ["gpt-6.1-terra"]}
+
     def is_top_model(self, model: str) -> bool:
         return bool(HEAVY.search(model or ""))
 

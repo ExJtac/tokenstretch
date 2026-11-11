@@ -1010,7 +1010,9 @@ def _gemini_record(mid: str, m: dict, session_id: str, kind: str | None, path: P
         except (TypeError, ValueError):
             return 0
 
-    # promptTokenCount includes cachedContentTokenCount; toolUsePromptTokenCount is a separate prompt count.
+    # Vertex UsageMetadata (gemini-cli v0.68.0 copies it 1:1): `input` (promptTokenCount) includes `cached`;
+    # `tool` (toolUsePromptTokenCount) is input on top of it; `thoughts` is separate from `output`.
+    # So the five normalized buckets add up to `total` (= prompt + candidates + tool + thoughts).
     norm = normalize_usage(
         input_tokens=num("input") + num("tool"), cache_read=num("cached"),
         output=num("output"), reasoning=num("thoughts"), input_includes_cache=True,

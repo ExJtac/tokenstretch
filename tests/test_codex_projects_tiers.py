@@ -118,7 +118,7 @@ def test_codex_model_default_dry_run_apply_undo(tmp_path):
     assert data["model"] == "gpt-6.1-sol"
     assert data["profiles"]["deep"]["model"] == "gpt-6-astra"          # table key untouched
     assert data["approval_policy"] == "on-request" and "# mine" in cfg.read_text()
-    assert "already on gpt-6.1-sol" in _cli(w, "model", "default", "--tier", "mid", "--tool", "codex")
+    assert "already on the mid tier (gpt-6.1-sol)" in _cli(w, "model", "default", "--tier", "mid", "--tool", "codex")
     _cli(w, "undo")
     assert cfg.read_bytes() == original
 
@@ -157,3 +157,23 @@ def test_no_adapter_repeats_a_privacy_finding_in_doctor(tmp_path):
                 both = ad.checks(ctx) + ad.privacy_checks(ctx)
             keys = [(f.id, f.message) for f in both]
             assert len(keys) == len(set(keys)), (name, ad.id, keys)
+
+
+# ---- adapter-gaps v0.4 follow-ups --------------------------------------------------------
+
+def test_gemini_buckets_add_up_to_total():
+    from tokenstretch.adapters.gemini_cli import _gemini_record
+    tokens = {"input": 10_000, "cached": 8_000, "output": 300, "thoughts": 120, "tool": 450, "total": 10_870}
+    r = _gemini_record("m1", {"tokens": tokens, "model": "gemini-3.8-flash"}, "s", None, Path("x.jsonl"), None, "gemini-cli")
+    assert (r.input_tokens, r.cache_read_tokens, r.output_tokens, r.reasoning_tokens) == (2_450, 8_000, 300, 120)
+    assert r.input_tokens + r.cache_read_tokens + r.cache_write_tokens + r.output_tokens + r.reasoning_tokens == tokens["total"]
+    assert not r.unverified_semantics
+
+
+def test_codex_light_alternative_terra_in_suggest():
+    from tokenstretch.models import format_suggestion, suggest_tier
+    picks = tool_picks(None, "light", adapters=[CODEX])
+    assert picks[0]["alternatives"] == ["gpt-6.1-terra"]
+    text = "\n".join(format_suggestion(suggest_tier("rename foo"), picks))
+    assert "gpt-6-luna or gpt-6.1-terra" in text
+    assert tool_picks(None, "mid", adapters=[CODEX])[0]["alternatives"] == []

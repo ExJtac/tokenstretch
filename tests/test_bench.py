@@ -182,7 +182,7 @@ def _write_host_logs(home: Path) -> None:
         '{"type":"session.usage_checkpoint","id":"evt0","timestamp":"2026-11-09T18:10:00.000Z","data":{"totalNanoAiu":350000000}}\n'
         '{"type":"session.shutdown","id":"evt1","timestamp":"2026-11-09T18:30:00.000Z",'
         '"data":{"totalNanoAiu":910000000,"modelMetrics":{"claude-sonnet-5.5":{"requests":{"count":14},'
-        '"usage":{"inputTokens":21500,"outputTokens":4200,"cacheReadTokens":180000,"cacheWriteTokens":9000,"reasoningTokens":0},'
+        '"usage":{"inputTokens":210500,"outputTokens":4200,"cacheReadTokens":180000,"cacheWriteTokens":9000,"reasoningTokens":0},'
         '"totalNanoAiu":910000000}}}}\n'
     )
     # Cline SDK messages
@@ -280,9 +280,9 @@ def test_host_parsers_copilot_cline_opencode(tmp_path):
 
     copilot = [r for r in recs if "session.shutdown" in (r.extra or {}).get("event", "")]
     assert len(copilot) == 1
-    assert copilot[0].input_tokens == 21500  # treated as uncached
+    assert copilot[0].input_tokens == 21500  # input includes cache: 210500 - 180000 - 9000
     assert copilot[0].cache_read_tokens == 180000
-    assert copilot[0].unverified_semantics is True
+    assert copilot[0].unverified_semantics is False
 
     cline_sdk = [r for r in recs if r.session_id == "cline-sess"]
     assert len(cline_sdk) == 1
@@ -328,7 +328,7 @@ def test_host_parsers_copilot_cline_opencode(tmp_path):
     text = format_from_logs(report)
     assert "unverified semantics" in text
     cop = next(s for s in report.adapters if s.adapter_id == "copilot-cli")
-    assert cop.unverified_semantics is True
+    assert cop.unverified_semantics is False
     # Never sum vendor cost with a computed cost — only report cost when every record has one.
     # Copilot shutdown has no cost_usd, so its cost must be no measurement.
     assert cop.cost_usd is None

@@ -2,8 +2,10 @@
 
 Every Copilot-specific path, setting key, env name, and log field lives in this module. Sources:
 docs.github.com Copilot CLI command reference, configuration-directory reference, hooks
-configuration, OpenTelemetry reference, and Chronicle. `events.jsonl` token fields follow
-ccusage's parser (not GitHub docs), so those records are flagged as unverified semantics.
+configuration, OpenTelemetry reference, and Chronicle, plus the shipped 1.0.109 CLI help and
+typings (`copilot help billing|sessions|config`, `UsageGetMetricsResult`). Token semantics: input
+includes cache read and write (`/usage` help, OTel metric docs) and reasoning is part of output.
+The OTel file's per-line envelope is undocumented, so it is parsed defensively.
 `config.json` can hold plaintext tokens (storeTokenPlaintext) and is never opened.
 """
 from __future__ import annotations
@@ -43,8 +45,15 @@ from .doctor_only import (
     stat_instruction,
 )
 
-UNVERIFIED = "unverified semantics: whether Copilot input includes cache is not confirmed"
-_TOP_MODEL = re.compile(r"opus", re.I)
+EVENTS_NOTE = ("input read as including cache (Copilot /usage help, OTel metric docs); "
+               "UNVERIFIED for every older events.jsonl file, whose field comment doesn't say so")
+OTEL_NOTE = "OTel file line envelope is UNVERIFIED (undocumented); plain spans and OTLP JSON are both accepted"
+_TOP_MODEL = re.compile(r"opus|fable|gpt-6-astra", re.I)
+# Recommendation only: GitHub publishes no light/mid/top list (adapter-gaps research, `copilot help config` ids).
+MODEL_TIERS = {"light": "claude-haiku-5.5", "mid": "claude-sonnet-5.5", "top": "claude-opus-5.5"}
+MODEL_ALTERNATIVES = {"light": ["gpt-6-luna"], "mid": ["gpt-6.1-sol"], "top": ["gpt-6-astra"]}
+# Auto routing tiers (GitHub changelog 2026-09-14): efficiency = cost, balance = default, intelligence = quality.
+AUTO_TIERS = {"light": "efficiency", "mid": "balance", "top": "intelligence"}
 _HIGH_EFFORT = {"xhigh", "max"}
 
 
@@ -76,7 +85,7 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
     headless_patterns = (r"\bcopilot\b.*\s(-p|--prompt)\b",)
     bench_key_env = "COPILOT_GITHUB_TOKEN"
     watch_hint = "per-turn data needs the local OTel file export: set COPILOT_OTEL_FILE_EXPORTER_PATH"
-    supports_prepare = False  # session logs carry no repo path, so --measure cannot scope them
+    # session.start data.context.cwd / workspace.yaml cwd tie sessions to a repo, so --measure can scope them.
 
     def _home(self, ctx: Context) -> Path:
         val, _ = ctx.env_or_rc("COPILOT_HOME")
@@ -164,6 +173,8 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
             if perms.get("model"):
                 effective["model"] = {"value": perms["model"], "from": f"{sources.get('permissions')}:permissions.model"}
         put("effort", "effortLevel")
+        put("auto_tier", "autoTier")
+        put("fusion_tier", "fusionTier")
         put("remote_export", "remoteExport")
         put("remote_sessions", "remoteSessions")
         put("store_token_plaintext", "storeTokenPlaintext")
@@ -256,10 +267,22 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
         if model and _TOP_MODEL.search(str(model["value"])):
             findings.append(finding(
                 self.id, "W05", "default-model-heavy", "info", "waste",
-                "Your default Copilot model is an Opus model, one of the highest-cost choices under usage-based billing.",
+                "Your default Copilot model is a top-tier model (Opus, Fable, or GPT-6 Astra), one of the "
+                "highest-cost choices under usage-based billing.",
                 "Pick a lighter default with /model (or the model setting) and switch up only for hard work.",
                 "cli-config-dir-reference (model); GitHub model multipliers change, so none are hard-coded",
                 file=model["from"], key="model", value=str(model["value"]),
+            ))
+        auto_tier = eff.get("auto_tier")
+        if (model and str(model["value"]).lower() in {"auto", "fusion"} and auto_tier
+                and str(auto_tier["value"]).lower() == "intelligence"):
+            findings.append(finding(
+                self.id, "W05", "default-model-heavy", "info", "waste",
+                "Copilot Auto is set to the intelligence tier, which routes toward the most capable (costliest) models. "
+                "You're charged for the model Auto picks.",
+                "Use autoTier \"balance\" (the default mix) or \"efficiency\", and pick a top model by hand for hard work.",
+                "cli-config-dir-reference (autoTier: efficiency / balance / intelligence); GitHub changelog 2026-09-14",
+                file=auto_tier["from"], key="autoTier", value="intelligence",
             ))
         effort = eff.get("effort")
         if effort and str(effort["value"]).lower() in _HIGH_EFFORT:
@@ -463,7 +486,27 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
             for r in self.parse_log(path):
                 if (r.ts and record_in_window(r, cutoff, None)) or (not r.ts and mtime >= cutoff):
                     out.append(r)
+        self._add_cwd(ctx, out)
         return self.finish_usage_records(out)
+
+    def _session_cwd(self, ctx: Context, session_id: str | None) -> str | None:
+        if not session_id or "/" in session_id or session_id.startswith("."):
+            return None
+        info = workspace_info(self._home(ctx) / "session-state" / session_id / "workspace.yaml")
+        return info.get("cwd") or info.get("git_root")
+
+    def _add_cwd(self, ctx: Context, records: list[UsageRecord]) -> None:
+        """OTel spans carry no cwd; take it from the session's workspace.yaml (bench --measure scoping)."""
+        cache: dict = {}
+        for r in records:
+            if r.extra is None:
+                r.extra = {}
+            if r.extra.get("cwd") or not r.session_id:
+                continue
+            if r.session_id not in cache:
+                cache[r.session_id] = self._session_cwd(ctx, r.session_id)
+            if cache[r.session_id]:
+                r.extra["cwd"] = cache[r.session_id]
 
     def watch_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict] | None:
         """Per-turn data exists only in the OTel file export (chat spans). events.jsonl has session totals only."""
@@ -482,8 +525,11 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
                 continue
             for r in memo_by_stat(path, "copilot-otel", lambda path=path: parse_otel_file(path, self.id)):
                 sid = r.session_id or path.stem
-                s = sessions.setdefault(sid, {
-                    "adapter": self.id, "session": sid[-8:], "project": "", "path": str(path),
+                if sid not in sessions:
+                    sessions[sid] = {"project": _home_label(self._session_cwd(ctx, r.session_id), ctx)}
+                s = sessions[sid]
+                s.update({} if "turns" in s else {
+                    "adapter": self.id, "session": sid[-8:], "path": str(path),
                     "last_write": mtime, "turns": [], "clear_hint": "/clear", "compact_hint": "/compact",
                 })
                 s["turns"].append({"ts": r.ts, "model": r.model or "", "history_tokens": r.total_input(),
@@ -538,7 +584,8 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
         sid = str(uuid.uuid4())
         otel = home / ".copilot" / "otel" / f"bench-{sid}.jsonl"
         otel.parent.mkdir(parents=True, exist_ok=True)
-        argv = list(spec.argv) + ["--session-id", sid]
+        usage_file = home / ".copilot" / f"bench-usage-{sid}.json"
+        argv = list(spec.argv) + ["--session-id", sid, "--usage-output-file", str(usage_file)]
         env = {
             "TERM": "dumb", **self.headless_env(home),
             "COPILOT_OTEL_FILE_EXPORTER_PATH": str(otel), "COPILOT_OTEL_EXPORTER_TYPE": "file",
@@ -550,7 +597,10 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
         if ran.usage is not None:
             usage = list(ran.usage)
         else:
-            usage = [r for r in (parse_otel_file(otel, self.id) if otel.is_file() else []) if r.session_id == sid]
+            # --usage-output-file (UsageGetMetricsResult) first; then OTel chat spans; then events.jsonl.
+            usage = parse_usage_metrics(usage_file, self.id, sid) if usage_file.is_file() else []
+            if not usage:
+                usage = [r for r in (parse_otel_file(otel, self.id) if otel.is_file() else []) if r.session_id == sid]
             if not usage:
                 ev = home / ".copilot" / "session-state" / sid / "events.jsonl"
                 usage = parse_events(ev, self.id) if ev.is_file() else []
@@ -559,7 +609,8 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
         return {"exitCode": ran.exit_code, "usage": usage, "rawOutput": ran.stdout or "", "stderr": ran.stderr or ""}
 
     def parse_headless_output(self, stdout: str, task_id: str) -> UsageRecord | None:
-        # The -p JSONL record schema for usage is not documented; usage comes from the session's own logs.
+        # The -p JSON `result.usage` has premium requests and durations, no tokens (CLI 1.0.109);
+        # tokens come from --usage-output-file instead.
         return None
 
     # ---- install / setup ---------------------------------------------------------------
@@ -596,12 +647,67 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
         )]
 
     # ---- model picker ------------------------------------------------------------------
-    # No tier map: Copilot's model list and multipliers change with GitHub's catalog (open question).
+    def model_tiers(self) -> dict[str, str]:
+        return dict(MODEL_TIERS)
+
+    def model_tier_alternatives(self) -> dict[str, list[str]]:
+        return {k: list(v) for k, v in MODEL_ALTERNATIVES.items()}
+
+    def model_tier_note(self) -> str:
+        return ("a recommended mapping, not a GitHub list; with model \"auto\", "
+                "autoTier efficiency / balance / intelligence plays the same role")
+
     def is_top_model(self, model: str) -> bool:
         return bool(_TOP_MODEL.search(model or ""))
 
     def model_switch_hint(self, model: str) -> str:
         return "/model"
+
+    def plan_default_model(self, ctx: Context, tier: str) -> SetupItem | None:
+        """Set `model` in the user settings.json, or `autoTier` when the model is Auto. Plans only."""
+        target = MODEL_TIERS.get(tier)
+        if not target:
+            return None
+        path = self._user_settings(ctx)
+        data = _editable_json(path)
+        if data is None:
+            return None  # unreadable or JSONC with comments: never overwrite
+        eff = self.read_config(ctx)["effective"]
+        current = eff.get("model")
+        cur_val = str(current["value"]) if current else ""
+        notes = [f"This tier list is {self.model_tier_note()}.",
+                 "Switch for one session with `/model` or `copilot --model NAME`; this only changes the default."]
+        if cur_val.lower() in {"auto", "fusion"}:
+            key, value = "autoTier", AUTO_TIERS[tier]
+            cur_tier = eff.get("auto_tier")
+            if cur_tier and str(cur_tier["value"]).lower() == value:
+                return None
+            reason = f"autoTier: {cur_tier['value'] if cur_tier else '(unset)'} -> {value}"
+            title = f"Set Copilot Auto's routing tier to {value} ({tier} tier)"
+            why = f"Your default model is Auto, so the {tier} tier maps to autoTier \"{value}\". Auto stays on."
+        else:
+            key, value = "model", target
+            if cur_val == target:
+                return None
+            reason = f"model: {cur_val or '(unset)'} -> {target}"
+            title = f"Set the default Copilot CLI model to {target} ({tier} tier)"
+            why = (f"Your default is {cur_val} (from {current['from'].rsplit(':', 1)[0]}). " if current else
+                   "No default model is set. ") + f"New sessions will start on {target}."
+        env_model, env_where = ctx.env_or_rc("COPILOT_MODEL")
+        if env_model:
+            notes.append(f"COPILOT_MODEL={env_model} in {env_where} overrides this setting. "
+                         "Remove it yourself; shell files are never edited.")
+        for p, scope, layer in self._layers(ctx):
+            if p != path and key in layer:
+                notes.append(f"{p} ({scope}) also sets {key} and wins over the user file.")
+        new = json.loads(json.dumps(data))
+        new[key] = value
+        return SetupItem(
+            id="copilot-default-model", adapter_id=self.id, title=title, why=why,
+            changes=[{"path": str(path), "kind": "modify" if path.is_file() else "create",
+                      "content": json.dumps(new, indent=2) + "\n", "key": key, "reason": reason}],
+            done=f"set {key} to {value}", notes=notes,
+        )
 
 
 def _has_rules(path: Path) -> bool:
@@ -610,39 +716,124 @@ def _has_rules(path: Path) -> bool:
     return bool(text and RULES_START in text)
 
 
+def _home_label(cwd: str | None, ctx: Context) -> str:
+    if not cwd:
+        return ""
+    home = str(ctx.home).rstrip("/")
+    return "~" + cwd[len(home):] if home and (cwd == home or cwd.startswith(home + "/")) else cwd
+
+
+def workspace_info(path: Path) -> dict[str, str]:
+    """Top-level scalar keys of a session's workspace.yaml (`cwd`, `git_root`, `repository`, `branch`).
+
+    No YAML library: only `key: value` lines at column 0 are read; anything else is ignored.
+    """
+    from ..files import text_if_small
+    text = text_if_small(path) if path.is_file() else None
+    out: dict[str, str] = {}
+    for line in (text or "").splitlines():
+        m = re.match(r"^(cwd|git_root|repository|branch|host_type):[ \t]*(.*?)[ \t]*$", line)
+        if not m or not m.group(2):
+            continue
+        val = m.group(2)
+        if val[0] == '"':
+            try:
+                val = json.loads(val)
+            except ValueError:
+                continue
+        elif val[0] == "'" and val.endswith("'") and len(val) > 1:
+            val = val[1:-1].replace("''", "'")
+        out[m.group(1)] = str(val)
+    return out
+
+
+def _metric_record(adapter_id: str, model: str, u: dict, **kw) -> UsageRecord:
+    from ..usage import normalize_usage, record_from_normalized
+
+    def num(k):
+        try:
+            return max(0, int(u.get(k) or 0))
+        except (TypeError, ValueError):
+            return 0
+    norm = normalize_usage(
+        input_tokens=num("inputTokens"), cache_read=num("cacheReadTokens"), cache_write=num("cacheWriteTokens"),
+        output=num("outputTokens"), reasoning=num("reasoningTokens"),
+        input_includes_cache=True, reasoning_in_output=True,
+    )
+    return record_from_normalized(adapter_id, "log", norm, model=str(model), **kw)
+
+
 def parse_events(path: Path, adapter_id: str) -> list[UsageRecord]:
-    """events.jsonl `session.shutdown` totals per model (ccusage-derived shape; unverified semantics)."""
+    """events.jsonl `session.shutdown` totals per model, tagged with the `session.start` working directory."""
     from ..logcache import loads, read_lines_from
-    from ..usage import normalize_usage, parse_ts, record_from_normalized
+    from ..usage import parse_ts
     out: list[UsageRecord] = []
     sid = path.parent.name
+    ctx_cwd: list[str] = []
 
     def feed(lines):
         for raw in lines:
-            if b"session.shutdown" not in raw:
+            if b"session.shutdown" not in raw and b"session.start" not in raw:
                 continue
             obj = loads(raw)
-            if not isinstance(obj, dict) or obj.get("type") != "session.shutdown":
+            if not isinstance(obj, dict):
                 continue
             data = obj.get("data") if isinstance(obj.get("data"), dict) else {}
+            if obj.get("type") == "session.start":
+                context = data.get("context") if isinstance(data.get("context"), dict) else {}
+                cwd = context.get("cwd") or context.get("gitRoot")
+                if isinstance(cwd, str) and cwd and not ctx_cwd:
+                    ctx_cwd.append(cwd)
+                continue
+            if obj.get("type") != "session.shutdown":
+                continue
             metrics = data.get("modelMetrics") if isinstance(data.get("modelMetrics"), dict) else {}
             for model, entry in metrics.items():
-                u = (entry or {}).get("usage") or {}
-                norm = normalize_usage(
-                    input_tokens=int(u.get("inputTokens") or 0), cache_read=int(u.get("cacheReadTokens") or 0),
-                    cache_write=int(u.get("cacheWriteTokens") or 0), output=int(u.get("outputTokens") or 0),
-                    reasoning=int(u.get("reasoningTokens") or 0), input_includes_cache=False,
-                )
-                reqs = ((entry or {}).get("requests") or {}).get("count")
-                out.append(record_from_normalized(
-                    adapter_id, "log", norm, session_id=sid, model=str(model), ts=parse_ts(obj.get("timestamp")),
-                    turns=int(reqs or 0), unverified_semantics=True, notes=[UNVERIFIED],
-                    extra={"path": str(path), "event": "session.shutdown"},
+                entry = entry if isinstance(entry, dict) else {}
+                reqs = (entry.get("requests") or {}).get("count") if isinstance(entry.get("requests"), dict) else 0
+                extra = {"path": str(path), "event": "session.shutdown"}
+                if ctx_cwd:
+                    extra["cwd"] = ctx_cwd[0]
+                out.append(_metric_record(
+                    adapter_id, model, entry.get("usage") if isinstance(entry.get("usage"), dict) else {},
+                    session_id=sid, ts=parse_ts(obj.get("timestamp")), turns=int(reqs or 0), extra=extra,
+                    notes=[EVENTS_NOTE],
                 ))
     try:
         read_lines_from(path, 0, feed)
     except OSError:
         return []
+    if not ctx_cwd:
+        info = workspace_info(path.parent / "workspace.yaml")
+        cwd = info.get("cwd") or info.get("git_root")
+        for r in out:
+            if cwd:
+                r.extra["cwd"] = cwd
+    return out
+
+
+def parse_usage_metrics(path: Path, adapter_id: str, session_id: str | None = None) -> list[UsageRecord]:
+    """`--usage-output-file` JSON (UsageGetMetricsResult): one record per model in top-level modelMetrics.
+
+    agentMetrics repeats the same numbers per agent, so it is not added again.
+    """
+    from ..usage import parse_ts
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    metrics = data.get("modelMetrics") if isinstance(data.get("modelMetrics"), dict) else {}
+    out = []
+    for model, entry in metrics.items():
+        entry = entry if isinstance(entry, dict) else {}
+        reqs = entry.get("requests") if isinstance(entry.get("requests"), dict) else {}
+        out.append(_metric_record(
+            adapter_id, model, entry.get("usage") if isinstance(entry.get("usage"), dict) else {},
+            session_id=session_id, ts=parse_ts(data.get("sessionStartTime")), turns=int(reqs.get("count") or 0),
+            extra={"path": str(path), "usage_file": True},
+        ))
     return out
 
 
@@ -725,12 +916,12 @@ def parse_otel_file(path: Path, adapter_id: str) -> list[UsageRecord]:
                     cache_write=num("gen_ai.usage.cache_write.input_tokens") or num("gen_ai.usage.cache_creation.input_tokens"),
                     output=num("gen_ai.usage.output_tokens"),
                     reasoning=num("gen_ai.usage.reasoning.output_tokens"),
-                    input_includes_cache=False,
+                    input_includes_cache=True, reasoning_in_output=True,
                 )
                 out.append(record_from_normalized(
                     adapter_id, "log", norm, session_id=attrs.get("gen_ai.conversation.id"),
                     model=attrs.get("gen_ai.response.model") or attrs.get("gen_ai.request.model"),
-                    ts=_span_ts(span, attrs), turns=1, unverified_semantics=True, notes=[UNVERIFIED],
+                    ts=_span_ts(span, attrs), turns=1, notes=[OTEL_NOTE],
                     extra={"path": str(path), "span": "chat",
                            "compaction": attrs.get("github.copilot.request.type") == "compaction"},
                 ))
