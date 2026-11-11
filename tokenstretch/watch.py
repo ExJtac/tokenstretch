@@ -20,6 +20,17 @@ from .context import Context
 from .identity import CLI_NAME, PRODUCT_NAME
 
 
+
+def _short_project(name: str, width: int = 40) -> str:
+    """Readable project label: drop the encoded home prefix, cut on a '-' boundary."""
+    import re
+    name = re.sub(r"^-(Users|home)-[^-]+-", "~-", name)
+    if len(name) <= width:
+        return name
+    tail = name[-width:]
+    cut = tail.find("-")
+    return "…" + (tail[cut + 1:] if 0 <= cut < width - 8 else tail)
+
 @dataclass
 class WatchConfig:
     max_context: int = 150_000      # (a) history re-sent per step
@@ -43,7 +54,7 @@ class WatchWarning:
     fix: str
 
     def lines(self) -> list[str]:
-        return [f"⚠ [{self.adapter} {self.session} · {self.project[-40:]}] {self.what}",
+        return [f"⚠ [{self.adapter} {self.session} · {_short_project(self.project)}] {self.what}",
                 f"   Why it costs credits: {self.why}",
                 f"   Fix: {self.fix}"]
 
