@@ -248,6 +248,10 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 **What's the command exit code for doctor?** 0 = clean or info only, 1 = waste findings, 2 = a terms-of-service or privacy high.
 
+## Support tokenstretch
+
+tokenstretch is free and stays free, with no paid tier and no tracking. If it saves you credits and you'd like to say thanks, you can [buy me a coffee on Ko-fi](https://ko-fi.com/exjtac). Stars, bug reports, and pull requests help just as much.
+
 ## More
 
 - All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `model`, `trim`, and `undo`.
