@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..context import Context
 from ..identity import STATE_DIRNAME
-from ..files import count_lines_bytes, read_toml, walk_glob_names
+from ..files import count_lines_bytes, read_toml, set_toml_root_string, walk_glob_names
 from ..findings import Finding, UsageRecord
 from ..util import is_loopback_url
 from .base import Adapter, SetupItem, add_rules_block, rules_block, BaseUrl, ConfigLocation, DetectResult, HeadlessRun, HookPlan, InstallStep, InstructionFile, McpServer
@@ -536,12 +536,63 @@ class CodexAdapter(Adapter):
     }
 
     # ---- watch / model picker -----------------------------------------------------------
-    # No tier map: Codex model names change often, so the picker names a tier and `/model` only.
+    # Model ids from the Codex models page (developers.openai.com/codex/models): Luna for focused,
+    # high-volume tasks, GPT-6.1 Sol near Astra at lower cost, Astra the most capable.
+    MODEL_TIERS = {"light": "gpt-6-luna", "mid": "gpt-6.1-sol", "top": "gpt-6-astra"}
+
+    def model_tiers(self) -> dict[str, str]:
+        return dict(self.MODEL_TIERS)
+
     def is_top_model(self, model: str) -> bool:
         return bool(HEAVY.search(model or ""))
 
     def model_switch_hint(self, model: str) -> str:
+        # Documented: `/model` opens the picker in a session; `codex -m NAME` picks at launch.
         return "/model"
+
+    def plan_default_model(self, ctx: Context, tier: str) -> SetupItem | None:
+        """Plan `model = "..."` at the top level of the user config.toml. Plans only; the core writes with backups."""
+        import tomllib
+        target = self.MODEL_TIERS.get(tier)
+        if not target:
+            return None
+        path = _codex_homes(ctx)[0] / "config.toml"
+        try:
+            text = path.read_text(encoding="utf-8") if path.is_file() else ""
+            old = tomllib.loads(text) if text else {}
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+            return None  # unreadable TOML: never overwrite
+        current = old.get("model")
+        if current == target:
+            return None
+        new_text = set_toml_root_string(text, "model", target)
+        try:
+            new = tomllib.loads(new_text)
+        except tomllib.TOMLDecodeError:
+            return None
+        if new.get("model") != target or {k: v for k, v in new.items() if k != "model"} != {
+                k: v for k, v in old.items() if k != "model"}:
+            return None  # the edit would touch anything else: refuse
+        notes = ["Switch for one session with `/model` inside Codex or `codex -m NAME` at launch; "
+                 "this only changes the default. Model availability depends on your plan."]
+        for p, data in _load_cfgs(ctx):
+            if p != path and data.get("model") and data.get("model") != target:
+                notes.append(f"{_tilde(p, ctx)} sets model = {data['model']} and overrides this for that project.")
+        if old.get("profile"):
+            notes.append(f"Profile {old['profile']!r} is selected in config.toml; a model set in that profile wins.")
+        return SetupItem(
+            id="codex-default-model", adapter_id=self.id,
+            title=f"Set the default Codex model to {target} ({tier} tier)",
+            why=(f"Your default is {current} (from {_tilde(path, ctx)}). " if current else "No default model is set. ")
+                + f"New sessions will start on {target}.",
+            changes=[{
+                "path": str(path), "kind": "modify" if path.is_file() else "create",
+                "content": new_text, "key": "model",
+                "reason": f"model: {current or '(unset)'} -> {target}",
+            }],
+            done=f"set default model to {target}",
+            notes=notes,
+        )
 
     incremental_logs = True
 
@@ -568,7 +619,8 @@ class CodexAdapter(Adapter):
                 paths.append((m, p))
         out = []
         for mtime, path in sorted(paths, reverse=True)[:limit]:
-            recs, _ = memo_by_stat(path, "codex-rollout", lambda path=path: parse_codex_rollout(path, self.id))
+            recs, cwd = memo_by_stat(path, "codex-rollout-cwd",
+                                     lambda path=path: _rollout_turns_and_cwd(path, self.id))
             turns = [{
                 "ts": r.ts, "model": r.model or "", "history_tokens": r.total_input(),
                 "output_tokens": r.output_tokens, "tool_calls": None, "reads": [],
@@ -576,10 +628,20 @@ class CodexAdapter(Adapter):
             if not turns:
                 continue
             out.append({
-                "adapter": self.id, "session": _session_id_from_name(path)[-8:], "project": path.parent.name,
+                "adapter": self.id, "session": _session_id_from_name(path)[-8:], "project": _project_label(cwd, path, ctx),
                 "path": str(path), "last_write": mtime, "turns": turns,
                 "clear_hint": "/new", "compact_hint": "/compact",
             })
+        return out
+
+    def live_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict]:
+        """Newest rollouts for `status`: the last turn's model and history, labeled by the recorded cwd."""
+        out = []
+        for s in self.watch_sessions(ctx, limit=limit, max_age_s=max_age_s) or []:
+            last = s["turns"][-1]
+            out.append({"adapter": self.id, "session": s["session"], "project": s["project"],
+                        "model": last["model"], "history_tokens": last["history_tokens"],
+                        "last_write": s["last_write"], "path": s["path"], "clear_hint": s["clear_hint"]})
         return out
 
     def setup_items(self, ctx: Context) -> list[SetupItem]:
@@ -648,8 +710,7 @@ class CodexAdapter(Adapter):
             text = path.read_text(encoding="utf-8") if path.is_file() else ""
         except OSError:
             text = ""
-        from ..api_proxy import upsert_toml_key
-        content = upsert_toml_key(text, "openai_base_url", base_url)
+        content = set_toml_root_string(text, "openai_base_url", base_url)
         # chatgpt_base_url is unofficial here; do not invent or set it.
         return [{
             "path": str(path),
@@ -670,6 +731,11 @@ class CodexAdapter(Adapter):
             return [InstallStep("Register the local plugin marketplace from the pinned checkout, then add it.",
                                 command=None, manual=True)]
         return None
+
+
+def _tilde(path: Path, ctx: Context) -> str:
+    s, home = str(path), str(ctx.home).rstrip("/")
+    return "~" + s[len(home):] if home and s.startswith(home + "/") else s
 
 
 def _ensure_codex_hook(data: dict, event: str, command: str) -> bool:
@@ -775,6 +841,7 @@ class CodexRolloutParser:
         self.service_tier = None
         self.prev_total = None
         self.pending_fp = None
+        self.cwd = None  # working directory from session_meta (else the first turn_context)
 
     def feed(self, lines: list[bytes]) -> None:
         from ..logcache import loads
@@ -804,9 +871,13 @@ class CodexRolloutParser:
             self.session_id = (
                 payload.get("id") or payload.get("session_id") or payload.get("thread_id") or self.session_id
             )
+            if isinstance(payload.get("cwd"), str) and payload["cwd"]:
+                self.cwd = payload["cwd"]
             return
         if typ == "turn_context":
             self.model = payload.get("model") or self.model
+            if self.cwd is None and isinstance(payload.get("cwd"), str) and payload["cwd"]:
+                self.cwd = payload["cwd"]
             return
 
         ev_type = typ
@@ -851,8 +922,7 @@ class CodexRolloutParser:
             self.pending_fp = None
 
 
-def parse_codex_rollout(path: Path, adapter_id: str) -> tuple[list, list[str]]:
-    """Parse a Codex rollout .jsonl / .jsonl.zst. Dedupes unchanged totals and usage records."""
+def _run_rollout_parser(path: Path, adapter_id: str) -> tuple["CodexRolloutParser", list[str]]:
     from ..usage import is_zst_jsonl, iter_jsonl
     parser = CodexRolloutParser(path, adapter_id)
     notices: list[str] = []
@@ -863,10 +933,40 @@ def parse_codex_rollout(path: Path, adapter_id: str) -> tuple[list, list[str]]:
                 continue
             if isinstance(obj, dict):
                 parser.feed_obj(obj)
-        return parser.records, notices
+        return parser, notices
     from ..logcache import read_lines_from
     try:
         read_lines_from(path, 0, parser.feed)
     except OSError as exc:
-        return [], [f"skipped {path}: {exc}"]
+        parser.records = []
+        return parser, [f"skipped {path}: {exc}"]
+    return parser, notices
+
+
+def parse_codex_rollout(path: Path, adapter_id: str) -> tuple[list, list[str]]:
+    """Parse a Codex rollout .jsonl / .jsonl.zst. Dedupes unchanged totals and usage records."""
+    parser, notices = _run_rollout_parser(path, adapter_id)
     return parser.records, notices
+
+
+def _rollout_turns_and_cwd(path: Path, adapter_id: str) -> tuple[list, str | None]:
+    parser, _ = _run_rollout_parser(path, adapter_id)
+    return parser.records, parser.cwd
+
+
+def _date_label(path: Path) -> str:
+    """sessions/YYYY/MM/DD/rollout-*.jsonl -> YYYY-MM-DD; else the folder name."""
+    parts = path.parent.parts[-3:]
+    if len(parts) == 3 and all(p.isdigit() for p in parts):
+        return "-".join(parts)
+    return path.parent.name
+
+
+def _project_label(cwd: str | None, path: Path, ctx: Context) -> str:
+    """The session's working directory with the home prefix shown as ~; the date folder only without one."""
+    if not cwd:
+        return _date_label(path)
+    home = str(ctx.home).rstrip("/")
+    if home and (cwd == home or cwd.startswith(home + "/")):
+        return "~" + cwd[len(home):]
+    return cwd

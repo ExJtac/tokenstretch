@@ -22,6 +22,12 @@ from .identity import CLI_NAME, PRODUCT_NAME, STATE_DIRNAME, VERSION
 from .installer import _now_stamp, apply_changes, kit_root, sha256_file
 from .mask import mask_finding_evidence, mask_text
 
+
+def _short_project(name: str) -> str:
+    from .watch import _short_project as short
+    return short(name)
+
+
 LONG_HISTORY = 150_000
 INSTALL_TOOL_IDS = ("rtk-oss", "caveman-skill")
 
@@ -327,7 +333,7 @@ def format_status(ctx: Context, status: dict) -> list[str]:
         lines.append("  no local session logs found")
     for s in status["sessions"]:
         flag = f"  ⚠ over {_k(LONG_HISTORY)}: {s.get('clear_hint', 'start fresh')} at the next task break" if s["long"] else ""
-        lines.append(f"  {s['last_write_local']}  {s['project'][-40:]}  {s['model']}  ~{_k(s['history_tokens'])}{flag}")
+        lines.append(f"  {s['last_write_local']}  {_short_project(s['project'])}  {s['model']}  ~{_k(s['history_tokens'])}{flag}")
     return lines
 
 
@@ -411,7 +417,7 @@ def build_report_html(ctx: Context) -> str:
         h.append("<table><tr><th>Last write</th><th>Project</th><th>Model</th><th>History re-read per step</th></tr>")
         for s in status["sessions"]:
             tip = f" <span class='warn'>over {_k(LONG_HISTORY)}: {_e(s.get('clear_hint', 'start fresh'))} at the next task break</span>" if s["long"] else ""
-            h.append(f"<tr><td>{_e(s['last_write_local'])}</td><td>{_e(s['project'])}</td><td>{_e(s['model'])}</td>"
+            h.append(f"<tr><td>{_e(s['last_write_local'])}</td><td>{_e(_short_project(s['project']))}</td><td>{_e(s['model'])}</td>"
                      f"<td>~{_e(_k(s['history_tokens']))}{tip}</td></tr>")
         h.append("</table>")
     else:

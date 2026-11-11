@@ -6,16 +6,15 @@
 - Weekly savings report: `tokenstretch report --weekly`.
 - Local dashboard: `tokenstretch dashboard` (loopback only, read-only, live).
 - Instruction-file trimmer: `tokenstretch trim` (dry run by default, safe mechanical edits only, backed up, undoable).
+- Codex: session labels from the rollout's working directory, and a light/mid/top tier map for `model suggest` / `model default`.
 
 ## Next
-- A Codex tier map for `model suggest` / `model default`, once the model names are verified from docs.
-- One-key setup for more tools: a mid-tier default model for Codex (once the model names are verified from docs).
+- One-key setup for more tools: offer the Codex mid-tier default model during `setup`.
 - Verify Copilot, Cline, and OpenCode log paths and token fields against real installs (they're marked unverified today). Copilot: whether `events.jsonl` input includes cache, the OTel file line envelope, and a documented usage record in `-p --output-format json`.
 - A Copilot CLI tier map for `model default`, once GitHub's model list and multipliers can be pinned from docs.
 - Gemini CLI and Copilot CLI: use `install_steps` (RTK `--gemini` / `--copilot`) from setup's pinned-install step instead of asking you to run them.
 - Exercise the live pinned installs on macOS and Linux outside the test suite.
 
-- Codex session labels in `watch` / `dashboard`: use the rollout's working directory instead of the date folder.
 - A dashboard "copy command" button next to each fix (still read-only).
 
 - `trim`: offer moving blocks out of user-level files once each tool's import syntax is verified, and flag headings left empty after duplicates are removed.

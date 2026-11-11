@@ -217,7 +217,7 @@ class AiderAdapter(DoctorOnlyAdapter):
                 "agents.md (docs/usage/caching.html)",
                 file=p_where, key="cache-keepalive-pings", value=str(pings),
             ))
-        findings.extend(self.privacy_checks(ctx))
+        # privacy_checks() is run separately by doctor
         return findings
 
     def _p05(self, ctx: Context) -> list:

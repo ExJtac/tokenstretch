@@ -304,7 +304,7 @@ class OpenCodeAdapter(DoctorOnlyAdapter):
                 "agents.md (https://opencode.ai/docs/rules; CLAUDE.md fallback double-loading)",
             ))
         findings.extend(self._t04(ctx))
-        findings.extend(self.privacy_checks(ctx))
+        # privacy_checks() is run separately by doctor
         return findings
 
     def _t04(self, ctx: Context) -> list:

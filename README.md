@@ -164,7 +164,7 @@ Why: +2 mentions concurrency/leak bug (score +2).
 
 `model suggest` scores the task with simple rules you can read in `tokenstretch/models.py`: words like architecture, broad refactor, migration, race condition, security, or root cause push toward **top**; rename, typo, formatting, docs, or a version bump push toward **light**; tests and small fixes lean **mid**; naming many files or a long description pushes up. It makes no model calls. **It's a rule of thumb, not a measured result**, so move up a tier if the answer comes back wrong. `--file prompt.txt` reads the task from a file and `--json` prints machine-readable output.
 
-`tokenstretch model default --tier mid` shows the change to your default model (Claude Code: `model` in `settings.json`). Add `--apply` to make it. The file is backed up first and `tokenstretch undo` restores it. `--tool claude` limits it to one tool. Gemini CLI uses its documented aliases (`flash-lite` / `flash` / `pro`, key `model.name` in `~/.gemini/settings.json`). Codex and Copilot CLI have no tier map yet, so the picker tells you to use `/model` there.
+`tokenstretch model default --tier mid` shows the change to your default model (Claude Code: `model` in `settings.json`). Add `--apply` to make it. The file is backed up first and `tokenstretch undo` restores it. `--tool claude` limits it to one tool. Gemini CLI uses its documented aliases (`flash-lite` / `flash` / `pro`, key `model.name` in `~/.gemini/settings.json`). Codex uses the model ids from its models page (`gpt-6-luna` / `gpt-6.1-sol` / `gpt-6-astra`, the top-level `model` key in `~/.codex/config.toml`; tables such as `[profiles.*]` are left alone). Which models you can use depends on your plan. Copilot CLI has no tier map yet, so the picker tells you to use `/model` there.
 
 ## Honest results
 
@@ -196,7 +196,7 @@ Your mileage will differ. Run `tokenstretch bench` on your own repo (see `LIVE-B
 
 | Tier | Tools | What works |
 |---|---|---|
-| 1 (full) | **Claude Code**, **Codex**, **Gemini CLI**, **Copilot CLI** | doctor, setup, status, watch, report, dashboard, model suggest, bench, Clean-profile hooks, undo (`model default`: Claude Code, Gemini CLI) |
+| 1 (full) | **Claude Code**, **Codex**, **Gemini CLI**, **Copilot CLI** | doctor, setup, status, watch, report, dashboard, model suggest, bench, Clean-profile hooks, undo (`model default`: Claude Code, Codex, Gemini CLI) |
 | Doctor-only | Cursor, Aider, OpenCode, Cline | doctor checks and privacy listing |
 
 Gemini CLI and Copilot CLI limits: Copilot's per-turn usage (for `watch`) only exists when you turn on its local OpenTelemetry file export (`COPILOT_OTEL_FILE_EXPORTER_PATH`); otherwise usage comes from session totals in `~/.copilot/session-state/*/events.jsonl`, whose token fields follow ccusage rather than GitHub docs and are marked unverified. Copilot client telemetry can only be turned off with the `--disable-client-telemetry` flag, so doctor reports it as unknown unless an alias passes it. `bench --prepare` covers Gemini CLI but not Copilot CLI (its logs don't record the repo). RTK's hooks for these tools are wired by `rtk init -g --gemini` / `rtk init -g --copilot`, which you run yourself.

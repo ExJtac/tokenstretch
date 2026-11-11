@@ -466,15 +466,9 @@ def _deep_merge(a: dict, b: dict) -> dict:
 
 
 def upsert_toml_key(text: str, key: str, value: str) -> str:
-    """Set a top-level TOML string key, preserving the rest of the file."""
-    pattern = re.compile(rf"(?m)^[ \t]*{re.escape(key)}[ \t]*=[ \t]*.*$")
-    line = f'{key} = "{value}"'
-    if text and pattern.search(text):
-        return pattern.sub(line, text, count=1)
-    body = text if text.endswith("\n") or not text else text + "\n"
-    if body and not body.endswith("\n"):
-        body += "\n"
-    return body + line + "\n"
+    """Set a root-level TOML string key, preserving the rest of the file (never inside a [table])."""
+    from .files import set_toml_root_string
+    return set_toml_root_string(text, key, value)
 
 
 def manual_proxy_steps(proxy_id: str, bind: str = "127.0.0.1") -> list[str]:

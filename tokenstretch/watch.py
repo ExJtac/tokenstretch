@@ -22,13 +22,20 @@ from .identity import CLI_NAME, PRODUCT_NAME
 
 
 def _short_project(name: str, width: int = 40) -> str:
-    """Readable project label: drop the encoded home prefix, cut on a '-' boundary."""
+    """Readable project label: drop the home prefix (encoded `-Users-me-` or a real `/Users/me/` path),
+    then keep the tail, cut on a '/' (paths) or '-' (encoded names) boundary."""
     import re
-    name = re.sub(r"^-(Users|home)-[^-]+-", "~-", name)
+    name = name or ""
+    if name.startswith("/"):
+        name = re.sub(r"^/(Users|home)/[^/]+(?=/|$)", "~", name)
+        sep = "/"
+    else:
+        name = re.sub(r"^-(Users|home)-[^-]+-", "~-", name)
+        sep = "/" if name.startswith("~/") else "-"
     if len(name) <= width:
         return name
     tail = name[-width:]
-    cut = tail.find("-")
+    cut = tail.find(sep)
     return "…" + (tail[cut + 1:] if 0 <= cut < width - 8 else tail)
 
 @dataclass

@@ -12,7 +12,7 @@ from .util import SKIP_DIRS, frontmatter, read_json, read_toml
 # Re-export so adapters have one import site.
 __all__ = ["SKIP_DIRS", "frontmatter", "read_json", "read_toml", "count_lines_bytes",
            "walk_named", "walk_glob_names", "text_if_small", "import_refs", "env_truthy",
-           "is_git_work_tree", "git_ls_files", "clear_git_ls_cache"]
+           "is_git_work_tree", "git_ls_files", "clear_git_ls_cache", "set_toml_root_string"]
 
 
 def count_lines_bytes(path: Path, cap: int | None = 4 * 1024 * 1024) -> tuple[int, int, str] | None:
@@ -174,3 +174,20 @@ def env_truthy(value: str | None) -> bool:
 def text_if_small(path: Path, cap: int = 4 * 1024 * 1024) -> str | None:
     c = count_lines_bytes(path, cap)
     return None if c is None else c[2]
+
+
+def set_toml_root_string(text: str, key: str, value: str) -> str:
+    """Set a root-level TOML string key. Only lines before the first [table] are searched, and a new
+    key goes before that table, so `model` inside [profiles.x] or [agents.y] is never touched."""
+    lines = text.splitlines(keepends=True)
+    first_table = next((i for i, ln in enumerate(lines) if re.match(r"[ \t]*\[", ln)), len(lines))
+    pat = re.compile(rf"^[ \t]*{re.escape(key)}[ \t]*=")
+    new_line = f"{key} = {json.dumps(value)}\n"
+    for i in range(first_table):
+        if pat.match(lines[i]):
+            lines[i] = new_line
+            return "".join(lines)
+    if first_table and not lines[first_table - 1].endswith("\n"):
+        lines[first_table - 1] += "\n"
+    lines.insert(first_table, new_line + ("\n" if first_table == 0 and lines else ""))
+    return "".join(lines)

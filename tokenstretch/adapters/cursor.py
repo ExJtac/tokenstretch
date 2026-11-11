@@ -151,7 +151,7 @@ class CursorAdapter(DoctorOnlyAdapter):
                 "agents.md (~/.cursor/cli-config.json model, maxMode)",
                 file=ev.get("from"), key="maxMode", value=str(max_mode),
             ))
-        findings.extend(self.privacy_checks(ctx))
+        # privacy_checks() is run separately by doctor
         return findings
 
     def privacy_checks(self, ctx: Context) -> list:

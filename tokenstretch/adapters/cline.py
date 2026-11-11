@@ -306,7 +306,7 @@ class ClineAdapter(DoctorOnlyAdapter):
                 file=ev.get("from"), key="thinking", value=str(thinking),
             ))
         findings.extend(self._w18(ctx))
-        findings.extend(self.privacy_checks(ctx))
+        # privacy_checks() is run separately by doctor
         return findings
 
     def _w18(self, ctx: Context) -> list:

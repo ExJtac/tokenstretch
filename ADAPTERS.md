@@ -57,6 +57,8 @@ Privacy contract: adapters never fetch, never copy or symlink credential files, 
 - **Credentials (stat only):** `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`) and `$CODEX_HOME/.credentials.json` (MCP OAuth fallback).
 - **Logs:** `$CODEX_HOME/{sessions,archived_sessions}/**/*.jsonl[.zst]` (rollout format). `.jsonl.zst` is skipped with a notice when stdlib cannot decompress it.
 - **Headless:** API-key `--bench` creates `CODEX_HOME` first, then runs `codex exec --json …`. Subscription mode prints the same official argv for the user to run from the sandbox repo, without redirecting `CODEX_HOME`.
+- **Project label:** `session_meta.payload.cwd`, else the first `turn_context.payload.cwd`, home shown as `~`; the `YYYY-MM-DD` date folder only when neither exists. Used by `watch_sessions` and `live_sessions`.
+- **Models:** tiers `gpt-6-luna` / `gpt-6.1-sol` / `gpt-6-astra` (developers.openai.com/codex/models); `plan_default_model` sets the top-level `model` in `$CODEX_HOME/config.toml` (before any `[table]`; refuses unparsable TOML or any edit that changes another key) and notes a project `.codex/config.toml` model or a selected `profile` that would win. Top model test: Astra / Pro / o-series. Switch hint: `/model`.
 - **Install paths this adapter owns:**
   - `~/.codex/hooks.json` (PreToolUse `rtk` and the local read-gate / session-start scripts)
   - Caveman skill: `~/.agents/skills/caveman` (skill-only copy; never `caveman-setup`)
