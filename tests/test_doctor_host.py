@@ -191,7 +191,11 @@ def test_p06_linux_0600_is_quiet(tmp_path):
         path = dest / rel
         if path.is_file():
             path.chmod(0o600)
+    # Pin the snapshot's OS. Without platform.txt the context falls back to the test host's
+    # sys.platform, and on macOS the plaintext-Claude-login check (correctly) fires.
+    (dest / "sys" / "platform.txt").write_text("linux\n")
     ctx = build_context(dest / "home", dest / "root", dest / "sys")
+    assert ctx.os_name() == "linux"
     with __import__("tests.conftest", fromlist=["credential_guard"]).credential_guard():
         hits = HostAdapter()._p06(ctx)
     assert hits == []

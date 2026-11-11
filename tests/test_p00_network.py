@@ -33,11 +33,11 @@ def test_p00_source_has_no_network_imports():
 def test_p00_suite_under_unshare_rn():
     if os.environ.get("TOKENSTRETCH_P00_INNER") == "1":
         pytest.skip("already inside the network-blocked inner run")
+    if not sys.platform.startswith("linux") or shutil_which("unshare") is None:
+        pytest.skip(f"unshare -rn needs Linux with util-linux unshare (platform: {sys.platform})")
     probe = subprocess.run(["unshare", "-rn", "true"], capture_output=True, text=True)
-    if probe.returncode != 0 or not Path("/usr/bin/unshare").exists() and shutil_which("unshare") is None:
-        # probe failure is the real skip condition; also skip if unshare is missing
-        if probe.returncode != 0:
-            pytest.skip(f"unshare -rn unavailable: {probe.stderr.strip() or probe.stdout.strip() or probe.returncode}")
+    if probe.returncode != 0:
+        pytest.skip(f"unshare -rn unavailable: {probe.stderr.strip() or probe.stdout.strip() or probe.returncode}")
     env = os.environ.copy()
     env["TOKENSTRETCH_P00_INNER"] = "1"
     proc = subprocess.run(

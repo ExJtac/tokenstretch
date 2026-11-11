@@ -720,7 +720,35 @@ def test_api_proxy_not_part_of_clean(tmp_path):
     assert _tree(dest) == before
 
 
-def test_kompressor_apply_undo_round_trip_and_doctor(tmp_path):
+def _pin_host(monkeypatch, system: str, machine: str = "x86_64", musl: bool = False) -> None:
+    """Make the Kompressor asset choice independent of the machine running the tests."""
+    import platform
+    import sys
+
+    from tokenstretch import catalog
+
+    monkeypatch.setattr(sys, "platform", system)
+    monkeypatch.setattr(platform, "machine", lambda: machine)
+    monkeypatch.setattr(catalog, "_linux_is_musl", lambda: musl)
+
+
+@pytest.mark.parametrize("system, machine, musl, expected", [
+    ("linux", "x86_64", False, "kompressor-1.5.14-x86_64-linux-gnu"),
+    ("linux", "amd64", True, "kompressor-1.5.14-x86_64-linux-musl"),
+    ("darwin", "arm64", False, "kompressor-1.5.14-universal2.pkg"),
+    ("darwin", "x86_64", False, "kompressor-1.5.14-universal2.pkg"),
+    ("linux", "aarch64", False, None),
+    ("win32", "AMD64", False, None),
+])
+def test_kompressor_asset_per_platform(monkeypatch, system, machine, musl, expected):
+    from tokenstretch.catalog import KOMPRESSOR_SHA256, kompressor_asset_for_host
+    _pin_host(monkeypatch, system, machine, musl)
+    asset = kompressor_asset_for_host()
+    assert asset == (None if expected is None else (expected, KOMPRESSOR_SHA256[expected]))
+
+
+def test_kompressor_apply_undo_round_trip_and_doctor(tmp_path, monkeypatch):
+    _pin_host(monkeypatch, "linux")  # plans the Linux x86_64 gnu asset on any host
     dest = copy_fixture("clean", tmp_path)
     ctx = _api_key_home(dest)
     before = _tree(dest)
@@ -779,7 +807,7 @@ def test_kompressor_apply_undo_round_trip_and_doctor(tmp_path):
     assert CANARY_CODEX not in leaked
 
     argv_blob = " ".join(" ".join(c.argv) for c in runner.calls)
-    assert "kompressor-1.5.14-x86_64-linux-" in argv_blob
+    assert "kompressor-1.5.14-x86_64-linux-gnu" in argv_blob
     assert "github.com/hystax/optscale-kompressor/releases/download/1.5.14" in argv_blob
     assert "docker" not in argv_blob.lower()
     assert "0.0.0.0" not in argv_blob
