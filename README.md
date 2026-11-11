@@ -37,8 +37,6 @@ Stars, bug reports, and pull requests help just as much.
 
 ## Install
 
-**Not released yet.** Until a release is pinned in `scripts/install.sh`, the installer stops and says so. Until then, install from a clone (see the quickstart).
-
 One line, for macOS or Linux with Python 3.11 or newer:
 
 ```bash
