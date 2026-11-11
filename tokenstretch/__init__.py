@@ -9,6 +9,8 @@ from .identity import (
     state_dir,
 )
 
+__version__ = VERSION
+
 __all__ = [
     "CLI_NAME",
     "DIST_NAME",
@@ -17,5 +19,6 @@ __all__ = [
     "PRODUCT_NAME",
     "STATE_DIRNAME",
     "VERSION",
+    "__version__",
     "state_dir",
 ]

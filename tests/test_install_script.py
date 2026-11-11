@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -59,9 +60,20 @@ def _home(tmp_path: Path) -> Path:
     return home
 
 
-def _run(home: Path, *args: str, path: str | None = None, shell: str = "/bin/zsh") -> subprocess.CompletedProcess:
+PIN_RE = re.compile(r'^(TS_PIN_TAG|TS_PIN_COMMIT|TS_PIN_TARBALL_SHA256)="[^"]*"', re.M)
+
+
+def _unpinned(tmp_path: Path) -> Path:
+    """A copy of install.sh with the pin block emptied, whatever the repo's current pin is."""
+    p = tmp_path / "install-unpinned.sh"
+    p.write_text(PIN_RE.sub(lambda m: f'{m.group(1)}=""', SCRIPT.read_text()))
+    return p
+
+
+def _run(home: Path, *args: str, path: str | None = None, shell: str = "/bin/zsh",
+         script: Path | None = None) -> subprocess.CompletedProcess:
     env = {"HOME": str(home), "PATH": path or "/usr/bin:/bin", "SHELL": shell, "LANG": "C"}
-    cmd = ["sh", str(SCRIPT), "--python", sys.executable, *args]
+    cmd = ["sh", str(script or SCRIPT), "--python", sys.executable, *args]
     if NO_NET:
         cmd = ["unshare", "-rn", *cmd]
     return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
@@ -161,7 +173,8 @@ def test_tarball_method_checks_sha256(tmp_path, release):
     url = f"file://{release['tarball']}"
     bad = _run(home, "--method", "tarball", "--commit", release["commit"], "--tarball-url", url, "--sha256", "a" * 64)
     assert bad.returncode != 0 and "SHA-256 mismatch" in bad.stderr and _tree(home) == {}
-    none = _run(home, "--method", "tarball", "--commit", release["commit"], "--tarball-url", url)
+    none = _run(home, "--method", "tarball", "--commit", release["commit"], "--tarball-url", url,
+                script=_unpinned(tmp_path))
     assert none.returncode != 0 and "refusing to install unverified code" in none.stderr
     ok = _run(home, "--method", "tarball", "--commit", release["commit"], "--tarball-url", url, "--sha256", release["sha"])
     assert ok.returncode == 0, ok.stderr
@@ -170,7 +183,7 @@ def test_tarball_method_checks_sha256(tmp_path, release):
 
 def test_unpinned_script_refuses_and_foreign_launcher_is_kept(tmp_path, release):
     home = _home(tmp_path)
-    r = _run(home)
+    r = _run(home, script=_unpinned(tmp_path))
     assert r.returncode != 0 and "No release is pinned" in r.stderr and _tree(home) == {}
     shim = home / ".local" / "bin" / "tokenstretch"
     shim.parent.mkdir(parents=True)
@@ -183,8 +196,11 @@ def test_unpinned_script_refuses_and_foreign_launcher_is_kept(tmp_path, release)
 def test_script_has_no_telemetry_and_one_pin_block():
     text = SCRIPT.read_text()
     assert text.count("==== PINNED RELEASE") == 1
-    for line in ('TS_PIN_TAG=""', 'TS_PIN_COMMIT=""', 'TS_PIN_TARBALL_SHA256=""'):
-        assert line in text
+    pins = dict(m.group(0).split("=", 1) for m in PIN_RE.finditer(text))
+    assert set(pins) == {"TS_PIN_TAG", "TS_PIN_COMMIT", "TS_PIN_TARBALL_SHA256"}
+    tag, commit, sha = (pins[k].strip('"') for k in ("TS_PIN_TAG", "TS_PIN_COMMIT", "TS_PIN_TARBALL_SHA256"))
+    assert (tag == "" and commit == "") or (re.fullmatch(r"v\d+\.\d+\.\d+", tag) and re.fullmatch(r"[0-9a-f]{40}", commit))
+    assert sha == "" or re.fullmatch(r"[0-9a-f]{64}", sha)
     lowered = text.lower()
     for bad in ("-m pip", "setup --yes", "tokenstretch install ", "analytics.", "wget "):
         assert bad not in lowered

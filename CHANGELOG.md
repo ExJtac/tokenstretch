@@ -4,7 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-11
+
+First release.
+
 ### Added
+- `doctor` (W01–W27, T01–T07, P00–P06), Clean-profile `install` / `undo`, the opt-in API-key proxy profile, and `bench` (`--from-logs`, `--bench`, `--prepare` / `--measure`).
+- Doctor-only adapters for Cursor, Aider, OpenCode, and Cline. Gemini CLI and Copilot CLI are tier 1 (below).
 - Copilot CLI:
   - `bench --bench` reads Copilot's own `--usage-output-file` (`UsageGetMetricsResult`; per-model totals, with `agentMetrics` not added again), before falling back to OTel spans and `events.jsonl`.
   - Sessions are tied to a repo through `session.start` `data.context.cwd` or `workspace.yaml`, so `bench --prepare` / `--measure` include Copilot and `watch` labels sessions by project.
@@ -12,7 +18,9 @@ All notable changes to this project are documented here. The format follows [Kee
   - A recommended light / mid / top map (`claude-haiku-5.5` / `claude-sonnet-5.5` / `claude-opus-5.5`, GPT-6 alternatives), labeled as a recommendation and not a GitHub list.
 - OpenCode doctor T01 (high): the `opencode-gemini-auth` plugin, which reuses Gemini CLI's Google OAuth (against Gemini CLI's terms). Cline and Roo are not flagged on the name alone.
 - `model suggest` shows alternatives per tier (Codex light: `gpt-6-luna` or `gpt-6.1-terra`) and a note when a tier map is a recommendation.
-- `scripts/install.sh`: a one-line pinned installer for macOS and Linux. It checks for Python 3.11+. It clones the pinned tag and verifies HEAD equals the pinned commit, or downloads that commit's tarball and verifies its pinned SHA-256. It installs into `~/.local/share/tokenstretch` with a private `--without-pip` venv (no pip, no PyPI) and a launcher in `~/.local/bin`. Shell startup files are edited only with `--add-to-path` (backed up first). `--dry-run` prints every step and changes nothing, and `--uninstall` removes exactly what the installer created. No telemetry, and it never runs setup or third-party installs. The pin is empty until a release is made (see `docs/RELEASING.md`).
+- `scripts/install.sh`: a one-line pinned installer for macOS and Linux. It checks for Python 3.11+. It clones the pinned tag and verifies HEAD equals the pinned commit, or downloads that commit's tarball and verifies its pinned SHA-256. It installs into `~/.local/share/tokenstretch` with a private `--without-pip` venv (no pip, no PyPI) and a launcher in `~/.local/bin`. Shell startup files are edited only with `--add-to-path` (backed up first). `--dry-run` prints every step and changes nothing, and `--uninstall` removes exactly what the installer created. No telemetry, and it never runs setup or third-party installs. The pin goes in a separate commit after the release tag.
+- `scripts/release-pin.sh TAG`: fills the installer pin from a local tag and commits it. It checks the tagged commit's version, refuses dirty trees and moved tags, and adds the tarball SHA-256 later with `--sha256`. It never tags, pushes, or downloads.
+- `tokenstretch.__version__`.
 - Codex sessions in `watch`, `status`, `report --weekly`, and `dashboard` are labeled by the working directory recorded in the rollout (`session_meta.cwd`, else the first `turn_context.cwd`), with your home folder shown as `~`. Only a session with no recorded directory falls back to its date. Codex now also appears under `status` → newest sessions.
 - Codex tier map for `model suggest` and `model default --tool codex`: `gpt-6-luna` / `gpt-6.1-sol` / `gpt-6-astra` (Codex models page). `model default` sets the top-level `model` in `~/.codex/config.toml`: dry run by default, `--apply` backs up first, `undo` restores. It refuses when the file isn't valid TOML or when the edit would change any other key.
 - Gemini CLI and GitHub Copilot CLI are now tier 1. Gemini CLI: usage from `~/.gemini/tmp/<project>/chats/**` session records (incremental, per-turn; `watch`, `status`, `report --weekly`, `dashboard`), `bench --bench` (`gemini -p … --output-format stream-json`, `GEMINI_API_KEY`, usage statistics off in the sandbox) and `bench --prepare`, a Clean-profile SessionStart note (a `systemMessage`, not added to the model's context) and a native `.geminiignore` read gate, setup items (usage statistics off; rules block in an existing `GEMINI.md`), `model default` (`flash-lite` / `flash` / `pro`), and new doctor checks: W14 long sessions, W16 `billing.overageStrategy: "always"`, W20 `model.compressionThreshold` ≥ 0.9, P01 OpenTelemetry export off the machine (high when prompts are logged), P03 local telemetry file with prompts, P05 auto-update. Copilot CLI: usage from `session-state/*/events.jsonl` totals and per-turn `chat` spans from the local OTel file export (spans win for the same session; `watch` needs the file export), `bench --bench` (`COPILOT_GITHUB_TOKEN`, `--disable-client-telemetry`, `--sync-session=off`, a sandbox `COPILOT_HOME`, a fixed `--session-id`, and a local OTel file with content capture off), a rules block in an existing `.github/copilot-instructions.md`, and doctor checks W05 (Opus default), W06 (`effortLevel` xhigh/max; the old adapter read undocumented keys), W13, W16 (`continueOnAutoMode`), W18 (allow-all), P01 (client telemetry unknown unless an alias passes `--disable-client-telemetry`; OTLP HTTP export), P02 (`remoteSessions`), P05 (`autoUpdate`), P06 (`storeTokenPlaintext`; `config.json` is never opened).
@@ -38,7 +46,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Doctor: W01, W02, and W17 fixes point to `tokenstretch trim`.
 - Contributor docs, issue and PR templates, and a CI workflow including the network-blocked run.
 
-### Fixed
+### Fixed (during development, before this release)
 - Copilot CLI input is now read as including cache read and write, and reasoning as part of output, per GitHub's `/usage` help and OTel docs. The blanket "unverified semantics" flag is gone. Older `events.jsonl` files and the OTel file's line envelope keep an UNVERIFIED note.
 - Gemini CLI token buckets are documented as verified: cached tokens are inside input, tool-use prompt tokens are added on top, and thoughts are separate from output. The buckets add up to the record's `total`.
 - Claude Code W08 (a shortcut switches the model mid-conversation) is now one finding that lists the shortcuts, instead of one finding per file. Subagent files (`agents/*.md`) and other Markdown under skills or plugins no longer count, because their `model` field doesn't switch the main conversation.
@@ -49,9 +57,3 @@ All notable changes to this project are documented here. The format follows [Kee
 - Privacy findings are no longer reported twice by `doctor` for Gemini CLI, Copilot CLI, Cursor, Aider, OpenCode, and Cline.
 - Top-level TOML edits (`openai_base_url` for the API-key proxy profile, Codex `model`) now go before the first `[table]`. Before, a new key was appended to the end of the file, which put it inside the last table.
 - Long project paths in `status` are shortened like everywhere else (home shown as `~`, cut on a `/` boundary).
-
-## [0.1.0] - 2026-11-10
-
-### Added
-- `doctor` (W01–W27, T01–T07, P00–P06), Clean-profile `install` / `undo`, the opt-in API-key proxy profile, and `bench` (`--from-logs`, `--bench`, `--prepare` / `--measure`).
-- Doctor-only adapters for Gemini CLI, Copilot CLI, Cursor, Aider, OpenCode, and Cline.

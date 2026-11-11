@@ -39,13 +39,13 @@ Stars, bug reports, and pull requests help just as much.
 
 **Not released yet.** Until a release is pinned in `scripts/install.sh`, the installer stops and says so. Until then, install from a clone (see the quickstart).
 
-One line (macOS or Linux, Python 3.11+):
+One line, for macOS or Linux with Python 3.11 or newer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ExJtac/tokenstretch/main/scripts/install.sh | sh
 ```
 
-Or inspect it first (recommended): download it, read it, preview it, then run it:
+Or inspect it first (recommended): download it, read it, preview it, and then run it:
 
 ```bash
 curl -fsSLo install.sh https://raw.githubusercontent.com/ExJtac/tokenstretch/main/scripts/install.sh
@@ -54,8 +54,8 @@ sh install.sh --dry-run         # prints every step; downloads and changes nothi
 sh install.sh
 ```
 
-What it does:
-- It installs one pinned release, never "latest". With git, it clones the pinned tag and refuses if the tag doesn't point at the pinned commit. Without git, it downloads that commit's tarball and refuses unless its SHA-256 matches the pinned hash. That fetch is its only network use.
+What the installer does:
+- It installs one pinned release, never "latest". The tag and commit are written at the top of the script. With git, it clones the pinned tag and refuses if the tag doesn't point at the pinned commit. Without git, it downloads that commit's tarball and refuses unless its SHA-256 matches the pinned hash. That fetch is its only network use.
 - It installs into its own folder, `~/.local/share/tokenstretch`, with a private venv made by `python -m venv --without-pip`. tokenstretch has no dependencies, so there's no pip and nothing from PyPI.
 - It adds a `tokenstretch` launcher in `~/.local/bin`.
 - It never edits your shell startup files unless you pass `--add-to-path`, and it backs them up first when you do.
@@ -63,7 +63,7 @@ What it does:
 
 `sh install.sh --uninstall` removes exactly what it created: the folder, the launcher, and the PATH line. Your `~/.tokenstretch` backups stay, so run `tokenstretch undo` first if you want setup's changes reverted.
 
-For an immutable link, use the commit link from the release notes instead of `main`. pipx isn't used: it would download build tools from PyPI.
+Options: `--add-to-path`, `--python PATH`, `--data-dir DIR`, `--bin-dir DIR`, `--dry-run`, `--uninstall` (`sh install.sh --help` lists them). For an install link that can never change, use the commit link in the release notes instead of `main`. The installer doesn't use pipx, because pipx would download build tools from PyPI. To install from a clone instead, see the quickstart.
 
 ## 30-second quickstart
 
@@ -239,9 +239,9 @@ Your mileage will differ. Run `tokenstretch bench` on your own repo (see `LIVE-B
 |---|---|---|
 | 1 (full) | **Claude Code**, **Codex**, **Gemini CLI**, **Copilot CLI** | doctor, setup, status, watch, report, dashboard, model suggest, bench, Clean-profile hooks, undo (`model default`: Claude Code, Codex, Gemini CLI, Copilot CLI) |
 | Doctor-only | Cursor, Aider, OpenCode, Cline | doctor checks and privacy listing |
+| Planned | Goose, Devin (see `ROADMAP.md`) | |
 
 Gemini CLI and Copilot CLI limits: Copilot's per-turn usage (for `watch`) only exists when you turn on its local OpenTelemetry file export (`COPILOT_OTEL_FILE_EXPORTER_PATH`); otherwise usage comes from session totals in `~/.copilot/session-state/*/events.jsonl`. Copilot input is read as including cache, per GitHub's `/usage` help and OTel docs. Copilot client telemetry can only be turned off with the `--disable-client-telemetry` flag, so doctor reports it as unknown unless an alias passes it. `bench --bench` reads Copilot's own `--usage-output-file`. `bench --prepare` / `--measure` cover both tools. RTK's hooks for these tools are wired by `rtk init -g --gemini` / `rtk init -g --copilot`, which you run yourself.
-| Planned | Goose, Devin (see `ROADMAP.md`) | |
 
 Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add one, see `CONTRIBUTING.md` and `ADAPTERS.md`.
 
