@@ -6,6 +6,10 @@ tokenstretch is **free and open source (MIT)**. It runs **100% on your machine**
 
 It doesn't replace your tools. It checks, configures, and measures them, including RTK and Caveman.
 
+![The tokenstretch dashboard: live sessions, warnings, model usage, and weekly trend](docs/images/dashboard.png)
+
+<sub>The local dashboard (`tokenstretch dashboard`), shown with sample data.</sub>
+
 ## What you get
 
 - **A plain-English checkup.** `doctor` runs 40+ local checks: the top model set as your everyday default, giant sessions that re-read hundreds of thousands of tokens on every step, duplicate instruction files you pay for twice, telemetry quietly left on, proxy chains, and setups that risk your provider's terms.
@@ -92,6 +96,8 @@ tokenstretch dashboard --no-open  # just print the link; --port 9000 to pick a p
 ```
 
 One page, refreshed every 5 seconds while it runs:
+
+![Full tokenstretch dashboard with doctor results, tools and telemetry, setup status, and bench results](docs/images/dashboard-full.png)
 
 - **Overview:** tokens today and this week, cost (only if your logs report it), active sessions, and the biggest history.
 - **Live sessions:** tool, project, model, and history size with a bar against the 150K mark.
