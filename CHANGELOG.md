@@ -10,6 +10,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - `tokenstretch report`: a self-contained local HTML report (no external assets).
 - `tokenstretch undo` now restores every step of the latest setup run, newest first.
 - Adapter hooks `setup_items` and `live_sessions` (Claude Code, Codex, host).
+- `tokenstretch watch`: a read-only loop over local session logs (default every 10s, `--once`, `--interval`, `--max-context`, `--max-reads`, optional `--notify` through the OS's own notifier). It warns once per session about long history, the top model on simple steps, repeated reads of the same file (paths only), and fast history growth, each with why it costs credits and a one-line fix. Claude Code fully, Codex without the re-read check.
+- `tokenstretch model suggest`: a transparent keyword-and-size heuristic that recommends light / mid / top and names the model per detected tool. No model calls; not a measured claim.
+- `tokenstretch model default --tier …`: dry run by default; `--apply` changes the default model (Claude Code `settings.json` `model`) with a backup, and `undo` restores it.
+- Adapter hooks `watch_sessions`, `model_tiers`, `is_top_model`, `model_switch_hint`, and `plan_default_model`.
 - Contributor docs, issue and PR templates, and a CI workflow including the network-blocked run.
 
 ### Fixed

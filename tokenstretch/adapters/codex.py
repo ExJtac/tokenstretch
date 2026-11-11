@@ -535,6 +535,38 @@ class CodexAdapter(Adapter):
         "session_start_note": "SessionStart",
     }
 
+    # ---- watch / model picker -----------------------------------------------------------
+    # No tier map: Codex model names change often, so the picker names a tier and `/model` only.
+    def is_top_model(self, model: str) -> bool:
+        return bool(HEAVY.search(model or ""))
+
+    def model_switch_hint(self, model: str) -> str:
+        return "/model"
+
+    def watch_sessions(self, ctx: Context, limit: int = 5) -> list[dict] | None:
+        """Per-turn usage from the newest rollout logs. Rollouts carry no Read-call paths we rely on."""
+        paths = []
+        for p in _codex_log_paths(ctx):
+            try:
+                paths.append((p.stat().st_mtime, p))
+            except OSError:
+                continue
+        out = []
+        for mtime, path in sorted(paths, reverse=True)[:limit]:
+            recs, _ = parse_codex_rollout(path, self.id)
+            turns = [{
+                "ts": r.ts, "model": r.model or "", "history_tokens": r.total_input(),
+                "output_tokens": r.output_tokens, "tool_calls": None, "reads": [],
+            } for r in recs]
+            if not turns:
+                continue
+            out.append({
+                "adapter": self.id, "session": _session_id_from_name(path)[-8:], "project": path.parent.name,
+                "path": str(path), "last_write": mtime, "turns": turns,
+                "clear_hint": "/new", "compact_hint": "/compact",
+            })
+        return out
+
     def setup_items(self, ctx: Context) -> list[SetupItem]:
         """Credit-saving rules in the project AGENTS.md. Plans only; the core writes with backups."""
         if ctx.root.resolve() == ctx.home.resolve():

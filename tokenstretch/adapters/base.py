@@ -287,6 +287,31 @@ class Adapter:
         """Newest local sessions, read-only: [{adapter, session, project, model, history_tokens, last_write, path}]."""
         return []
 
+    # ---- watch / model picker ------------------------------------------------------------
+    def watch_sessions(self, ctx: Context, limit: int = 5) -> list[dict] | None:
+        """Per-turn records for `tokenstretch watch`, read-only. None => not supported yet.
+
+        [{adapter, session, project, path, last_write, clear_hint, compact_hint,
+          turns: [{ts, model, history_tokens, output_tokens, tool_calls (int|None), reads: [path]}]}]
+        `reads` holds file paths from the tool's own read calls only; never file contents.
+        """
+        return None
+
+    def model_tiers(self) -> dict[str, str]:
+        """{"light": model, "mid": model, "top": model} for the model picker. Empty => no tier map yet."""
+        return {}
+
+    def is_top_model(self, model: str) -> bool:
+        return False
+
+    def model_switch_hint(self, model: str) -> str:
+        """How a user switches model inside the tool, e.g. `/model sonnet`."""
+        return ""
+
+    def plan_default_model(self, ctx: Context, tier: str) -> SetupItem | None:
+        """Plan setting the tool's default model to `tier`. Plans only; the core writes with backups."""
+        return None
+
     # ---- helpers --------------------------------------------------------------------
     def finding(self, id: str, slug: str, severity: str, category: str, message: str, fix: str,
                 source: str, **evidence) -> Finding:

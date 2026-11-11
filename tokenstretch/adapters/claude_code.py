@@ -1249,13 +1249,18 @@ class ClaudeCodeAdapter(Adapter):
             items.append(item)
         return items
 
-    def _setup_model(self, ctx: Context) -> SetupItem | None:
+    def _model_target(self, ctx: Context) -> tuple[str | None, Path | None, Path]:
+        """(current default model, where it is set, file to edit). The last settings file that sets it wins."""
         current, where = None, None
         target = ctx.home / ".claude" / "settings.json"
         for path in _settings_paths(ctx):
             data = read_json(path)
             if isinstance(data, dict) and "__error__" not in data and data.get("model"):
                 current, where, target = str(data["model"]), path, path
+        return current, where, target
+
+    def _setup_model(self, ctx: Context) -> SetupItem | None:
+        current, where, target = self._model_target(ctx)
         if current and not HEAVY_MODEL.search(current):
             return None  # already on a mid/small model; leave it alone
         raw = read_json(target) if target.is_file() else {}
@@ -1333,6 +1338,69 @@ class ClaudeCodeAdapter(Adapter):
                 "clear_hint": "/clear",
             })
         return out
+
+    # ---- watch / model picker -----------------------------------------------------------
+    MODEL_TIERS = {"light": "haiku", "mid": "sonnet", "top": "opus"}
+
+    def model_tiers(self) -> dict[str, str]:
+        return dict(self.MODEL_TIERS)
+
+    def is_top_model(self, model: str) -> bool:
+        return bool(HEAVY_MODEL.search(model or ""))
+
+    def model_switch_hint(self, model: str) -> str:
+        return f"/model {model}"
+
+    def watch_sessions(self, ctx: Context, limit: int = 5) -> list[dict] | None:
+        """Per-turn usage, tool-call counts, and Read paths from the newest main sessions (logs only)."""
+        paths = []
+        for p in _transcript_paths(ctx, subagents=False):
+            try:
+                paths.append((p.stat().st_mtime, p))
+            except OSError:
+                continue
+        out = []
+        for mtime, path in sorted(paths, reverse=True)[:limit]:
+            turns = _session_turns(path)
+            if not turns:
+                continue
+            out.append({
+                "adapter": self.id, "session": path.stem[:8], "project": path.parent.name,
+                "path": str(path), "last_write": mtime, "turns": turns,
+                "clear_hint": "/clear", "compact_hint": "/compact",
+            })
+        return out
+
+    def plan_default_model(self, ctx: Context, tier: str) -> SetupItem | None:
+        model = self.MODEL_TIERS.get(tier)
+        if not model:
+            return None
+        current, where, target = self._model_target(ctx)
+        if current == model:
+            return None
+        raw = read_json(target) if target.is_file() else {}
+        if not isinstance(raw, dict) or "__error__" in raw:
+            return None  # unreadable JSON: never overwrite
+        data = dict(raw)
+        data["model"] = model
+        notes = ["Switch for one session with `/model NAME` in Claude Code; this only changes the default."]
+        env_model, env_where = ctx.env_or_rc("ANTHROPIC_MODEL")
+        if env_model:
+            notes.append(f"ANTHROPIC_MODEL={env_model} in {env_where} overrides this setting. "
+                         "Remove it yourself; shell files are never edited.")
+        return SetupItem(
+            id="claude-default-model", adapter_id=self.id,
+            title=f"Set the default Claude Code model to {model} ({tier} tier)",
+            why=(f"Your default is {current} (from {_home_short(where, ctx)}). " if current else "No default model is set. ")
+                + f"New sessions will start on {model}.",
+            changes=[{
+                "path": str(target), "kind": "modify" if target.is_file() else "create",
+                "content": _dump_json(data), "key": "model",
+                "reason": f"model: {current or '(unset)'} -> {model}",
+            }],
+            done=f"set default model to {model}",
+            notes=notes,
+        )
 
     HOOK_EVENTS = {
         "pre_tool_shell_filter": ("PreToolUse", "Bash"),
@@ -1475,6 +1543,68 @@ def _last_assistant_usage(path: Path, tail_bytes: int = 2_000_000) -> tuple[str,
         if isinstance(usage, dict) and model and not model.startswith("<"):
             return model, usage
     return None
+
+
+def _home_short(path, ctx: Context) -> str:
+    try:
+        return "~/" + str(Path(path).relative_to(ctx.home))
+    except ValueError:
+        return str(path)
+
+
+READ_TOOLS = {"Read", "NotebookRead"}
+
+
+def _session_turns(path: Path, tail_bytes: int = 4_000_000) -> list[dict]:
+    """One record per assistant message: model, history size, output size, tool calls, Read paths.
+
+    Claude Code writes one line per content block, each repeating message.id and usage, so lines
+    are merged on message.id. Only file paths are kept from Read calls; contents are never kept.
+    """
+    try:
+        with path.open("rb") as fh:
+            size = fh.seek(0, 2)
+            fh.seek(max(0, size - tail_bytes))
+            chunk = fh.read()
+    except OSError:
+        return []
+    lines = chunk.splitlines()
+    if size > tail_bytes and lines:
+        lines = lines[1:]
+    turns: dict[str, dict] = {}
+    for n, raw in enumerate(lines):
+        try:
+            obj = json.loads(raw)
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if not isinstance(obj, dict) or obj.get("type") != "assistant":
+            continue
+        msg = obj.get("message")
+        if not isinstance(msg, dict):
+            continue
+        model = str(msg.get("model") or "")
+        if not model or model.startswith("<"):
+            continue
+        key = str(msg.get("id") or f"line{n}")
+        turn = turns.get(key)
+        if turn is None:
+            usage = msg.get("usage") if isinstance(msg.get("usage"), dict) else {}
+            turn = turns[key] = {
+                "ts": obj.get("timestamp"), "model": model,
+                "history_tokens": sum(int(usage.get(k) or 0) for k in
+                                      ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")),
+                "output_tokens": int(usage.get("output_tokens") or 0),
+                "tool_calls": 0, "reads": [],
+            }
+        for block in msg.get("content") or []:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            turn["tool_calls"] += 1
+            inp = block.get("input") if isinstance(block.get("input"), dict) else {}
+            fp = inp.get("file_path") or inp.get("notebook_path")
+            if block.get("name") in READ_TOOLS and isinstance(fp, str) and fp:
+                turn["reads"].append(fp)
+    return list(turns.values())
 
 
 def _plan_items(plan) -> list[str]:

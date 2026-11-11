@@ -18,6 +18,9 @@ Each adapter implements:
 | `install_hooks(ctx, plan, dry_run=True)` | **Planner only** — returns file changes, writes nothing. The installer applies backups and the manifest. |
 | `run_headless_task(ctx, task, opts)` | Refuses unless `opts["bench"]` is true. Runs only through a runner (`FakeHeadlessRunner` in tests). |
 | `undo(ctx, manifest_path)` | Adapter stub raises `NotImplementedError`. CLI undo uses `installer.undo_manifest`. |
+| `watch_sessions(ctx, limit)` | Per-turn records for `watch` (model, history tokens, output tokens, tool-call count, Read paths only). `None` = not supported yet. Read-only. |
+| `model_tiers()` / `is_top_model(model)` / `model_switch_hint(model)` | Model picker facts: `{light, mid, top}` names (empty = no tier map), top-tier test, and the in-tool switch command. |
+| `plan_default_model(ctx, tier)` | **Planner only**: a `SetupItem` that sets the default model; the core applies it with backup + manifest. |
 
 Normalized `UsageRecord` fields: `ts`, `session_id`, `model`, `is_subagent`, `input_tokens` (uncached), `cache_read_tokens`, `cache_write_tokens`, `output_tokens`, `reasoning_tokens`, `cost_usd` (only when the log actually has it), `source`.
 

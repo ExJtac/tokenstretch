@@ -1,4 +1,4 @@
-"""CLI: setup explains then applies with backups; status/report are read-only; doctor is read-only; install defaults to dry-run; undo restores; bench is --from-logs, API-key --bench, or subscription --prepare/--measure."""
+"""CLI: watch is a read-only live loop; model suggest is a local heuristic and model default dry-runs unless --apply; setup explains then applies with backups; status/report are read-only; doctor is read-only; install defaults to dry-run; undo restores; bench is --from-logs, API-key --bench, or subscription --prepare/--measure."""
 from __future__ import annotations
 
 import argparse
@@ -196,6 +196,39 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_watch(args) -> int:
+    from .watch import WatchConfig, run_watch
+
+    ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    cfg = WatchConfig(max_context=args.max_context, max_reads=args.max_reads)
+    return run_watch(ctx, cfg, interval=max(1.0, args.interval), once=bool(args.once), notify=bool(args.notify))
+
+
+def cmd_model(args) -> int:
+    from .models import format_suggestion, run_default, suggest_tier, tool_picks
+
+    ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    if args.model_cmd == "suggest":
+        text = " ".join(args.task or [])
+        if args.file:
+            try:
+                text = (text + "\n" + args.file.read_text(encoding="utf-8", errors="replace")).strip()
+            except OSError as exc:
+                print(f"cannot read {args.file}: {exc}", file=sys.stderr)
+                return 2
+        if not text.strip():
+            print('describe the task: model suggest "fix the flaky login test"  (or --file prompt.txt)', file=sys.stderr)
+            return 2
+        res = suggest_tier(text)
+        picks = tool_picks(ctx, res["tier"])
+        if args.json:
+            print(json.dumps({**res, "tools": picks}, indent=2))
+        else:
+            print("\n".join(format_suggestion(res, picks)))
+        return 0
+    return run_default(ctx, args.tier, tool=args.tool, apply=bool(args.apply) and not args.dry_run)
+
+
 def _add_context_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--home", type=Path)
     parser.add_argument("--root", type=Path)
@@ -299,6 +332,28 @@ def main(argv=None) -> int:
     b.add_argument("--adapter", action="append", dest="adapters", help="limit to this adapter id (repeatable)")
     b.add_argument("--json", action="store_true")
 
+    w = sub.add_parser("watch", help="read-only live loop over local session logs; warns once per waste condition")
+    _add_context_args(w)
+    w.add_argument("--interval", type=float, default=10.0, help="seconds between passes (default 10)")
+    w.add_argument("--once", action="store_true", help="one pass, then exit")
+    w.add_argument("--max-context", type=int, default=150_000, help="warn when history passes this (default 150000)")
+    w.add_argument("--max-reads", type=int, default=3, help="warn when one file is read this many times (default 3)")
+    w.add_argument("--notify", action="store_true", help="also show a local desktop notification (osascript/notify-send)")
+
+    m = sub.add_parser("model", help="heuristic model picker and a backed-up default-model switch")
+    msub = m.add_subparsers(dest="model_cmd", required=True)
+    ms = msub.add_parser("suggest", help="suggest light / mid / top for a task (local rules, no model calls)")
+    _add_context_args(ms)
+    ms.add_argument("task", nargs="*", help="the task description")
+    ms.add_argument("--file", type=Path, help="read the task description from this file")
+    ms.add_argument("--json", action="store_true")
+    md = msub.add_parser("default", help="set a tool's default model by tier (dry-run unless --apply)")
+    _add_context_args(md)
+    md.add_argument("--tier", choices=("light", "mid", "top"), required=True)
+    md.add_argument("--tool", help="adapter id, e.g. claude (default: every detected tool with a tier map)")
+    md.add_argument("--apply", action="store_true", help="write the change (backed up; undo restores it)")
+    md.add_argument("--dry-run", action="store_true", help="show the plan only (the default)")
+
     a = p.parse_args(argv)
     if a.cmd == "doctor":
         return doctor(a)
@@ -316,5 +371,9 @@ def main(argv=None) -> int:
         return cmd_status(a)
     if a.cmd == "report":
         return cmd_report(a)
+    if a.cmd == "watch":
+        return cmd_watch(a)
+    if a.cmd == "model":
+        return cmd_model(a)
     print(f"{a.cmd}: not implemented yet", file=sys.stderr)
     return 3

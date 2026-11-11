@@ -11,6 +11,8 @@ It doesn't replace your tools. It checks, configures, and measures them, includi
 - **A plain-English checkup.** `doctor` runs 40+ local checks: the top model set as your everyday default, giant sessions that re-read hundreds of thousands of tokens on every step, duplicate instruction files you pay for twice, telemetry quietly left on, proxy chains, and setups that risk your provider's terms.
 - **Fixes it applies for you.** `setup` explains each change (what it is, why it costs you, which file and key it touches, and how to undo it), asks once, then applies it with live progress.
 - **A live view.** `status` shows what's applied, which model each tool defaults to, and how much history your newest sessions re-read on every step. It flags sessions over ~150K tokens with a "`/clear` at the next task break" tip.
+- **A live watch.** `watch` runs quietly in a terminal and warns you, once per problem, when a session's history gets too big, the top model is doing simple steps, the same file keeps getting re-read, or history is growing fast. Each warning says what's wrong, why it costs credits, and the one-line fix.
+- **A model picker.** `model suggest "<task>"` recommends light, mid, or top for a task and names the model for each tool you have. `model default --tier mid` changes your default model, with a backup and undo.
 - **A shareable report.** `report` writes a single self-contained HTML file with the findings, the plan, what was applied, undo commands, and current status. It loads nothing from the internet.
 - **Real measurements, never guesses.** `bench` compares before and after on a throwaway copy of your repo, using your agent's own usage logs. If there's no data, it says `no measurement`.
 - **Full undo.** Every changed file is backed up under `~/.tokenstretch/backups/`, and each change is recorded in a manifest.
@@ -23,6 +25,8 @@ cd ~/your-project
 tokenstretch setup           # explains the plan, asks [y/N], applies with backups
 tokenstretch status          # what's on now, plus your newest sessions
 tokenstretch report          # writes a local HTML report and prints its path
+tokenstretch watch           # live warnings while you work (Ctrl-C to stop)
+tokenstretch model suggest "fix the flaky login test"
 tokenstretch undo            # restores everything the last setup changed
 ```
 
@@ -57,6 +61,39 @@ To undo, run **`tokenstretch undo`**. It restores every file from the latest set
 
 Shell rc files are never edited. If `ANTHROPIC_MODEL` is set in your shell, setup tells you rather than changing it.
 
+## Watch while you work
+
+`tokenstretch watch` re-reads your local session logs every 10 seconds (`--interval`) and prints a warning the first time a session shows one of these. It never repeats a warning for the same session.
+
+| Warning | Why it costs credits | Fix it suggests |
+|---|---|---|
+| History over 150K tokens (`--max-context`) | Every step re-sends the whole conversation. | `/clear` (fresh start) or `/compact` |
+| Top model on the last 3 simple steps (short replies, few tool calls) | The top model costs several times more per step. | `/model sonnet` for routine steps |
+| The same file read 3+ times (`--max-reads`) | Each re-read is added to history and re-sent. | Ask for line ranges or a note; start fresh |
+| History grew 60K+ tokens in 5 minutes | Big reads or noisy output pile up fast. | Read narrowly, trim output |
+
+```
+⚠ [claude-code abcd1234 · -Users-me-app] history is ~200K tokens (over 150K).
+   Why it costs credits: every step re-sends the whole conversation, so each reply now costs at least that much input.
+   Fix: finish this step, then type /clear (fresh start) or /compact (keeps a short summary).
+```
+
+It's read-only and only looks at token counts, model names, tool-call counts, and the paths of files the agent read (never their contents). `--once` does a single pass. `--notify` also pops a desktop notification through your OS's own `osascript` or `notify-send`, if present. Claude Code is fully supported. Codex gets the history, top-model, and growth warnings (its logs don't record file reads). Other tools say "not supported yet".
+
+## Pick the right model
+
+```
+$ tokenstretch model suggest "Debug the race condition in the websocket reconnect logic"
+Suggested tier: TOP: hard reasoning across many parts; worth the top model for this task only.
+Why: +2 mentions concurrency/leak bug (score +2).
+
+  Claude Code: opus  (switch now: `/model opus`)
+```
+
+`model suggest` scores the task with simple rules you can read in `tokenstretch/models.py`: words like architecture, broad refactor, migration, race condition, security, or root cause push toward **top**; rename, typo, formatting, docs, or a version bump push toward **light**; tests and small fixes lean **mid**; naming many files or a long description pushes up. It makes no model calls. **It's a rule of thumb, not a measured result**, so move up a tier if the answer comes back wrong. `--file prompt.txt` reads the task from a file and `--json` prints machine-readable output.
+
+`tokenstretch model default --tier mid` shows the change to your default model (Claude Code: `model` in `settings.json`). Add `--apply` to make it. The file is backed up first and `tokenstretch undo` restores it. `--tool claude` limits it to one tool. Codex has no tier map yet, so the picker tells you to use `/model` there.
+
 ## Honest results
 
 We only publish numbers from real bench runs.
@@ -87,7 +124,7 @@ Your mileage will differ. Run `tokenstretch bench` on your own repo (see `LIVE-B
 
 | Tier | Tools | What works |
 |---|---|---|
-| 1 (full) | **Claude Code**, **Codex** | doctor, setup, status, bench, pinned installs, undo |
+| 1 (full) | **Claude Code**, **Codex** | doctor, setup, status, watch, model suggest, bench, pinned installs, undo (`model default`: Claude Code) |
 | Doctor-only | Gemini CLI, Copilot CLI, Cursor, Aider, OpenCode, Cline | doctor checks and privacy listing |
 | Planned | Goose, Devin (see `ROADMAP.md`) | |
 
@@ -99,7 +136,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 **Will it slow my agent down or cut work?** No. The biggest win is choosing the right model for the job and not re-reading old history. The top model is one `/model` command away whenever you need it.
 
-**Does it change anything without asking?** No. Doctor, status, and report are read-only. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
+**Does it change anything without asking?** No. Doctor, status, report, watch, and model suggest are read-only. `model default` is a dry run unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
 
 **Does it touch my login or API keys?** Never.
 
@@ -109,7 +146,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 ## More
 
-- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, and `undo`.
+- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `model`, and `undo`.
 - Technical details and pins: `docs/DETAILS.md`, `ADAPTERS.md`, `tokenstretch/catalog.py`
 - Contributing: `CONTRIBUTING.md` · Roadmap: `ROADMAP.md` · Security: `SECURITY.md`
 

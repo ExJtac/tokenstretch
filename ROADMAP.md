@@ -1,8 +1,12 @@
 # Roadmap
 
+## Done
+- ~~`status --watch`~~: shipped as `tokenstretch watch`, with once-per-session warnings for long history, the top model on simple steps, repeated file reads, and fast growth.
+- Smart model picker: `tokenstretch model suggest` (heuristic) and `tokenstretch model default` (backed up, undoable).
+
 ## Next
+- A Codex tier map for `model suggest` / `model default`, once the model names are verified from docs.
 - One-key setup for more tools: a mid-tier default model for Codex (once the model names are verified from docs).
-- `status --watch`: refresh the session view every few seconds, still read-only.
 - Verify Copilot, Cline, and OpenCode log paths and token fields against real installs (they're marked unverified today).
 - Exercise the live pinned installs on macOS and Linux outside the test suite.
 
