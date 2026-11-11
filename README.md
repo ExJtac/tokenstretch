@@ -6,6 +6,17 @@ tokenstretch is **free and open source (MIT)**. It runs **100% on your machine**
 
 It doesn't replace your tools. It checks, configures, and measures them, including RTK and Caveman.
 
+### Support tokenstretch
+
+tokenstretch is free and stays free, with no paid tier and no tracking. If it saves you credits and you'd like to say thanks:
+
+- [Buy me a coffee on Ko-fi](https://ko-fi.com/exjtac)
+- Bitcoin (on-chain): `bc1qt892nv80l50grylqddnzf9u4203gm2gqmr22ku`
+
+<img src="docs/images/btc-donate.png" alt="Bitcoin donation QR code" width="140">
+
+Stars, bug reports, and pull requests help just as much.
+
 ![The tokenstretch dashboard: live sessions, warnings, model usage, and weekly trend](docs/images/dashboard.png)
 
 <sub>The local dashboard (`tokenstretch dashboard`), shown with sample data.</sub>
@@ -247,10 +258,6 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 **Is it really free?** Yes. It's MIT licensed, with no paid tier, no account, and no server.
 
 **What's the command exit code for doctor?** 0 = clean or info only, 1 = waste findings, 2 = a terms-of-service or privacy high.
-
-## Support tokenstretch
-
-tokenstretch is free and stays free, with no paid tier and no tracking. If it saves you credits and you'd like to say thanks, you can [buy me a coffee on Ko-fi](https://ko-fi.com/exjtac). Stars, bug reports, and pull requests help just as much.
 
 ## More
 
