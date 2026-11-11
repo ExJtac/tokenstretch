@@ -1,0 +1,15 @@
+{
+  "model": "opus",
+  "effortLevel": "max",
+  "fastMode": true,
+  "alwaysThinkingEnabled": true,
+  "autoContinueAtUsageLimit": true,
+  "env": {
+    "ENABLE_TOOL_SEARCH": "false",
+    "DISABLE_PROMPT_CACHING": "1",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "MAX_THINKING_TOKENS": "32000"
+  },
+  "apiKeyHelper": "/usr/local/bin/fixture-api-key-helper"
+}

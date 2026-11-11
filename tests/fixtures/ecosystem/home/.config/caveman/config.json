@@ -1,0 +1,14 @@
+{
+  "telemetry": {
+    "enabled": true
+  },
+  "routing": {
+    "enabled": true
+  },
+  "providers": {
+    "cloud": true
+  },
+  "wasteFixes": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "rtk-oss",
+  "name": "RTK OSS edition",
+  "version": "v1.2.0",
+  "commit": "e288a18c04452fd26192f59132e5324a8bb6924d",
+  "license": "Apache-2.0",
+  "license_source": "LICENSE file at the repo root.",
+  "allowed": true,
+  "notes": "engine/ and rtk-proxy are BUSL-1.1. Only rtk-oss-* assets (RTK_EDITION=oss) are allowed. Full rtk-* and rtk-proxy-* are refused. Decline the proxy offer. install.sh sha256 85ae798116fa0dda42a627333b36903b71291785c7395ad3634f8419f7adaeb5; checksums.txt sha256 cb6c58f0a063ee1ec2313d61d3ba7da6b4af95edf7a333739a692c099af4f48e.",
+  "checksum": "85ae798116fa0dda42a627333b36903b71291785c7395ad3634f8419f7adaeb5"
+}

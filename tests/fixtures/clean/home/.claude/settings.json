@@ -1,0 +1,8 @@
+{
+  "model": "claude-sonnet-4-5",
+  "effortLevel": "high",
+  "fastMode": false,
+  "fastModePerSessionOptIn": true,
+  "bashOutputMaxChars": 8000,
+  "cleanupPeriodDays": 14
+}

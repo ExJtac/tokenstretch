@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "web": {
+      "url": "https://example.invalid/mcp",
+      "type": "http"
+    }
+  }
+}

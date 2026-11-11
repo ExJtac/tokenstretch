@@ -1,0 +1,12 @@
+{
+  "id": "ccusage",
+  "name": "ccusage",
+  "version": "20.0.48",
+  "commit": "8995f3b7fd7110b8f37564f7d0468acc7a7d6b20",
+  "license": "MIT",
+  "license_source": "npm license MIT; LICENSE file says MIT.",
+  "allowed": true,
+  "notes": "Installed via npm ci from a pinned lockfile. Always --offline and ccusage.json defaults.offline=true. npm integrity sha512-8SKmBGO…; shasum 8a5e0667fe7558e2232bfee73d1956b9e6d2427c. Optional @ccusage/ccusage-<os>-<arch> packages are also pinned.",
+  "checksum": "8a5e0667fe7558e2232bfee73d1956b9e6d2427c",
+  "integrity": "sha512-8SKmBGOwebYahMHINWaSxhEI1cy/nmYd1mus4/CMOwaLh3hJlyUdZsiS6raBn3NmAVRGEmyBIOEfNZo75kwiCg=="
+}

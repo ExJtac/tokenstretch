@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "docs": {
+      "command": "docs-mcp"
+    },
+    "remote": {
+      "url": "https://example.invalid/mcp",
+      "type": "http"
+    }
+  }
+}

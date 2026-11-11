@@ -1,0 +1,4 @@
+model = "gpt-5.1"
+model_reasoning_effort = "medium"
+project_doc_max_bytes = 32768
+analytics = { enabled = false }

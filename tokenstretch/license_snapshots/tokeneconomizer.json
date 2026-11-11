@@ -1,0 +1,11 @@
+{
+  "id": "tokeneconomizer",
+  "name": "TokenEconomizer (Microsoft)",
+  "version": "v0.1.0",
+  "commit": "ec8ff5ec7ed5924520ee71b705a920ee64fe2918",
+  "license": "Apache-2.0",
+  "license_source": "LICENSE / plugin.json at the pinned commit.",
+  "allowed": true,
+  "notes": "No release assets; integrity is the git commit SHA. Clean config is microskills=off, toolprune=propose, loopguard=off at $TOKENECONOMIZER_HOME/config.json.",
+  "checksum": "ec8ff5ec7ed5924520ee71b705a920ee64fe2918"
+}

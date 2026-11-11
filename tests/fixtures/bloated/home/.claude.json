@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ]
+    },
+    "idle-docs": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "idle-docs-server"
+      ]
+    },
+    "remote-search": {
+      "type": "http",
+      "url": "https://example.invalid/mcp"
+    }
+  }
+}

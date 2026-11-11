@@ -1,0 +1,2 @@
+magpie $HOME/.claude/.credentials.json
+kompressor $HOME/.codex/auth.json

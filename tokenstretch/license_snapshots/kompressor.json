@@ -1,0 +1,13 @@
+{
+  "id": "kompressor",
+  "name": "OptScale Kompressor",
+  "version": "1.5.14",
+  "commit": "9e4721abb1e11547a63205d60db870fde25f0c61",
+  "license": "MIT",
+  "license_source": "MIT from LICENSE, workspace Cargo.toml, and GitHub spdx_id at commit 9e4721abb1e11547a63205d60db870fde25f0c61. No NOTICE file. Not on crates.io (crates.io 'kompressor' is a different project).",
+  "allowed": true,
+  "notes": "API-key profile only. Prefer a hashed release binary over cargo. linux x86_64 musl sha256=4ec4db8e6e1b5ea2bc15f05b804e8c127233e876a92399a6b99ff40c40be17f1; gnu sha256=5fa88e9e7991cb1c63d3be8eb2ba7a56ea7dbd5db7afed7d74798f70534edae0; macOS universal2.pkg sha256=d3fb5a9b3adb727ec0af7ec4e50849029a3c96676cf582d795d0b67da80db992. Cargo fallback must pass --tag 1.5.14 and --rev 9e4721abb1e11547a63205d60db870fde25f0c61. Never use the in-tree Dockerfile (0.0.0.0:8817) or /etc/kompressor/config.toml (packaged intercept ON). Listen 127.0.0.1:8817. KOMPRESSOR__PROXY__WEBSOCKET_RELAY=false. No linux aarch64 or Windows assets.",
+  "checksum": "4ec4db8e6e1b5ea2bc15f05b804e8c127233e876a92399a6b99ff40c40be17f1",
+  "sha256_linux_musl": "4ec4db8e6e1b5ea2bc15f05b804e8c127233e876a92399a6b99ff40c40be17f1",
+  "sha256_linux_gnu": "5fa88e9e7991cb1c63d3be8eb2ba7a56ea7dbd5db7afed7d74798f70534edae0"
+}

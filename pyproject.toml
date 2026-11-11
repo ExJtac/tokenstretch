@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tokenstretch"
+version = "0.1.0"
+description = "Free, local-only tool that finds and fixes wasted AI coding credits (Claude Code, Codex, and more), with explanations, backups, and undo."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Leverage Lab AI" }]
+keywords = ["claude-code", "codex", "ai-coding", "token-usage", "cost", "privacy", "local-first"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Environment :: Console",
+    "Topic :: Software Development",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0"]
+
+[project.scripts]
+tokenstretch = "tokenstretch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tokenstretch*"]
+
+[tool.setuptools.package-data]
+tokenstretch = ["license_snapshots/*", "pins/ccusage/*", "pins/headroom/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "p00_outer: wraps the suite under unshare -rn; must not run inside that inner suite",
+]

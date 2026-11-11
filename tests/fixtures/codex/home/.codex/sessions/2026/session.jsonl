@@ -1,0 +1,1 @@
+{"model": "gpt-5-pro", "usage": {"input_tokens": 180000, "output_tokens": 20, "cached_input_tokens": 20000, "cache_write_tokens": 1000, "cost_usd": 0.0}}

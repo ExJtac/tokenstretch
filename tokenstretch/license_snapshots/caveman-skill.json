@@ -1,0 +1,11 @@
+{
+  "id": "caveman-skill",
+  "name": "Caveman skill",
+  "version": "v4.1.0",
+  "commit": "1e91f1306d602d4ca23618701b1185575ae1869b",
+  "license": "Apache-2.0",
+  "license_source": "LICENSING.md at commit 1e91f1306d…. 'Caveman' is a trademark.",
+  "allowed": true,
+  "notes": "Clean profile copies skills/caveman only. Never the CLI, never caveman-setup, never the full plugin. Integrity is the git commit SHA (no asset hash).",
+  "checksum": "1e91f1306d602d4ca23618701b1185575ae1869b"
+}

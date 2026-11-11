@@ -1,0 +1,21 @@
+{
+  "model": {
+    "name": "gemini-2.5-pro",
+    "compressionThreshold": 0.5
+  },
+  "mcpServers": {
+    "docs": {
+      "command": "docs-mcp"
+    },
+    "remote": {
+      "url": "https://example.invalid/mcp",
+      "type": "http"
+    }
+  },
+  "context": {
+    "fileName": [
+      "GEMINI.md",
+      "AGENTS.md"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "headroom",
+  "name": "Headroom",
+  "version": "0.44.0",
+  "commit": "b21479e0fa84db5f3e46bb79f96c962de4d5fdc6",
+  "license": "Apache-2.0",
+  "license_source": "Apache-2.0 from LICENSE, pyproject.toml, Cargo.toml, PyPI license_expression, npm license, and GitHub spdx_id at commit b21479e0fa84db5f3e46bb79f96c962de4d5fdc6. NOTICE is third-party attributions only.",
+  "allowed": true,
+  "notes": "API-key profile only. Wheel and sdist sha256 are pinned in tokenstretch/catalog.py and tokenstretch/pins/headroom/requirements.txt. Optional GHCR digest ghcr.io/headroomlabs-ai/headroom:0.44.0@sha256:10ef5f71c4cae3a02ca28107dfcf379aa73314ff26544c1f9988140e71f732f4 (do not pin :latest). Beacon on by default; set HEADROOM_BEACON=off HEADROOM_TELEMETRY=off HEADROOM_UPDATE_CHECK=off DO_NOT_TRACK=1 HEADROOM_OFFLINE=1 and pass --no-telemetry. Never set HEADROOM_ALLOW_UNAUTHENTICATED_BIND.",
+  "checksum": "4fa74895947905acc54564c1a24f67adefc71c2e4d1b599d723db46177f02e42",
+  "sdist_sha256": "4fa74895947905acc54564c1a24f67adefc71c2e4d1b599d723db46177f02e42",
+  "wheel_sha256_manylinux_x86_64": "3b5c7fd289e7d227dcd9b896615541ea9d3d37388bd97b3257fc8769c4b7ef70"
+}

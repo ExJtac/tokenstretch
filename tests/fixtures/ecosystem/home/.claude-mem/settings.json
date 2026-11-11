@@ -1,0 +1,9 @@
+{
+  "telemetry": true,
+  "CLAUDE_MEM_CLAUDE_AUTH_METHOD": "subscription",
+  "cloudSync": true,
+  "provider": "openrouter",
+  "observer": true,
+  "multiKeyRotation": true,
+  "quotaFallback": true
+}

@@ -1,0 +1,12 @@
+{
+  "model": "opus",
+  "autoCompactEnabled": false,
+  "idleCompaction": false,
+  "autoCompactThreshold": 0.8,
+  "autoCompactWindow": 200,
+  "cleanupPeriodDays": 14,
+  "env": {
+    "MAX_MCP_OUTPUT_TOKENS": "100000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "eighty"
+  }
+}

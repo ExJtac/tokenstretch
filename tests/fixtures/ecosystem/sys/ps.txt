@@ -1,0 +1,7 @@
+headroom proxy --port 8787
+kompressor serve
+caveman
+rtk hook
+magpie
+llm-router
+claude-mem observer

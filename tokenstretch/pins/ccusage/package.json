@@ -1,0 +1,8 @@
+{
+  "name": "tokenstretch-ccusage-pin",
+  "private": true,
+  "description": "Pinned ccusage@20.0.48 install for the tokenstretch Clean profile.",
+  "dependencies": {
+    "ccusage": "20.0.48"
+  }
+}

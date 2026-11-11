@@ -1,0 +1,9 @@
+// project config
+{
+  "model": "anthropic/claude-sonnet-4-5",
+  "warming": true,
+  "mcp": {
+    "docs": { "command": "docs-mcp" },
+    "remote": { "url": "https://example.invalid/mcp", "type": "http" },
+  },
+}

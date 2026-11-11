@@ -1,0 +1,1 @@
+0 6 * * * claude -p "warm up the cache"

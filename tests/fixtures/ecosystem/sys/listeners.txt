@@ -1,0 +1,5 @@
+127.0.0.1:8787 headroom
+127.0.0.1:8817 kompressor
+127.0.0.1:8840 kompressor
+0.0.0.0:3425 magpie
+127.0.0.1:37777 claude-mem
