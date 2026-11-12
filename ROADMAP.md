@@ -20,6 +20,7 @@
 - Gemini CLI and Copilot CLI: use `install_steps` (RTK `--gemini` / `--copilot`) from setup's pinned-install step instead of asking you to run them.
 - Exercise the live pinned installs on macOS and Linux outside the test suite.
 
+- `watch`: flag runs of short steps that each re-send a large history (a lead that wakes once per helper result), with the advice to wait for all helpers and act once.
 - Cache-expiry warning, `statusline` and the in-session warning for Codex, Gemini CLI, and Copilot CLI, once each tool's cache counts and status-bar input are verified.
 - `/handoff` for Codex, Gemini CLI, and Copilot CLI, once each tool's custom-command format is verified. Measure the saving with `bench` (one long session against handoff, clear, resume).
 - `tokenstretch tools`: break a session's start-up size into instruction files, connectors, skills, and the rest, with per-item approx. tokens and a backed-up way to turn off the unused ones.
