@@ -275,11 +275,45 @@ def test_watch_and_statusline_point_to_handoff_once_it_exists(tmp_path):
         before = [x for x in Watcher(_ctx(w)).scan() if x.key[-1] == "context"][0]
         assert "/handoff" not in before.fix and build_line(_ctx(w)).endswith("· /clear at the next task break")
     _run(w, yes=True, installs=False)
+    settings = w / "home" / ".claude" / "settings.json"
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    data.pop("env")                            # setup without automatic summaries: the manual tip stays
+    settings.write_text(json.dumps(data), encoding="utf-8")
     with credential_guard():
         after = [x for x in Watcher(_ctx(w)).scan() if x.key[-1] == "context"][0]
         line = build_line(_ctx(w))
     assert "type /handoff (writes a short note) and /clear" in after.fix and "/handoff resume" in after.fix
     assert line.endswith("· /handoff then /clear at the next task break")
+
+
+def test_no_clear_advice_while_automatic_summaries_are_on(tmp_path):
+    """Setup makes the tool summarize at a set size. Below that size (plus a margin) a tip to
+    clear by hand would contradict it, so watch, the status line and the prompt hook stay quiet."""
+    from tokenstretch.statusline import build_line
+    from tokenstretch.watch import Watcher
+    w = _world(tmp_path)                       # 200K history on opus
+    _run(w, yes=True, installs=False)
+    settings = w / "home" / ".claude" / "settings.json"
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    assert data["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "200000"
+    with credential_guard():
+        assert not [x for x in Watcher(_ctx(w)).scan() if x.key[-1] == "context"]
+        line = build_line(_ctx(w))
+    assert "/clear" not in line and "/handoff" not in line and "/compact" not in line
+
+    data["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = "120000"   # history is well past the window
+    settings.write_text(json.dumps(data), encoding="utf-8")
+    with credential_guard():
+        late = [x for x in Watcher(_ctx(w)).scan() if x.key[-1] == "context"][0]
+        line = build_line(_ctx(w))
+    assert late.fix.startswith("type /compact once") and "/clear" not in late.fix and "/handoff" not in late.fix
+    assert line.endswith("· /compact once (automatic summary did not run)")
+
+    data["env"]["DISABLE_AUTO_COMPACT"] = "1"                   # switched off by the user: manual tip again
+    settings.write_text(json.dumps(data), encoding="utf-8")
+    with credential_guard():
+        manual = [x for x in Watcher(_ctx(w)).scan() if x.key[-1] == "context"][0]
+    assert "/clear" in manual.fix
 
 
 # ---- live warnings inside the tool, and /brief ------------------------------------------------

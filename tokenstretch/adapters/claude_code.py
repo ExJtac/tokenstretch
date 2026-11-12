@@ -1600,6 +1600,24 @@ class ClaudeCodeAdapter(Adapter):
         """`/handoff` when that shortcut exists (stat only), else ""."""
         return "/handoff" if any(p.is_file() for p in self._handoff_paths(ctx)) else ""
 
+    def auto_compact_window(self, ctx: Context) -> int | None:
+        """History size at which the tool summarizes by itself, when this kit's compaction hooks
+        are installed and automatic compaction is on. None when unknown or switched off."""
+        merged, _ = _merged_settings(ctx)
+        if not any(f"{PACKAGE_NAME} auto" in cmd for cmd, _ in _hook_cmds(merged)):
+            return None
+        env = merged.get("env") if isinstance(merged.get("env"), dict) else {}
+        if env.get("DISABLE_AUTO_COMPACT") or merged.get("autoCompactEnabled") is False:
+            return None
+        for raw in (env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"), merged.get("autoCompactWindow")):
+            try:
+                n = int(str(raw))
+            except (TypeError, ValueError):
+                continue
+            if n > 0:
+                return n
+        return None
+
     def handoff_skill(self) -> str:
         return (
             "---\n"
@@ -1751,7 +1769,7 @@ class ClaudeCodeAdapter(Adapter):
         """Per-turn usage, tool-call counts, and Read paths from the newest main sessions (logs only)."""
         from ..logcache import memo_by_stat
         out = []
-        handoff = self.handoff_hint(ctx)
+        handoff, auto = self.handoff_hint(ctx), self.auto_compact_window(ctx)
         for mtime, path in _newest(_transcript_paths(ctx, subagents=False), limit, max_age_s):
             turns = memo_by_stat(path, "claude-turns", lambda path=path: _session_turns(path))
             if not turns:
@@ -1760,6 +1778,7 @@ class ClaudeCodeAdapter(Adapter):
                 "adapter": self.id, "session": path.stem[:8], "project": path.parent.name,
                 "path": str(path), "last_write": mtime, "turns": turns,
                 "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": handoff,
+                "auto_compact": auto,
                 "start_tokens": memo_by_stat(path, "claude-start", lambda path=path: _first_history_tokens(path)),
                 "helpers": _helper_stats(path),
             })
@@ -1783,6 +1802,7 @@ class ClaudeCodeAdapter(Adapter):
             "adapter": self.id, "session": real.stem[:8], "project": real.parent.name,
             "path": str(real), "last_write": mtime, "turns": turns,
             "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": self.handoff_hint(ctx),
+            "auto_compact": self.auto_compact_window(ctx),
             "start_tokens": _first_history_tokens(real),
             "helpers": _helper_stats(real),
         }
