@@ -221,3 +221,16 @@ def test_p06_macos_credentials_fallback(tmp_path):
     blob = hits[0].message + str(hits[0].evidence)
     for c in CANARIES:
         assert c not in blob
+
+
+def test_walk_named_skips_named_folders_and_stops_on_budget(tmp_path, monkeypatch):
+    import tokenstretch.files as files
+    for d in ("proj", "Library/app"):
+        (tmp_path / d).mkdir(parents=True)
+        (tmp_path / d / "CLAUDE.md").write_text("x", encoding="utf-8")
+    assert len(list(files.walk_named(tmp_path, {"CLAUDE.md"}))) == 2
+    found = list(files.walk_named(tmp_path, {"CLAUDE.md"}, skip=frozenset({"Library"})))
+    assert [p.parent.name for p in found] == ["proj"]
+    ticks = iter(range(0, 1000, 10))                     # each clock read is 10 s later
+    monkeypatch.setattr(files.time, "monotonic", lambda: next(ticks))
+    assert list(files.walk_named(tmp_path, {"CLAUDE.md"}, budget_s=5.0)) == []

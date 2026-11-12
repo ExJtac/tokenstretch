@@ -13,6 +13,9 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Changed
 - `watch`, `statusline`, `nudge`: the heavy-start warning no longer assumes a terminal. With the `/credits` shortcut installed the fix says to type `/credits`; without it, it says to ask the agent to run `tokenstretch startup`.
 
+### Fixed
+- `doctor`: the search for instruction files under the home folder (W17) no longer walks app data, media, caches, or the trash, and stops after 5 seconds per folder. On one machine with a large home folder a full `doctor` run went from over 10 minutes to 37 seconds.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added
