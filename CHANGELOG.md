@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `watch`: a cache-expiry warning (Claude Code). Reported from the logs when, after a pause of 5+ minutes, the same model re-wrote at least half of the history to the cache and read back at most a fifth (compactions and model switches aren't counted). Predicted from the clock when a session with 20K+ tokens of history has been idle past the cache lifetime: about 60 minutes on a subscription, about 5 with an API key or a 5-minute cache setting. One warning per session. The dashboard's live warnings show it too; the weekly report shows only the logged form.
+- `tokenstretch statusline`: one read-only line for a status bar, with the session's history size against `--max-context` and the most urgent watch warning in short form. It reads the session named by `transcript_path` in the JSON a tool pipes in (only a `.jsonl` inside the tool's log folder is opened), or the newest active session when run by hand. It builds a light context (no `ps`, no `crontab`), prints nothing on any error, and always exits 0.
+- Adapter hooks `watch_session_at` and `cache_ttl_s`; watch turns may carry `cache_read` and `cache_write`.
+
 ## [0.1.0] - 2026-11-11
 
 First release.

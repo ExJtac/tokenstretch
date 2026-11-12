@@ -1505,6 +1505,39 @@ class ClaudeCodeAdapter(Adapter):
             })
         return out
 
+    def watch_session_at(self, ctx: Context, path: Path) -> dict | None:
+        """One session by log path. Only a .jsonl file inside ~/.claude/projects is ever opened."""
+        from ..logcache import memo_by_stat
+        root = ctx.home / ".claude" / "projects"
+        try:
+            real = Path(path).expanduser().resolve()
+            if real.suffix != ".jsonl" or not real.is_relative_to(root.resolve()) or not real.is_file():
+                return None
+            mtime = real.stat().st_mtime
+        except OSError:
+            return None
+        turns = memo_by_stat(real, "claude-turns", lambda: _session_turns(real))
+        if not turns:
+            return None
+        return {
+            "adapter": self.id, "session": real.stem[:8], "project": real.parent.name,
+            "path": str(real), "last_write": mtime, "turns": turns,
+            "clear_hint": "/clear", "compact_hint": "/compact",
+        }
+
+    def cache_ttl_s(self, ctx: Context) -> int | None:
+        """About one hour for the main conversation on a subscription; about five minutes with an
+        API key or when a setting shortens it (the same settings W09 reports)."""
+        env = {**ctx.env, **{k: v for k, (v, _) in self.settings_env(ctx).items()}}
+        settings, _ = _merged_settings(ctx)
+        ttl = settings.get("promptCacheTtl")
+        short = (env.get("FORCE_PROMPT_CACHING_5M")
+                 or str(env.get("CLAUDE_CODE_PROMPT_CACHE_TTL") or "").lower() == "5m"
+                 or (isinstance(ttl, str) and ttl.lower() in {"5m", "5min", "300", "300s"}))
+        if short or self.auth_mode(ctx) == "api":
+            return 300
+        return 3600
+
     def plan_default_model(self, ctx: Context, tier: str) -> SetupItem | None:
         model = self.MODEL_TIERS.get(tier)
         if not model:
@@ -1730,6 +1763,8 @@ def _session_turns(path: Path, tail_bytes: int = 4_000_000) -> list[dict]:
                 "history_tokens": sum(int(usage.get(k) or 0) for k in
                                       ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")),
                 "output_tokens": int(usage.get("output_tokens") or 0),
+                "cache_read": int(usage.get("cache_read_input_tokens") or 0),
+                "cache_write": int(usage.get("cache_creation_input_tokens") or 0),
                 "tool_calls": 0, "reads": [],
             }
         for block in msg.get("content") or []:

@@ -26,7 +26,8 @@ Stars, bug reports, and pull requests help just as much.
 - **A plain-English checkup.** `doctor` runs 40+ local checks: the top model set as your everyday default, giant sessions that re-read hundreds of thousands of tokens on every step, duplicate instruction files you pay for twice, telemetry quietly left on, proxy chains, and setups that risk your provider's terms.
 - **Fixes it applies for you.** `setup` explains each change (what it is, why it costs you, which file and key it touches, and how to undo it), asks once, then applies it with live progress.
 - **A live view.** `status` shows what's applied, which model each tool defaults to, and how much history your newest sessions re-read on every step. It flags sessions over ~150K tokens with a "`/clear` at the next task break" tip.
-- **A live watch.** `watch` runs quietly in a terminal and warns you, once per problem, when a session's history gets too big, the top model is doing simple steps, the same file keeps getting re-read, or history is growing fast. Each warning says what's wrong, why it costs credits, and the one-line fix.
+- **A live watch.** `watch` runs quietly in a terminal and warns you, once per problem, when a session's history gets too big, the top model is doing simple steps, the same file keeps getting re-read, history is growing fast, or a pause let the saved-context discount expire. Each warning says what's wrong, why it costs credits, and the one-line fix.
+- **A status-bar line.** `statusline` shows the current session's history size and the most urgent warning inside your tool's own status bar, so you don't need a second terminal.
 - **An instruction-file trimmer.** `trim` lists every instruction file your agents resend on each turn (CLAUDE.md, AGENTS.md, GEMINI.md, copilot-instructions.md, and their imports) with approx. token counts, finds duplicated rules, oversized files, pasted logs and code, and stale paths, and proposes a trimmed version that only makes safe mechanical changes. It's a dry run unless you pass `--apply`, and `undo` restores it.
 - **A model picker.** `model suggest "<task>"` recommends light, mid, or top for a task and names the model for each tool you have. `model default --tier mid` changes your default model, with a backup and undo.
 - **A shareable report.** `report` writes a single self-contained HTML file with the findings, the plan, what was applied, undo commands, and current status. It loads nothing from the internet.
@@ -72,6 +73,7 @@ tokenstretch setup           # explains the plan, asks [y/N], applies with backu
 tokenstretch status          # what's on now, plus your newest sessions
 tokenstretch report          # writes a local HTML report and prints its path
 tokenstretch watch           # live warnings while you work (Ctrl-C to stop)
+tokenstretch statusline      # the same checks as one line, for your tool's status bar
 tokenstretch dashboard       # live local page in your browser (Ctrl-C to stop)
 tokenstretch report --weekly # weekly usage roll-up as a local HTML file
 tokenstretch model suggest "fix the flaky login test"
@@ -121,6 +123,7 @@ Shell rc files are never edited. If `ANTHROPIC_MODEL` is set in your shell, setu
 | Top model on the last 3 simple steps (short replies, few tool calls) | The top model costs several times more per step. | `/model sonnet` for routine steps |
 | The same file read 3+ times (`--max-reads`) | Each re-read is added to history and re-sent. | Ask for line ranges or a note; start fresh |
 | History grew 60K+ tokens in 5 minutes | Big reads or noisy output pile up fast. | Read narrowly, trim output |
+| The saved-context discount (prompt cache) expired during a pause | The next message re-pays for the whole conversation instead of the discounted re-read. | `/clear` before a break; start fresh instead of resuming a big idle session |
 
 ```
 ⚠ [claude-code abcd1234 · -Users-me-app] history is ~200K tokens (over 150K).
@@ -128,7 +131,27 @@ Shell rc files are never edited. If `ANTHROPIC_MODEL` is set in your shell, setu
    Fix: finish this step, then type /clear (fresh start) or /compact (keeps a short summary).
 ```
 
+The cache warning comes in two forms. If the logs already show it (after a pause of 5+ minutes, the same model re-wrote most of the history to the cache and read almost none back), watch reports how often and how many tokens. If a session with 20K+ tokens of history is sitting idle past the cache lifetime right now (about an hour on a Claude subscription, about five minutes with an API key or a 5-minute cache setting), watch says the discount has probably expired, so you can `/clear` before your next message. That second form is a prediction from the clock, and it says so. Claude Code only for now.
+
 It's read-only and only looks at token counts, model names, tool-call counts, and the paths of files the agent read (never their contents). `--once` does a single pass. `--notify` also pops a desktop notification through your OS's own `osascript` or `notify-send`, if present. Claude Code is fully supported. Codex gets the history, top-model, and growth warnings (its logs don't record file reads). Other tools say "not supported yet".
+
+## In your status bar
+
+`watch` needs its own terminal. `tokenstretch statusline` puts the same checks where you're already looking: it prints one line with the current session's history size and, if watch would warn, the most urgent warning.
+
+```text
+22K/150K history · claude-sonnet-5-5
+⚠ 158K/150K history · /clear at the next task break
+⚠ 104K/150K history · cache expired after ~50 min idle (~99K re-sent): /clear before breaks
+```
+
+For Claude Code, add this to `~/.claude/settings.json` yourself (tokenstretch doesn't edit it for you, and it replaces any status line you already have):
+
+```json
+{ "statusLine": { "type": "command", "command": "tokenstretch statusline" } }
+```
+
+Claude Code pipes the session's log path to the command, and `statusline` reads that one file. It only opens a `.jsonl` file inside `~/.claude/projects`; any other path prints nothing. Run by hand, it uses your newest active session. It's read-only, runs no other program, and takes about a tenth of a second. If anything goes wrong it prints nothing and exits 0, so it can't break your status bar. `--max-context` and `--max-reads` work as in `watch`.
 
 ## Dashboard
 
@@ -249,7 +272,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 **Will it slow my agent down or cut work?** No. The biggest win is choosing the right model for the job and not re-reading old history. The top model is one `/model` command away whenever you need it.
 
-**Does it change anything without asking?** No. Doctor, status, report, watch, dashboard, and model suggest are read-only. `trim` and `model default` are dry runs unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
+**Does it change anything without asking?** No. Doctor, status, report, watch, statusline, dashboard, and model suggest are read-only. `trim` and `model default` are dry runs unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
 
 **Does it touch my login or API keys?** Never.
 
@@ -259,7 +282,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 ## More
 
-- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `model`, `trim`, and `undo`.
+- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `statusline`, `model`, `trim`, and `undo`.
 - Technical details and pins: `docs/DETAILS.md`, `ADAPTERS.md`, `tokenstretch/catalog.py`
 - Contributing: `CONTRIBUTING.md` · Roadmap: `ROADMAP.md` · Security: `SECURITY.md`
 

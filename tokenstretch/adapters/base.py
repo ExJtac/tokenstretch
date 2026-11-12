@@ -318,7 +318,20 @@ class Adapter:
         [{adapter, session, project, path, last_write, clear_hint, compact_hint,
           turns: [{ts, model, history_tokens, output_tokens, tool_calls (int|None), reads: [path]}]}]
         `reads` holds file paths from the tool's own read calls only; never file contents.
+        A turn may also carry `cache_read` and `cache_write` (tokens); watch's cache-expiry check
+        only runs on turns that have both.
         """
+        return None
+
+    def watch_session_at(self, ctx: Context, path: Path) -> dict | None:
+        """The one `watch_sessions` record for this session log, or None when the path is not one of
+        this tool's own session logs. Used by `statusline`, which is handed a path by the tool.
+        Must refuse anything outside the tool's log folder (never a credential file)."""
+        return None
+
+    def cache_ttl_s(self, ctx: Context) -> int | None:
+        """How long the tool's prompt cache lives without activity, in seconds. None => unknown,
+        and watch then makes no idle prediction for this tool."""
         return None
 
     def model_tiers(self) -> dict[str, str]:
