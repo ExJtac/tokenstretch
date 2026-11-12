@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-12
+
 ### Added
 - `doctor` W28 `helper-wakeups` (Claude Code): reads the last 30 days of session logs and reports conversations where helpers finishing one at a time woke the main conversation 3 or more times and those extra steps re-sent 300K+ tokens. The fix is to start helpers together and wait in the foreground. It is the after-the-fact form of the `watch` wake-up warning.
 - `setup`: a `/credits` shortcut for Claude Code, written to `~/.claude/skills/credits/SKILL.md` (about 1 KB, `disable-model-invocation: true`). The agent runs `startup` and `watch --once` itself and reports, in under 150 words, what a new session carries, what is costing credits now, and a step for each that needs no terminal. It changes nothing without a yes. Setup skips it when a `credits` skill or command exists; `undo` deletes it.

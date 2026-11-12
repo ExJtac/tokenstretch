@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tokenstretch"
-version = "0.2.0"
+version = "0.2.1"
 description = "Free, local-only tool that finds and fixes wasted AI coding credits (Claude Code, Codex, and more), with explanations, backups, and undo."
 readme = "README.md"
 license = { text = "MIT" }
