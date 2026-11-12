@@ -1569,6 +1569,7 @@ class ClaudeCodeAdapter(Adapter):
                 "path": str(path), "last_write": mtime, "turns": turns,
                 "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": handoff,
                 "start_tokens": memo_by_stat(path, "claude-start", lambda path=path: _first_history_tokens(path)),
+                "helpers": _helper_stats(path),
             })
         return out
 
@@ -1591,6 +1592,7 @@ class ClaudeCodeAdapter(Adapter):
             "path": str(real), "last_write": mtime, "turns": turns,
             "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": self.handoff_hint(ctx),
             "start_tokens": _first_history_tokens(real),
+            "helpers": _helper_stats(real),
         }
 
     def cache_ttl_s(self, ctx: Context) -> int | None:
@@ -1751,6 +1753,27 @@ class ClaudeCodeAdapter(Adapter):
             "Convert ignore-file rules into native permission deny rules (no third-party hook).",
             edit={"path": str(dest), "merge": {"permissions": {"deny": patterns}}},
         )]
+
+
+def _helper_stats(path: Path) -> list[dict]:
+    """[{steps, sent, peak}] for each subagent log of this main session (token counts only).
+
+    Subagent logs live at <project>/<session-id>/subagents/*.jsonl. `sent` is the history re-sent
+    over the helper's steps, the same measure watch uses for the main conversation.
+    """
+    from ..logcache import memo_by_stat
+    folder = path.with_suffix("") / "subagents"
+    try:
+        files = sorted(folder.glob("*.jsonl"))
+    except OSError:
+        return []
+    out = []
+    for sp in files:
+        turns = memo_by_stat(sp, "claude-turns", lambda sp=sp: _session_turns(sp))
+        if turns:
+            sizes = [t["history_tokens"] for t in turns]
+            out.append({"steps": len(turns), "sent": sum(sizes), "peak": max(sizes)})
+    return out
 
 
 def _first_history_tokens(path: Path, head_bytes: int = 2_000_000) -> int | None:
