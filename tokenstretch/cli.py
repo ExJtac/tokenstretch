@@ -294,7 +294,7 @@ def cmd_model(args) -> int:
 
 
 def cmd_brief(args) -> int:
-    from .brief import Brief, build, format_report
+    from .brief import Brief, build, format_report, split
 
     text = " ".join(args.task or [])
     if args.file:
@@ -308,10 +308,23 @@ def cmd_brief(args) -> int:
               file=sys.stderr)
         return 2
     research = True if args.research else False if args.no_research else None
-    data = build(Brief(task=text, files=list(args.files or []), sources=list(args.sources or []), done=args.done or "",
+    brief = Brief(task=text, files=list(args.files or []), sources=list(args.sources or []), done=args.done or "",
                        reply_words=max(10, args.reply_words), research=research,
-                       max_searches=max(0, args.max_searches), max_fetches=max(0, args.max_fetches), no_build=bool(args.no_build), helper=bool(args.helper),
-                       rules=list(args.rule or [])))
+                       max_searches=max(0, args.max_searches), max_fetches=max(0, args.max_fetches), no_build=bool(args.no_build), helper=bool(args.helper) or bool(args.review),
+                  review=bool(args.review), max_reads=max(0, args.max_reads), rules=list(args.rule or []))
+    parts = split(brief, args.split) if args.split > 0 else [brief]
+    if len(parts) > 1:
+        many = [build(p) for p in parts]
+        if args.json:
+            print(json.dumps(many, indent=2))
+            return 0
+        for i, (p, d) in enumerate(zip(parts, many), 1):
+            print(f"--- brief {i} of {len(parts)} ({len(p.files)} files, about {d['approx_tokens']} tokens) ---")
+            print(d["brief"])
+        if not args.brief_only:
+            print(f"Give each brief to its own helper. {len(parts)} short histories cost less than one long one.")
+        return 0
+    data = build(brief)
     if args.brief_only:
         print(data["brief"], end="")
         return 0
@@ -520,6 +533,11 @@ def main(argv=None) -> int:
                     help="add your own rule line to the brief; repeat for more")
     br.add_argument("--no-build", action="store_true", help="tell the agent not to run builds, tests, or installs")
     br.add_argument("--helper", action="store_true", help="word the brief for a helper (subagent)")
+    br.add_argument("--review", action="store_true",
+                    help="a review brief: read the named files, report problems as path:line, change nothing")
+    br.add_argument("--max-reads", type=int, default=0, help="cap the number of file reads (0 = no cap line)")
+    br.add_argument("--split", type=int, default=0, metavar="N",
+                    help="print one brief per group of N files, each for its own helper")
     br.add_argument("--check", action="store_true", help="only list what is missing; exit 1 if anything is")
     br.add_argument("--json", action="store_true")
 

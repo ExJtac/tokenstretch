@@ -11,7 +11,7 @@ short the reply must be. `lint` says which of those the task text is missing.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .identity import CLI_NAME
 from .models import suggest_tier
@@ -23,6 +23,7 @@ DONE_RE = re.compile(r"\b(done (when|means)|until|so that|should (print|pass|ret
 VAGUE_RE = re.compile(r"\b(fix (it|this|that|the bug|the issue|things)|make it (work|better|nice)|clean ?up|improve|"
                       r"look into|check (it|this|everything)|take a look|sort (it|this) out|optimi[sz]e)\b", re.I)
 JOIN_RE = re.compile(r"\b(and then|then also|and also|after that|as well as|plus also)\b|;\s*\S", re.I)
+REVIEW_GROUP = 8   # [reasoning] files one reviewer reads before its own history is the main cost
 RESEARCH_RE = re.compile(r"\b(research|find out|look up|search|investigate|survey|compare options|who ranks)\b", re.I)
 
 
@@ -46,6 +47,8 @@ class Brief:
     max_fetches: int = 0              # 0 = no cap line
     no_build: bool = False
     helper: bool = False
+    review: bool = False              # read and report only; nothing is changed
+    max_reads: int = 0                # 0 = no cap line
     rules: list[str] = field(default_factory=list)   # your own rules, added after the built-in ones
 
 
@@ -59,7 +62,7 @@ def lint(b: Brief) -> list[Lint]:
                         "the agent has to explore to find where to work, and everything it opens stays in its "
                         "history and is re-sent on every later step.",
                         "name the files to change with --files (or in the task text)."))
-    if not b.done and not DONE_RE.search(text):
+    if not b.done and not DONE_RE.search(text) and not (b.review and b.files):  # a review ends with its file list
         out.append(Lint("no-done", "nothing says when the task is finished.",
                         "without a stop condition the agent keeps checking and polishing, and each extra step "
                         "re-sends the whole history.",
@@ -72,6 +75,11 @@ def lint(b: Brief) -> list[Lint]:
         out.append(Lint("several-tasks", "this reads like more than one task.",
                         "one conversation then carries the history of every task to the end.",
                         "give each task its own brief and a fresh session or helper."))
+    if b.review and len(b.files) > REVIEW_GROUP:
+        out.append(Lint("review-too-wide", f"one reviewer is asked to read {len(b.files)} files.",
+                        "a reviewer keeps every file it opens in its history, so each added file is paid for "
+                        "again on every later step.",
+                        f"split it: --split {REVIEW_GROUP} gives one brief per group of files, each for its own helper."))
     wants_research = b.research if b.research is not None else bool(RESEARCH_RE.search(text))
     if wants_research and not b.max_searches:
         out.append(Lint("unbounded-research", "it asks for research with no limit.",
@@ -89,7 +97,11 @@ def render(b: Brief) -> str:
     """The brief as plain text, ready to paste or to hand to a helper."""
     wants_research = b.research if b.research is not None else bool(RESEARCH_RE.search(b.task))
     lines = [f"Task: {b.task.strip()}", ""]
-    if b.files:
+    if b.files and b.review:
+        only = "this file" if len(b.files) == 1 else "these files"
+        lines += [f"Review only {only}: " + ", ".join(f"`{f}`" for f in b.files) +
+                  ". Do not open any other file. Do not change any file.", ""]
+    elif b.files:
         only = "this file" if len(b.files) == 1 else "these files"
         lines += [f"Work only in {only}: " + ", ".join(f"`{f}`" for f in b.files) + ". Do not change any other file.", ""]
     if b.sources:
@@ -109,16 +121,34 @@ def render(b: Brief) -> str:
         rules.append("No web search and no new research. If a fact is missing, say so in your reply; do not go looking.")
     rules.append("Search before you read, and read line ranges, not whole large files.")
     rules.append("Do not re-read a file you already read unless it changed.")
+    if b.max_reads:
+        rules.append(f"At most {b.max_reads} file reads in total. If that is not enough, stop and say what is left.")
+    if b.review:
+        rules.append("Report problems only, one line each: `path:line: problem. fix.` No praise, and no list of what is fine.")
+        rules.append("Do not fix anything. The caller decides what to change.")
     if b.no_build:
         rules.append("Do not run builds, tests, or installs. The caller does that.")
     rules += [r.strip() for r in b.rules if r and r.strip()]
     lines += ["Rules:"] + [f"- {r}" for r in rules] + [""]
     if b.done:
         lines += [f"Done when: {b.done.strip()}", ""]
+    if b.review:
+        lines.append(f"Reply in under {b.reply_words} words: the findings only, most serious first. "
+                     "If there are none, reply `NO ISSUES`. No recap of the task.")
+        return "\n".join(lines) + "\n"
     who = "what you wrote" if b.helper else "what changed"
     lines.append(f"Reply in under {b.reply_words} words: {who}, file paths, and anything you needed and could not find. "
                  "No recap of the task.")
     return "\n".join(lines) + "\n"
+
+
+def split(b: Brief, per: int) -> list[Brief]:
+    """One brief per group of at most `per` files. Files in the same folder stay together where they fit."""
+    per = max(1, per)
+    files = sorted(b.files, key=lambda f: (f.rsplit("/", 1)[0] if "/" in f else "", f))
+    if len(files) <= per:
+        return [b]
+    return [replace(b, files=files[i:i + per]) for i in range(0, len(files), per)]
 
 
 def approx_tokens(text: str) -> int:

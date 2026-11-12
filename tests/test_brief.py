@@ -97,3 +97,34 @@ def test_brief_only_prints_just_the_brief(capsys):
     out = capsys.readouterr().out
     assert code == 0 and out.startswith("Task: write the page\n") and out.endswith("No recap of the task.\n")
     assert "tokens" not in out and "Missing" not in out and "Nothing missing" not in out
+
+
+def test_review_brief_reads_only_its_files_and_reports_lines():
+    b = Brief("review the service pages for broken links", files=["site/a.html", "site/b.html"], review=True,
+              max_reads=4, helper=True)
+    assert lint(b) == []                      # the file list is the stop condition
+    text = render(b)
+    assert "Review only these files: `site/a.html`, `site/b.html`. Do not open any other file. Do not change any file." in text
+    assert "- At most 4 file reads in total." in text
+    assert "`path:line: problem. fix.`" in text and "- Do not fix anything." in text
+    assert "the findings only, most serious first" in text and "`NO ISSUES`" in text
+    assert "what you wrote" not in text and "Work only in" not in text
+
+
+def test_wide_review_is_flagged_and_split_keeps_folders_together():
+    from tokenstretch.brief import REVIEW_GROUP, split
+    files = [f"b/p{i}.html" for i in range(5)] + [f"a/p{i}.html" for i in range(5)]
+    b = Brief("review the pages", files=files, review=True)
+    assert len(files) > REVIEW_GROUP and _codes(b) == ["review-too-wide"]
+    parts = split(b, 5)
+    assert [p.files for p in parts] == [[f"a/p{i}.html" for i in range(5)], [f"b/p{i}.html" for i in range(5)]]
+    assert all(lint(p) == [] and p.review for p in parts)
+    assert split(Brief("review", files=["x.py"], review=True), 5)[0].files == ["x.py"]
+
+
+def test_cli_split_prints_one_brief_per_group():
+    code, out = _cli("brief", "review the pages", "--review", "--split", "2", "--files", "a/1.md", "a/2.md", "b/3.md")
+    assert code == 0 and "--- brief 1 of 2 (2 files" in out and "--- brief 2 of 2 (1 files" in out
+    assert out.count("Review only") == 2 and "Give each brief to its own helper." in out
+    code, out = _cli("brief", "review the pages", "--review", "--split", "2", "--files", "a/1.md", "a/2.md", "b/3.md", "--json")
+    assert code == 0 and [len(d["lint"]) for d in json.loads(out)] == [0, 0]

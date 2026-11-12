@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `brief --review`: a review brief. The helper reads only the named files, changes nothing, reports problems one per line as `path:line: problem. fix.`, and replies `NO ISSUES` when there are none. `--max-reads N` caps file reads. A review of more than 8 files is flagged (`review-too-wide`), and `--split N` prints one brief per group of N files, keeping files from the same folder together, so each group goes to its own helper with a short history. Found in a live test, where one reviewer reading a whole site re-sent about 0.79M tokens.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added
