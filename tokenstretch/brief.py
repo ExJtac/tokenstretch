@@ -43,6 +43,7 @@ class Brief:
     reply_words: int = 80
     research: bool | None = None      # None = decide from the task text
     max_searches: int = 0             # 0 = no cap line
+    max_fetches: int = 0              # 0 = no cap line
     no_build: bool = False
     helper: bool = False
     rules: list[str] = field(default_factory=list)   # your own rules, added after the built-in ones
@@ -96,10 +97,13 @@ def render(b: Brief) -> str:
                   ". Read each once. Open another file only when you need its exact lines.", ""]
     rules = []
     if wants_research:
-        if b.max_searches:
-            rules.append(f"At most {b.max_searches} searches. Write findings to the file as you go, with source and date.")
-        else:
-            rules.append("Write findings to the file as you go, with source and date.")
+        caps = [f"{n} {what}" for n, what in ((b.max_searches, "searches"), (b.max_fetches, "page fetches")) if n]
+        if caps:
+            rules.append("At most " + " and ".join(caps) + ".")
+        rules.append("Write findings to the file as you go. Every fact gets its full URL and the date you read it.")
+        rules.append("Mark each fact as read (you opened the page) or summary (search result only).")
+        rules.append("Nothing from memory. If the allowed sources have nothing on a topic, list it as a gap; "
+                     "do not skip it silently.")
     else:
         rules.append("No web search and no new research. If a fact is missing, say so in your reply; do not go looking.")
     rules.append("Search before you read, and read line ranges, not whole large files.")

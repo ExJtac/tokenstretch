@@ -40,7 +40,7 @@ def test_paths_and_stop_conditions_in_the_task_text_count():
 
 def test_research_brief_gets_a_cap_and_a_place_to_write():
     text = render(Brief("research queue libraries for the worker", files=["notes/queues.md"], max_searches=6))
-    assert "At most 6 searches. Write findings to the file as you go, with source and date." in text
+    assert "- At most 6 searches.\n- Write findings to the file as you go." in text
     assert "No web search" not in text
     forced = render(Brief("summarize the options", research=False))
     assert "No web search and no new research." in forced
@@ -76,3 +76,22 @@ def test_cli_brief_check_and_json(capsys):
     data = json.loads(out)
     assert code == 0 and data["lint"] == [] and "under 60 words" in data["brief"]
     assert main(["brief"]) == 2
+
+
+def test_research_brief_asks_for_sources_marks_and_gaps():
+    text = render(Brief("research which cache backends exist", research=True, max_searches=6, max_fetches=4))
+    assert "- At most 6 searches and 4 page fetches.\n" in text
+    assert "full URL and the date you read it" in text and "read (you opened the page) or summary" in text
+    assert "Nothing from memory" in text and "list it as a gap" in text
+    assert "No web search" not in text
+    only_fetch = render(Brief("research x", research=True, max_fetches=3))
+    assert "- At most 3 page fetches.\n" in only_fetch
+    assert "At most" not in render(Brief("research x", research=True))
+
+
+def test_brief_only_prints_just_the_brief(capsys):
+    from tokenstretch.cli import main
+    code = main(["brief", "write the page", "--files", "a.py", "--done", "tests pass", "--brief-only"])
+    out = capsys.readouterr().out
+    assert code == 0 and out.startswith("Task: write the page\n") and out.endswith("No recap of the task.\n")
+    assert "tokens" not in out and "Missing" not in out and "Nothing missing" not in out
