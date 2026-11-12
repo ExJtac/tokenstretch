@@ -265,6 +265,37 @@ def cmd_model(args) -> int:
     return run_default(ctx, args.tier, tool=args.tool, apply=bool(args.apply) and not args.dry_run)
 
 
+def cmd_brief(args) -> int:
+    from .brief import Brief, build, format_report
+
+    text = " ".join(args.task or [])
+    if args.file:
+        try:
+            text = (text + "\n" + args.file.read_text(encoding="utf-8", errors="replace")).strip()
+        except OSError as exc:
+            print(f"cannot read {args.file}: {exc}", file=sys.stderr)
+            return 2
+    if not text.strip():
+        print('describe the task: brief "add a retry to the upload client" --files src/upload.py --done "tests pass"',
+              file=sys.stderr)
+        return 2
+    research = True if args.research else False if args.no_research else None
+    data = build(Brief(task=text, files=list(args.files or []), sources=list(args.sources or []), done=args.done or "",
+                       reply_words=max(10, args.reply_words), research=research,
+                       max_searches=max(0, args.max_searches), no_build=bool(args.no_build), helper=bool(args.helper),
+                       rules=list(args.rule or [])))
+    if args.json:
+        print(json.dumps(data, indent=2))
+    elif args.check:
+        for x in data["lint"]:
+            print(f"- {x['what']} Fix: {x['fix']}")
+        if not data["lint"]:
+            print("Nothing missing.")
+    else:
+        print("\n".join(format_report(data)))
+    return 1 if args.check and data["lint"] else 0
+
+
 def cmd_trim(args) -> int:
     from .trim import Options, run_trim
 
@@ -423,6 +454,23 @@ def main(argv=None) -> int:
     tr.add_argument("--no-diff", action="store_true", help="don't print the unified diff")
     tr.add_argument("--json", action="store_true")
 
+    br = sub.add_parser("brief", help="turn a one-line task into a brief that keeps an agent or helper cheap (local rules, no model calls)")
+    br.add_argument("task", nargs="*", help="the task, in a sentence")
+    br.add_argument("--file", type=Path, help="read the task from this file")
+    br.add_argument("--files", nargs="+", metavar="PATH", help="the only files the agent may change")
+    br.add_argument("--from", dest="sources", nargs="+", metavar="PATH", help="notes or reference files to work from")
+    br.add_argument("--done", help='the stop condition, e.g. "tests pass"')
+    br.add_argument("--reply-words", type=int, default=80, help="cap on the reply length (default 80)")
+    br.add_argument("--research", action="store_true", help="the task is research (default: decided from the wording)")
+    br.add_argument("--no-research", action="store_true", help="forbid searching and new research")
+    br.add_argument("--max-searches", type=int, default=0, help="cap searches for a research task")
+    br.add_argument("--rule", action="append", metavar="TEXT",
+                    help="add your own rule line to the brief; repeat for more")
+    br.add_argument("--no-build", action="store_true", help="tell the agent not to run builds, tests, or installs")
+    br.add_argument("--helper", action="store_true", help="word the brief for a helper (subagent)")
+    br.add_argument("--check", action="store_true", help="only list what is missing; exit 1 if anything is")
+    br.add_argument("--json", action="store_true")
+
     m = sub.add_parser("model", help="heuristic model picker and a backed-up default-model switch")
     msub = m.add_subparsers(dest="model_cmd", required=True)
     ms = msub.add_parser("suggest", help="suggest light / mid / top for a task (local rules, no model calls)")
@@ -462,6 +510,8 @@ def main(argv=None) -> int:
         return cmd_dashboard(a)
     if a.cmd == "model":
         return cmd_model(a)
+    if a.cmd == "brief":
+        return cmd_brief(a)
     if a.cmd == "trim":
         return cmd_trim(a)
     print(f"{a.cmd}: not implemented yet", file=sys.stderr)
