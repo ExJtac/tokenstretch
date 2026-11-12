@@ -367,7 +367,10 @@ def test_auto_hook_shapes_the_summary_saves_it_and_points_a_new_chat_at_it(tmp_p
     os.utime(note, (1_000_000.0, 1_000_000.0))
     start = json.loads(call({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj)}, now=1_000_600.0)[0])
     text = start["hookSpecificOutput"]["additionalContext"]
-    assert ".claude/handoff-auto.md" in text and "10 min ago" in text and "ignore it" in text
+    assert ".claude/handoff-auto.md" in text and "10 min ago" in text and "ignore the note" in text
+    # A restart needs no "go": any opener resumes, but what waits on the user still waits.
+    assert "what's happening?" in text and "in the same turn" in text and "Do not ask the user to confirm" in text
+    assert "waiting on the user still waits" in text and len(text) < 900
     assert call({"hook_event_name": "SessionStart", "source": "resume", "cwd": str(proj)}, now=1_000_600.0) == []
     assert call({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj)}, now=1_000_000.0 + 80 * 3600) == []
 
