@@ -21,7 +21,7 @@ python -m tokenstretch undo       # restore the latest manifest under --home
 python -m tokenstretch watch [--once] [--interval 10] [--max-context 150000] [--max-reads 3] [--notify]
 python -m tokenstretch statusline [--max-context 150000] [--max-reads 3] [--wrap COMMAND]   # reads the tool's JSON on stdin
 python -m tokenstretch nudge [--max-context 150000] [--max-reads 3]   # prompt-hook entry; reads the tool's JSON on stdin, prints hook JSON or nothing
-python -m tokenstretch brief "task" [--files P..] [--from P..] [--done TEXT] [--helper] [--no-build] [--rule TEXT] [--max-searches N] [--check] [--json]
+python -m tokenstretch brief "task" [--files P..] [--from P..] [--done TEXT] [--helper] [--no-build] [--rule TEXT] [--max-searches N] [--max-fetches N] [--brief-only] [--check] [--json]
 python -m tokenstretch model suggest "task" [--file F] [--json]
 python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
 python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8]

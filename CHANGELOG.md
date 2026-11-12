@@ -16,6 +16,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - `setup` (Claude Code): turns on credit warnings inside the tool. It adds the `statusLine` entry (an existing status line is kept and wrapped with `--wrap`) and a `UserPromptSubmit` hook, `tokenstretch nudge`. When the model default is changed in the same file, both ride in that one step. Backed up and undone like every setup change; unreadable settings and unknown `statusLine` shapes are left alone.
 - `tokenstretch nudge`: the hook entry. It prints the top watch warning for the session the tool names, as a message for the user and context for the agent, at most every 20 minutes per session for the same kind of warning. Silent when there is no warning or no session is named; always exits 0. Keeps one small state file per session under `~/.tokenstretch/nudge/`.
 - `setup`: a `/brief` shortcut for Claude Code (`~/.claude/skills/brief/SKILL.md`, manual-only), skipped when a `brief` skill or command already exists.
+- `brief`: research briefs now ask for the full URL and read date per fact, a read-or-summary mark, and nothing from memory, and say to list a gap instead of skipping a topic. `--max-fetches N` caps pages opened; `--brief-only` prints just the brief for pasting or piping.
 - Watch sessions may carry `handoff_hint`, `start_tokens`, and `helpers`.
 - Adapter hooks `watch_session_at` and `cache_ttl_s`; watch turns may carry `cache_read` and `cache_write`.
 
