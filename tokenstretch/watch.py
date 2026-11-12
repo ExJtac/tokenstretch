@@ -127,6 +127,8 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
     last = turns[-1]
     clear = s.get("clear_hint", "start a fresh session")
     compact = s.get("compact_hint")
+    handoff = s.get("handoff_hint")     # a note-then-clear shortcut, when the tool has one installed
+    fresh = f"{handoff} then {clear}" if handoff else clear
 
     # (a) long history
     if last["history_tokens"] > cfg.max_context:
@@ -135,8 +137,10 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
                            what=f"history is ~{_k(last['history_tokens'])} tokens (over {_k(cfg.max_context)}).",
                            why="every step re-sends the whole conversation, so each reply now costs at least that "
                                "much input.",
-                           fix=f"finish this step, then type {clear} (fresh start){alt}.",
-                           short=f"{clear} at the next task break"))
+                           fix=(f"finish this step, then type {handoff} (writes a short note) and {clear}; "
+                                f"`{handoff} resume` picks the task up in the fresh session."
+                                if handoff else f"finish this step, then type {clear} (fresh start){alt}."),
+                           short=f"{fresh} at the next task break"))
 
     # (b) top model on simple steps
     recent = turns[-cfg.simple_turns:]
@@ -210,9 +214,9 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
                                 f"min), and ~{_k(total)} tokens were re-sent at full price.",
                            why="after a pause longer than the cache lifetime, the next message re-pays for the "
                                "whole conversation instead of the discounted re-read.",
-                           fix=f"before a break, finish the task and type {clear}, so you come back to a small "
+                           fix=f"before a break, finish the task and type {fresh}, so you come back to a small "
                                "history. Coming back to a big idle session? Start fresh instead of continuing it.",
-                           short=f"cache expired after ~{longest} min idle (~{_k(total)} re-sent): {clear} before breaks"))
+                           short=f"cache expired after ~{longest} min idle (~{_k(total)} re-sent): {fresh} before breaks"))
     return out
 
 

@@ -93,7 +93,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     w = _world(tmp_path)
     before = _snapshot(w)
     res, out = _run(w, yes=True, installs=False)
-    assert res.mode == "applied" and len(res.manifests) == 3
+    assert res.mode == "applied" and len(res.manifests) == 4
     assert "✔ switched default model to sonnet, backed up ~/.claude/settings.json" in out
     assert "/model opus" in out
     s = json.loads((w / "home" / ".claude" / "settings.json").read_text())
@@ -107,7 +107,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     buf = io.StringIO()
     with credential_guard(), redirect_stdout(buf):
         code = main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
-    assert code == 0 and "Restored 3 file(s)" in buf.getvalue()
+    assert code == 0 and "Restored 3 file(s), deleted 1 created file(s)" in buf.getvalue()
     assert _snapshot(w) == before
 
 
@@ -222,3 +222,51 @@ def test_w17_grouped_into_one_finding(tmp_path):
     assert len(w17) == 1
     assert "4 sets" in w17[0].message and "8 files" in w17[0].message
     assert "and 3 more" in w17[0].evidence["file"]
+
+
+# ---- /handoff shortcut ------------------------------------------------------------------------
+
+def test_setup_adds_a_manual_only_handoff_skill_and_undo_removes_it(tmp_path):
+    from tokenstretch.files import frontmatter
+    w = _world(tmp_path)
+    skill = w / "home" / ".claude" / "skills" / "handoff" / "SKILL.md"
+    items, _ = build_plan(_ctx(w))
+    item = next(i for i in items if i.id == "claude-handoff-skill")
+    assert [c["kind"] for c in item.changes] == ["create"] and item.changes[0]["path"] == str(skill)
+    _, out = _run(w, yes=True, installs=False)
+    assert "✔ added the /handoff shortcut" in out
+    text = skill.read_text(encoding="utf-8")
+    fm = frontmatter(text)
+    assert fm.get("name") == "handoff" and fm.get("disable-model-invocation") == "true"   # nothing added per turn
+    assert "$ARGUMENTS" in text and "resume" in text and ".claude/handoff.md" in text
+    assert len(text) < 1600
+    with credential_guard():
+        main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
+    assert not skill.exists() and not (w / "home" / ".claude" / "skills").exists()
+
+
+def test_setup_never_replaces_an_existing_handoff_shortcut(tmp_path):
+    for rel in (("home", ".claude", "commands", "handoff.md"), ("root", ".claude", "skills", "handoff", "SKILL.md")):
+        w = _world(tmp_path / rel[0])
+        mine = w.joinpath(*rel)
+        mine.parent.mkdir(parents=True)
+        mine.write_text("my own handoff\n", encoding="utf-8")
+        items, _ = build_plan(_ctx(w))
+        assert "claude-handoff-skill" not in {i.id for i in items}
+        _run(w, yes=True, installs=False)
+        assert mine.read_text(encoding="utf-8") == "my own handoff\n"
+
+
+def test_watch_and_statusline_point_to_handoff_once_it_exists(tmp_path):
+    from tokenstretch.statusline import build_line
+    from tokenstretch.watch import Watcher
+    w = _world(tmp_path)                       # 200K history on opus
+    with credential_guard():
+        before = [x for x in Watcher(_ctx(w)).scan() if x.key[-1] == "context"][0]
+        assert "/handoff" not in before.fix and build_line(_ctx(w)).endswith("· /clear at the next task break")
+    _run(w, yes=True, installs=False)
+    with credential_guard():
+        after = [x for x in Watcher(_ctx(w)).scan() if x.key[-1] == "context"][0]
+        line = build_line(_ctx(w))
+    assert "type /handoff (writes a short note) and /clear" in after.fix and "/handoff resume" in after.fix
+    assert line.endswith("· /handoff then /clear at the next task break")
