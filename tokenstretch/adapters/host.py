@@ -151,6 +151,10 @@ def _env_aliases(text: str, name: str) -> list[str]:
     return vals
 
 
+HOME_SKIP = frozenset({"Library", ".Trash", "Applications", "Movies", "Music", "Pictures", "AppData", ".cache", ".npm",
+                       ".cargo", ".rustup", ".local", "go", "snap"})
+
+
 class HostAdapter(Adapter):
     id = "host"
     display_name = "Host"
@@ -715,7 +719,9 @@ class HostAdapter(Adapter):
         files: list[tuple[Path, str]] = []
         seen: set[Path] = set()
         for root in (ctx.root, ctx.home):
-            for path in walk_named(root, INSTRUCTION_NAMES, max_depth=4):
+            # A home folder can hold millions of files (app data, media, the trash). Leave those out
+            # and stop after a few seconds; instruction files don't live there.
+            for path in walk_named(root, INSTRUCTION_NAMES, max_depth=4, skip=HOME_SKIP, budget_s=5.0):
                 try:
                     resolved = path.resolve()
                 except OSError:

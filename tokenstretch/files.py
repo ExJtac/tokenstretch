@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from .util import SKIP_DIRS, frontmatter, read_json, read_toml
@@ -121,9 +122,13 @@ def _walk_from_git(root: Path, names: set[str], max_depth: int):
     return out
 
 
-def walk_named(root: Path, names: set[str], max_depth: int = 6):
+def walk_named(root: Path, names: set[str], max_depth: int = 6, skip: frozenset[str] = frozenset(),
+               budget_s: float | None = None):
+    """Files called one of `names` under `root`. `skip` adds folder names to leave out, and
+    `budget_s` stops the walk after that many seconds, so a huge tree can't stall a report."""
     if not root.is_dir():
         return
+    deadline = time.monotonic() + budget_s if budget_s else None
     indexed = _walk_from_git(root, names, max_depth)
     if indexed is not None:
         yield from indexed
@@ -131,7 +136,9 @@ def walk_named(root: Path, names: set[str], max_depth: int = 6):
     root_depth = len(root.parts)
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         depth = len(Path(dirpath).parts) - root_depth
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS] if depth < max_depth else []
+        if deadline is not None and time.monotonic() > deadline:
+            return
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and d not in skip] if depth < max_depth else []
         for f in filenames:
             if f in names:
                 yield Path(dirpath) / f
