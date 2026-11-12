@@ -412,6 +412,53 @@ def test_startup_cli_json_and_rest(tmp_path, monkeypatch):
     assert "Recent sessions: 60K, 58K." in lines and "can't be sized from local files" in lines
 
 
+def test_startup_sizes_a_connector_by_difference(tmp_path, monkeypatch):
+    import tokenstretch.startup as st
+    w = _world(tmp_path, [_row(0, 0, read=20_000)])
+    home, root = w / "home", w / "root"
+    mcp = root / ".mcp.json"
+    args = ["startup", "--home", str(home), "--root", str(root), "--sys-snapshot", str(w / "sys"), "--json"]
+
+    def run(start: int, servers: list[str], *extra: str) -> dict:
+        mcp.write_text(json.dumps({"mcpServers": {n: {"command": "x"} for n in servers}}), encoding="utf-8")
+        monkeypatch.setattr(st, "measured_starts", lambda ctx, ad, limit=5: [start])
+        buf = io.StringIO()
+        with credential_guard(), redirect_stdout(buf):
+            assert main([*args, *extra]) == 0
+        return next(x for x in json.loads(buf.getvalue()) if x["adapter"] == "claude-code")
+
+    first = run(60_000, ["big", "small"])
+    assert [p["name"] for p in first["unsized"]] == ["big (project)", "small (project)"] and first["turned_off"] == []
+    hist = home / ".tokenstretch" / "startup-history.json"
+    assert hist.is_file() and "big (project)|small (project)" in hist.read_text(encoding="utf-8")
+
+    same = run(52_000, ["big", "small"], "--no-save")            # same set, 8K lighter: something else changed
+    assert same["since_last"] == -8_000 and "start ~8.0K tokens lighter" in "\n".join(st.format_report([same]))
+    assert run(60_900, ["big", "small"], "--no-save")["since_last"] == 0
+
+    off = run(42_000, ["small"])                                   # big turned off: 18K lighter
+    assert off["turned_off"] == [{"name": "big (project)", "tokens": 18_000}]
+    assert "big (project) is off: sessions now start ~18K tokens lighter" in "\n".join(st.format_report([off]))
+
+    back = run(60_000, ["big", "small"], "--no-save")              # on again: sized from the remembered run
+    big = next(p for p in back["parts"] if p["name"] == "big (project)")
+    assert big["tokens"] == 18_000 and big["kind"] == "connector (measured by difference)"
+    assert [p["name"] for p in back["unsized"]] == ["small (project)"] and back["rest"] == first["rest"] - 18_000
+
+    assert st.size_by_difference({"k": {"connectors": ["small (project)"], "rest": 40_500, "ts": 1}},
+                                 ["big (project)", "small (project)"], 42_000) == ({}, {})   # under 2K: noise
+    assert st.size_by_difference({"k": {"rest": "x"}}, [], 1) == ({}, {})
+
+
+def test_startup_no_save_writes_nothing(tmp_path, monkeypatch):
+    import tokenstretch.startup as st
+    w = _world(tmp_path, [_row(0, 0, read=20_000)])
+    monkeypatch.setattr(st, "measured_starts", lambda ctx, ad, limit=5: [60_000])
+    with credential_guard(), redirect_stdout(io.StringIO()):
+        assert main(["startup", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys"), "--no-save"]) == 0
+    assert not (w / "home" / ".tokenstretch" / "startup-history.json").exists()
+
+
 # ---- helper wake-ups ---------------------------------------------------------------------------------
 
 def _notice(at_s: int, *, origin: bool = True) -> dict:

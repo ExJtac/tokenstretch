@@ -251,12 +251,14 @@ Claude Code: what every session carries before you type
              `tokenstretch trim` removes duplicates and moves reference blocks out.
     ~  0.9K  instruction file: ~/work/app/CLAUDE.md
   The rest, ~75K tokens, can't be sized from local files: the tool's own system prompt and built-in tools, connector tool lists, and plugin listings.
-  To size one of those: turn it off, start a new session, and run this again. The measured number shows the difference.
+  To size a connector: turn it off, start a new session, and run this again. This command remembers the last run and shows the difference as that connector's size.
 ```
 
 That output is from a real machine, with paths changed. The instruction files were under 4% of the start-up size, so trimming them would not have helped much there; the connectors and plugins were the place to look. The command exists to tell you which case you are in before you spend time on the wrong fix.
 
-Sizes are estimates (bytes / 4). Skills marked `disable-model-invocation` are left out because they aren't listed to the model. Instruction files deeper in the project are left out because they load only when the agent works in that folder. `--all` lists every part and `--json` prints the data. Read-only, Claude Code only for now.
+Sizes are estimates (bytes / 4). Skills marked `disable-model-invocation` are left out because they aren't listed to the model. Instruction files deeper in the project are left out because they load only when the agent works in that folder. `--all` lists every part and `--json` prints the data. Claude Code only for now.
+
+Connector tool lists aren't in any local file, so they are sized by difference. Each run remembers the unsized remainder for the current set of connectors in `~/.tokenstretch/startup-history.json` (connector names and token counts only). Turn one connector off, start a new session, and run `startup` again: it reports how much lighter sessions now start, and if you turn the connector back on it is listed with that size. The two numbers come from two different sessions, so a change under 2K tokens is ignored and the size is approximate. When the local files and connectors are the same as last time but the start moved by 2K or more, it says so: a plugin or an app connector changed. `--no-save` keeps the run read-only.
 
 ## Trim instruction files
 
