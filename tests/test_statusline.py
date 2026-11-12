@@ -508,3 +508,22 @@ def test_ordinary_user_messages_are_not_wake_ups(tmp_path):
     w = _world(tmp_path, rows)
     with credential_guard():
         assert "wakeups" not in [x.key[-1] for x in Watcher(_ctx(w)).scan()]
+
+
+def test_doctor_w28_reports_helper_wakeups_from_the_logs(tmp_path):
+    from argparse import Namespace
+    from tokenstretch.cli import doctor
+
+    def ids(w):
+        buf = io.StringIO()
+        with credential_guard(), redirect_stdout(buf):
+            doctor(Namespace(home=w / "home", root=w / "root", sys_snapshot=w / "sys", plan=None, privacy=False, json=True))
+        return [f for f in json.loads(buf.getvalue()) if f["id"] == "W28"]
+
+    rows = [_row(0, 0, read=60_000)]
+    for i in range(1, 5):
+        rows += [_notice(100 * i), _row(i, 100 * i + 5, read=100_000 + 5_000 * i)]
+    hit = ids(_world(tmp_path / "a", rows))
+    assert len(hit) == 1 and hit[0]["severity"] == "med" and str(hit[0]["evidence"]["value"]) == "450040"
+    assert "woke the main conversation 4 times" in hit[0]["message"] and "about 0.5M tokens" in hit[0]["message"]
+    assert ids(_world(tmp_path / "b", rows[:5])) == []            # two wake-ups: under the floor
