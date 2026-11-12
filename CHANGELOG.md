@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-12
+
 ### Added
 - `setup --list`, `--only <id>` and `--skip <id>`: apply one step of the plan, or leave one out. Each step's id is shown in [brackets] in the plan. `--list` is read-only and skips the checkup; `--only` skips the checkup summary and the pinned-install offer. An unknown id stops with exit code 2 before anything changes.
 - `/credits` can apply a fix: after you say yes to one change, the agent runs `setup --only <id> --yes` for that step, with the same backup and `undo`. For anything outside the plan it says where to turn it off instead of editing files. Setup updates an older `/credits` that this tool wrote and still never touches one of your own.
