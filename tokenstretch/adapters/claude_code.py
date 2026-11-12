@@ -2068,8 +2068,29 @@ def _home_short(path, ctx: Context) -> str:
 READ_TOOLS = {"Read", "NotebookRead"}
 
 
+def _is_helper_notice(raw: bytes) -> bool:
+    """True for the row a tool writes when a background helper finishes and wakes the conversation.
+
+    Only the row's type and origin are looked at (or the fixed opening tag of older logs); the
+    helper's reply is never kept.
+    """
+    try:
+        obj = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        return False
+    if not isinstance(obj, dict) or obj.get("type") != "user":
+        return False
+    origin = obj.get("origin")
+    if isinstance(origin, dict) and origin.get("kind") == "task-notification":
+        return True
+    msg = obj.get("message")
+    content = msg.get("content") if isinstance(msg, dict) else None
+    return isinstance(content, str) and content.lstrip().startswith("<task-notification>")
+
+
 def _session_turns(path: Path, tail_bytes: int = 4_000_000) -> list[dict]:
-    """One record per assistant message: model, history size, output size, tool calls, Read paths.
+    """One record per assistant message: model, history size, output size, tool calls, Read paths,
+    and whether a finished background helper started that step (`woken`).
 
     Claude Code writes one line per content block, each repeating message.id and usage, so lines
     are merged on message.id. Only file paths are kept from Read calls; contents are never kept.
@@ -2085,7 +2106,11 @@ def _session_turns(path: Path, tail_bytes: int = 4_000_000) -> list[dict]:
     if size > tail_bytes and lines:
         lines = lines[1:]
     turns: dict[str, dict] = {}
+    woken = False   # a helper-finished notice arrived; the next step is the one it caused
     for n, raw in enumerate(lines):
+        if b"task-notification" in raw and _is_helper_notice(raw):
+            woken = True
+            continue
         if b'"assistant"' not in raw:
             continue
         try:
@@ -2111,8 +2136,9 @@ def _session_turns(path: Path, tail_bytes: int = 4_000_000) -> list[dict]:
                 "output_tokens": int(usage.get("output_tokens") or 0),
                 "cache_read": int(usage.get("cache_read_input_tokens") or 0),
                 "cache_write": int(usage.get("cache_creation_input_tokens") or 0),
-                "tool_calls": 0, "reads": [],
+                "tool_calls": 0, "reads": [], "woken": woken,
             }
+            woken = False
         for block in msg.get("content") or []:
             if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
