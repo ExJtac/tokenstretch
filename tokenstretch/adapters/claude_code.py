@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
+import sys
 from pathlib import Path
 
 from ..context import Context
-from ..identity import CLI_NAME, PRODUCT_NAME, STATE_DIRNAME
+from ..identity import CLI_NAME, PACKAGE_NAME, PRODUCT_NAME, STATE_DIRNAME
 from ..files import count_lines_bytes, env_truthy, frontmatter, import_refs, read_json, walk_glob_names
 from ..findings import Finding, UsageRecord
 from ..util import is_loopback_url
@@ -1391,10 +1393,142 @@ class ClaudeCodeAdapter(Adapter):
         item = self._setup_rules(ctx)
         if item:
             items.append(item)
-        item = self._setup_handoff(ctx)
-        if item:
-            items.append(item)
+        live = self._setup_live(ctx)
+        if live:
+            same = next((i for i in items for ch in i.changes
+                         if Path(ch["path"]) == Path(live.changes[0]["path"])), None)
+            if same is None:
+                items.append(live)
+            else:
+                self._fold_live(ctx, same)   # one step per file: add the live keys to that step
+        for item in (self._setup_handoff(ctx), self._setup_brief(ctx)):
+            if item:
+                items.append(item)
         return items
+
+    # ---- live warnings inside Claude Code: status line + prompt hook --------------------------
+    LIVE_NOTES = [
+        "Both run on your machine only and read token counts from the session log, never prompt text.",
+        "The warning repeats at most every 20 minutes per session, and only while something is costing credits.",
+    ]
+
+    def cli_shell(self, ctx: Context) -> str:
+        """A shell command that runs this tool: the installed command, else this Python with this package."""
+        if ctx.which(CLI_NAME):
+            return CLI_NAME
+        pkg_parent = Path(__file__).resolve().parents[2]
+        return f"PYTHONPATH={shlex.quote(str(pkg_parent))} {shlex.quote(sys.executable)} -m {PACKAGE_NAME}"
+
+    def _live_edits(self, ctx: Context, data: dict) -> list[str]:
+        """Add the status line and the prompt hook to a settings dict. Returns what was added."""
+        added: list[str] = []
+        base = self.cli_shell(ctx)
+        cur = data.get("statusLine")
+        theirs = str(cur.get("command") or "") if isinstance(cur, dict) else ""
+        if cur is not None and not isinstance(cur, dict):
+            pass  # a shape we do not know; leave it alone
+        elif f"{PACKAGE_NAME} statusline" not in theirs:
+            line = dict(cur or {"type": "command"})
+            line["command"] = f"{base} statusline" + (f" --wrap {shlex.quote(theirs)}" if theirs else "")
+            data["statusLine"] = line
+            added.append("statusLine: your status line kept, with the history size and top warning added after it"
+                         if theirs else "statusLine: history size and top warning")
+        if not any(f"{PACKAGE_NAME} nudge" in cmd for cmd, _ in _hook_cmds(data)):
+            # Exit 2 from a prompt hook blocks the prompt, and an older copy of this tool without
+            # `nudge` would exit 2. So the hook command can only ever succeed.
+            if _ensure_hook(data, "UserPromptSubmit", f"{base} nudge 2>/dev/null || true"):
+                data["hooks"]["UserPromptSubmit"][-1]["hooks"][0]["timeout"] = 5
+                added.append("hooks.UserPromptSubmit: show the top warning in the session")
+        return added
+
+    def _setup_live(self, ctx: Context) -> SetupItem | None:
+        path = ctx.home / ".claude" / "settings.json"
+        raw = read_json(path) if path.is_file() else {}
+        if not isinstance(raw, dict) or "__error__" in raw:
+            return None  # unreadable JSON: never overwrite
+        data = json.loads(json.dumps(raw))
+        added = self._live_edits(ctx, data)
+        if not added:
+            return None
+        return SetupItem(
+            id="claude-live-warnings", adapter_id=self.id,
+            title="Show credit warnings inside Claude Code",
+            why="The warnings only help if you see them while you work. This puts the history size in the "
+                "status line and shows the top warning in the session when one appears, in every session, "
+                "with nothing to run by hand.",
+            changes=[{
+                "path": str(path), "kind": "modify" if path.is_file() else "create",
+                "content": _dump_json(data), "key": "statusLine, hooks",
+                "reason": "; ".join(added),
+            }],
+            done="turned on live warnings in Claude Code",
+            notes=list(self.LIVE_NOTES),
+        )
+
+    def _fold_live(self, ctx: Context, item: SetupItem) -> None:
+        ch = item.changes[0]
+        data = json.loads(ch["content"])
+        added = self._live_edits(ctx, data)
+        if not added:
+            return
+        ch["content"] = _dump_json(data)
+        ch["reason"] = "; ".join([ch.get("reason") or ""] + added).strip("; ")
+        item.title += ", and show credit warnings inside Claude Code"
+        item.done += " and turned on live warnings"
+        item.notes = list(item.notes) + list(self.LIVE_NOTES)
+
+    # ---- /brief: the prompt generator without a terminal --------------------------------------
+    def _brief_paths(self, ctx: Context) -> list[Path]:
+        return [base / ".claude" / kind for base in (ctx.home, ctx.root)
+                for kind in (Path("skills") / "brief" / "SKILL.md", Path("commands") / "brief.md")]
+
+    def brief_skill(self) -> str:
+        return (
+            "---\n"
+            "name: brief\n"
+            "description: Turn a one-line task into a short brief that keeps an agent or helper cheap.\n"
+            "disable-model-invocation: true\n"
+            "---\n"
+            f"<!-- added by {PRODUCT_NAME}; `{CLI_NAME} undo` removes it -->\n"
+            "Task: $ARGUMENTS\n"
+            "\n"
+            "Rewrite the task above as a brief. Do not start the task. Do not read files or search to "
+            "prepare it; use only the task text and what is already in this conversation. Put the brief "
+            "in one code block so it can be copied, with these parts in this order:\n"
+            "\n"
+            "- **Task:** one sentence, one task. If the text holds several tasks, write one brief per task.\n"
+            "- **Work only in:** the files or folder to change, and \"do not change any other file\".\n"
+            "- **Work from:** notes or reference files to read once.\n"
+            "- **Rules:** no web search and no new research; for a research task give a search cap and "
+            "the file to write findings to instead. Search before reading, read line ranges, and do not "
+            "re-read a file that has not changed.\n"
+            "- **Done when:** a check that can be run or seen.\n"
+            "- **Reply:** a word limit (80 unless told otherwise) and what to report.\n"
+            "\n"
+            "After the code block, under **Missing**, list each part you could not fill, one line each, "
+            "and ask for those only. Never guess a file name or a stop condition. If nothing is missing, "
+            "say so in one line.\n"
+        )
+
+    def _setup_brief(self, ctx: Context) -> SetupItem | None:
+        if any(p.exists() for p in self._brief_paths(ctx)):
+            return None  # one is already there (ours or yours); never overwrite it
+        path = ctx.home / ".claude" / "skills" / "brief" / "SKILL.md"
+        return SetupItem(
+            id="claude-brief-skill", adapter_id=self.id,
+            title="Add a /brief shortcut to Claude Code",
+            why="A vague task makes an agent explore, and everything it opens is re-sent on every later "
+                "step. /brief rewrites a one-line task into a brief with the files, the stop condition "
+                "and the limits, and lists what is missing, without leaving the chat.",
+            changes=[{
+                "path": str(path), "kind": "create",
+                "content": self.brief_skill(), "key": "brief skill",
+                "reason": "new manual-only skill (about 1 KB; loaded only when you type /brief)",
+            }],
+            done="added the /brief shortcut",
+            notes=[f"`{CLI_NAME} brief \"task\"` does the same from a terminal, with no model call.",
+                   "It is marked `disable-model-invocation`, so it adds nothing to each turn."],
+        )
 
     # ---- /handoff: makes a fresh start cheap ------------------------------------------------
     HANDOFF_NOTE = ".claude/handoff.md"

@@ -318,3 +318,55 @@ def test_long_history_warning_says_when_a_fresh_start_pays_back(tmp_path):
         line = build_line(_ctx(w), {"transcript_path": str(_log(w))})
     assert "pays for itself after about 3 more steps (this session started at ~30K" in warn.fix
     assert line == "⚠ 200K/150K history · /clear at the next task break (pays back in ~3 steps)"
+
+
+# ---- nudge: the same warning, shown inside the session by a prompt hook ------------------------
+
+def test_nudge_says_the_top_warning_once_then_waits(tmp_path):
+    from tokenstretch.nudge import build_nudge
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
+    payload = {"transcript_path": str(_log(w)), "session_id": "abcd1234-0000", "hook_event_name": "UserPromptSubmit"}
+    clock = [1_000_000.0]
+    with credential_guard():
+        first = build_nudge(_ctx(w), payload, now=lambda: clock[0])
+        again = build_nudge(_ctx(w), payload, now=lambda: clock[0] + 60)
+        later = build_nudge(_ctx(w), payload, now=lambda: clock[0] + 21 * 60)
+    assert first["systemMessage"].startswith("tokenstretch: ") and "200K" in first["systemMessage"]
+    extra = first["hookSpecificOutput"]
+    assert extra["hookEventName"] == "UserPromptSubmit" and "not a request from the user" in extra["additionalContext"]
+    assert again is None                      # same warning a minute later: stay quiet
+    assert later is not None                  # still true 21 minutes later: say it once more
+    state = w / "home" / ".tokenstretch" / "nudge" / "abcd1234-0000.json"
+    assert json.loads(state.read_text())["kind"] == "context"
+
+
+def test_nudge_is_silent_when_clean_or_unsure_and_never_fails(tmp_path):
+    from tokenstretch.nudge import build_nudge, run_nudge
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=22_000)])
+    with credential_guard():
+        assert build_nudge(_ctx(w), {"transcript_path": str(_log(w))}) is None          # nothing to warn about
+        assert build_nudge(_ctx(w), {}) is None                                         # no session named: no guess
+        assert build_nudge(_ctx(w), {"transcript_path": str(w / "root" / "x.jsonl")}) is None
+    assert not (w / "home" / ".tokenstretch" / "nudge").exists()
+    printed: list[str] = []
+    for raw in ("not json", "", json.dumps({"transcript_path": 5})):
+        assert run_nudge(w / "home", w / "root", stdin=io.StringIO(raw), out=printed.append) == 0
+    assert printed == []
+
+
+def test_nudge_ignores_a_session_id_that_is_not_a_plain_name(tmp_path):
+    from tokenstretch.nudge import build_nudge
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
+    payload = {"transcript_path": str(_log(w)), "session_id": "../../escape"}
+    with credential_guard():
+        assert build_nudge(_ctx(w), payload) is not None
+    assert not (w / "home" / ".tokenstretch").exists() or not list((w / "home" / ".tokenstretch").rglob("*.json"))
+
+
+def test_nudge_cli_prints_one_json_object(tmp_path, monkeypatch):
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"transcript_path": str(_log(w)), "session_id": "s1"})))
+    buf = io.StringIO()
+    with credential_guard(), redirect_stdout(buf):
+        code = main(["nudge", "--home", str(w / "home"), "--root", str(w / "root")])
+    assert code == 0 and json.loads(buf.getvalue())["systemMessage"].startswith("tokenstretch: ")

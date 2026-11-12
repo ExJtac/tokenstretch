@@ -106,6 +106,8 @@ Setup only proposes a change when it applies to your machine, and it always show
 |---|---|---|
 | Default Claude Code model → `sonnet` (only if the default is Opus/Fable or unset) | `~/.claude/settings.json` (or the project settings file that sets `model`), key `model` | The top model costs several times more per step. You can still use it for hard work with `/model opus`. |
 | 5 short credit-saving rules: start each task fresh, read narrowly, don't re-read, run subagents on the mid-tier model, keep replies short | project `CLAUDE.md` (and `AGENTS.md` if Codex is installed; an existing `GEMINI.md` for Gemini CLI or `.github/copilot-instructions.md` for Copilot CLI, unless Copilot already loads a rules block from `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`), in a marked block. Setup never creates a new Gemini or Copilot instruction file. | Long sessions re-read their whole history on every step. |
+| Credit warnings inside Claude Code: the status line, and a prompt hook that shows the top warning in the session (only if they are not already there; an existing status line is kept and wrapped, see [In your status bar](#in-your-status-bar)) | `~/.claude/settings.json`, keys `statusLine` and `hooks.UserPromptSubmit` | Warnings only help if you see them while you work. After this, every Claude Code session shows them with nothing to run by hand. |
+| A `/brief` shortcut for Claude Code (only if no `brief` skill or command exists) | new file `~/.claude/skills/brief/SKILL.md` | The brief writer without a terminal; see [Write a brief that stays cheap](#write-a-brief-that-stays-cheap). |
 | A `/handoff` shortcut for Claude Code (only if no `handoff` skill or command exists, in your home folder or the project) | new file `~/.claude/skills/handoff/SKILL.md` | `/clear` is the cheapest fix for a long session, but the agent forgets the task. `/handoff` writes a short note first; see [Start fresh without losing the task](#start-fresh-without-losing-the-task). |
 | Gemini CLI usage statistics off | `~/.gemini/settings.json`, key `privacy.usageStatisticsEnabled` | It defaults to on and sends usage statistics to Google. |
 | Caveman telemetry off | `~/.caveman/cloud.json`, key `telemetry.enabled` | The Caveman CLI reports usage, including your IP, by default. |
@@ -166,7 +168,7 @@ The shortcut is a manual-only skill (`disable-model-invocation: true`), so it ad
 ⚠ 104K/150K history · cache expired after ~50 min idle (~99K re-sent): /clear before breaks
 ```
 
-For Claude Code, add this to `~/.claude/settings.json` yourself (tokenstretch doesn't edit it for you, and it replaces any status line you already have):
+For Claude Code, `tokenstretch setup` adds it for you (shown first, backed up, undone by `tokenstretch undo`). If you already have a status line, setup keeps it and wraps it. To add it by hand instead, put this in `~/.claude/settings.json`:
 
 ```json
 { "statusLine": { "type": "command", "command": "tokenstretch statusline" } }
@@ -181,6 +183,15 @@ Already have a status line from another tool, such as Caveman's? A tool has one 
 The wrapped command gets the same input and prints as before, and tokenstretch adds its line to the end of the first line (`[CAVEMAN] · 22K/150K history · claude-sonnet-5-5`). If the wrapped command fails or takes over 3 seconds, you get the tokenstretch line alone; if tokenstretch has nothing to say, you get the other line unchanged.
 
 Claude Code pipes the session's log path to the command, and `statusline` reads that one file. It only opens a `.jsonl` file inside `~/.claude/projects`; any other path prints nothing. Run by hand, it uses your newest active session. It's read-only, runs no other program unless you pass `--wrap`, and takes about a tenth of a second. If anything goes wrong it prints nothing and exits 0, so it can't break your status bar. `--max-context` and `--max-reads` work as in `watch`.
+
+### In the session itself
+
+Setup also adds a prompt hook, `tokenstretch nudge`. When you send a prompt and the session has a warning, Claude Code shows it in the chat and passes it to the agent, which is told to finish your request first and then mention it in one line. This is what makes the warnings reach sessions nobody is watching, such as agents working in the background.
+
+- No warning, no output, so a clean session pays nothing.
+- The same kind of warning is repeated at most every 20 minutes per session.
+- It reads the one session log Claude Code names (token counts, never prompt text), always exits 0, and can't block a prompt (the hook command ends in `|| true`, so even a broken install can't).
+- It keeps one small file per session in `~/.tokenstretch/nudge/` to remember what it last said. Files older than a week are removed.
 
 ## Dashboard
 
@@ -275,6 +286,8 @@ Give it a bare task and it lists what's open, each with why it costs credits and
 
 It uses simple local rules you can read in `tokenstretch/brief.py`. It makes no model calls and reads only the text you pass in, never your session logs or past prompts. In one live test, helpers given briefs like this ran 6 to 7 steps and re-sent about 0.4M tokens each; open-ended research helpers in the same project ran 10 to 34 steps and re-sent 0.8M to 3.2M each. Those were different kinds of task (writing against research), so treat it as an illustration, not a measurement.
 
+In Claude Code you can skip the terminal: after `tokenstretch setup`, type `/brief add a retry to the upload client`. The agent rewrites the task as a brief with the same parts and lists what is missing. It's a manual-only skill, so it adds nothing to each turn. Unlike the command, `/brief` uses the model, so it costs one short reply.
+
 ## Pick the right model
 
 ```
@@ -333,7 +346,9 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 **Will it slow my agent down or cut work?** No. The biggest win is choosing the right model for the job and not re-reading old history. The top model is one `/model` command away whenever you need it.
 
-**Does it change anything without asking?** No. Doctor, status, report, watch, statusline, dashboard, and model suggest are read-only. `trim` and `model default` are dry runs unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
+**Does it change anything without asking?** No. Doctor, status, report, watch, statusline, dashboard, and model suggest are read-only. `nudge` (the prompt hook setup adds) changes none of your files; it only keeps its own small state file under `~/.tokenstretch/nudge/`.
+
+**Do I have to run anything after setup?** No. For Claude Code, setup puts the warnings in the status line and in the session, sets the default model, and adds the `/handoff` and `/brief` shortcuts. `watch`, `dashboard`, and `report` are there if you want more detail. Other tools get the rules block and model default; live warnings for them are on the roadmap. `trim` and `model default` are dry runs unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
 
 **Does it touch my login or API keys?** Never.
 
@@ -343,7 +358,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 ## More
 
-- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `statusline`, `brief`, `model`, `trim`, and `undo`.
+- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `statusline`, `nudge`, `brief`, `model`, `trim`, and `undo`.
 - Technical details and pins: `docs/DETAILS.md`, `ADAPTERS.md`, `tokenstretch/catalog.py`
 - Contributing: `CONTRIBUTING.md` · Roadmap: `ROADMAP.md` · Security: `SECURITY.md`
 

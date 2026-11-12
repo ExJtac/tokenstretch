@@ -231,6 +231,14 @@ def cmd_statusline(args) -> int:
     return run_statusline(args.home, args.root, getattr(args, "plan", None), cfg, wrap=args.wrap)
 
 
+def cmd_nudge(args) -> int:
+    from .nudge import run_nudge
+    from .watch import WatchConfig
+
+    cfg = WatchConfig(max_context=args.max_context, max_reads=args.max_reads)
+    return run_nudge(args.home, args.root, getattr(args, "plan", None), cfg)
+
+
 def cmd_dashboard(args) -> int:
     from .dashboard import run_dashboard
 
@@ -432,6 +440,12 @@ def main(argv=None) -> int:
     sl.add_argument("--wrap", metavar="COMMAND",
                     help="share the slot: run this status-line command too (same input) and add this line after its first line")
 
+    ng = sub.add_parser("nudge",
+                        help="hook entry: print the top watch warning for the session a tool names on stdin")
+    _add_context_args(ng)
+    ng.add_argument("--max-context", type=int, default=150_000, help="warn when history passes this (default 150000)")
+    ng.add_argument("--max-reads", type=int, default=3, help="warn when one file is read this many times (default 3)")
+
     dash = sub.add_parser("dashboard", help="read-only local web page with live usage, warnings, and doctor results")
     _add_context_args(dash)
     dash.add_argument("--host", default="127.0.0.1", help="only 127.0.0.1 is accepted (loopback only)")
@@ -506,6 +520,8 @@ def main(argv=None) -> int:
         return cmd_watch(a)
     if a.cmd == "statusline":
         return cmd_statusline(a)
+    if a.cmd == "nudge":
+        return cmd_nudge(a)
     if a.cmd == "dashboard":
         return cmd_dashboard(a)
     if a.cmd == "model":

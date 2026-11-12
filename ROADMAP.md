@@ -7,7 +7,8 @@
 - Local dashboard: `tokenstretch dashboard` (loopback only, read-only, live).
 - Instruction-file trimmer: `tokenstretch trim` (dry run by default, safe mechanical edits only, backed up, undoable).
 - Status-bar line: `tokenstretch statusline` (history size and the most urgent watch warning).
-- Brief writer: `tokenstretch brief` (prompt generator and lint, local rules).
+- Brief writer: `tokenstretch brief` (prompt generator and lint, local rules), and a `/brief` shortcut for Claude Code added by `setup`.
+- Always on for Claude Code: `setup` adds the status line (wrapping an existing one) and a prompt hook, `tokenstretch nudge`, that shows the top warning in the session.
 - `/handoff` shortcut for Claude Code, added by `setup` (note, `/clear`, `/handoff resume`).
 - `watch`: cache-expiry warning for Claude Code (logged, and predicted for idle sessions).
 - Codex: session labels from the rollout's working directory, and a light/mid/top tier map for `model suggest` / `model default`.
@@ -19,7 +20,7 @@
 - Gemini CLI and Copilot CLI: use `install_steps` (RTK `--gemini` / `--copilot`) from setup's pinned-install step instead of asking you to run them.
 - Exercise the live pinned installs on macOS and Linux outside the test suite.
 
-- Cache-expiry warning and `statusline` for Codex, Gemini CLI, and Copilot CLI, once each tool's cache counts and status-bar input are verified.
+- Cache-expiry warning, `statusline` and the in-session warning for Codex, Gemini CLI, and Copilot CLI, once each tool's cache counts and status-bar input are verified.
 - `/handoff` for Codex, Gemini CLI, and Copilot CLI, once each tool's custom-command format is verified. Measure the saving with `bench` (one long session against handoff, clear, resume).
 - `tokenstretch tools`: break a session's start-up size into instruction files, connectors, skills, and the rest, with per-item approx. tokens and a backed-up way to turn off the unused ones.
 - `setup`: offer to add the `statusLine` entry (backed up, undoable) when none is set.
