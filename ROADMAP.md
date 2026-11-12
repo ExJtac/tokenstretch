@@ -7,6 +7,7 @@
 - Local dashboard: `tokenstretch dashboard` (loopback only, read-only, live).
 - Instruction-file trimmer: `tokenstretch trim` (dry run by default, safe mechanical edits only, backed up, undoable).
 - Status-bar line: `tokenstretch statusline` (history size and the most urgent watch warning).
+- `/handoff` shortcut for Claude Code, added by `setup` (note, `/clear`, `/handoff resume`).
 - `watch`: cache-expiry warning for Claude Code (logged, and predicted for idle sessions).
 - Codex: session labels from the rollout's working directory, and a light/mid/top tier map for `model suggest` / `model default`.
 
@@ -18,6 +19,7 @@
 - Exercise the live pinned installs on macOS and Linux outside the test suite.
 
 - Cache-expiry warning and `statusline` for Codex, Gemini CLI, and Copilot CLI, once each tool's cache counts and status-bar input are verified.
+- `/handoff` for Codex, Gemini CLI, and Copilot CLI, once each tool's custom-command format is verified. Measure the saving with `bench` (one long session against handoff, clear, resume).
 - `setup`: offer to add the `statusLine` entry (backed up, undoable) when none is set.
 
 - A dashboard "copy command" button next to each fix (still read-only).

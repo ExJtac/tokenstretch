@@ -315,7 +315,7 @@ class Adapter:
         """Per-turn records for `tokenstretch watch`, read-only. None => not supported yet.
         With max_age_s, files not written within that many seconds are skipped before opening.
 
-        [{adapter, session, project, path, last_write, clear_hint, compact_hint,
+        [{adapter, session, project, path, last_write, clear_hint, compact_hint, handoff_hint (optional),
           turns: [{ts, model, history_tokens, output_tokens, tool_calls (int|None), reads: [path]}]}]
         `reads` holds file paths from the tool's own read calls only; never file contents.
         A turn may also carry `cache_read` and `cache_write` (tokens); watch's cache-expiry check

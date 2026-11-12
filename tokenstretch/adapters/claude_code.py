@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from ..context import Context
-from ..identity import STATE_DIRNAME
+from ..identity import CLI_NAME, PRODUCT_NAME, STATE_DIRNAME
 from ..files import count_lines_bytes, env_truthy, frontmatter, import_refs, read_json, walk_glob_names
 from ..findings import Finding, UsageRecord
 from ..util import is_loopback_url
@@ -1391,7 +1391,72 @@ class ClaudeCodeAdapter(Adapter):
         item = self._setup_rules(ctx)
         if item:
             items.append(item)
+        item = self._setup_handoff(ctx)
+        if item:
+            items.append(item)
         return items
+
+    # ---- /handoff: makes a fresh start cheap ------------------------------------------------
+    HANDOFF_NOTE = ".claude/handoff.md"
+
+    def _handoff_paths(self, ctx: Context) -> list[Path]:
+        """Every place a `/handoff` shortcut could already live (user and project, skill or command)."""
+        return [base / ".claude" / kind for base in (ctx.home, ctx.root)
+                for kind in (Path("skills") / "handoff" / "SKILL.md", Path("commands") / "handoff.md")]
+
+    def handoff_hint(self, ctx: Context) -> str:
+        """`/handoff` when that shortcut exists (stat only), else ""."""
+        return "/handoff" if any(p.is_file() for p in self._handoff_paths(ctx)) else ""
+
+    def handoff_skill(self) -> str:
+        return (
+            "---\n"
+            "name: handoff\n"
+            "description: Write a short handoff note so you can /clear without losing the task. "
+            "`/handoff resume` picks it up.\n"
+            "disable-model-invocation: true\n"
+            "---\n"
+            f"<!-- added by {PRODUCT_NAME}; `{CLI_NAME} undo` removes it -->\n"
+            "Arguments: $ARGUMENTS\n"
+            "\n"
+            f"If the arguments are `resume`: read `{self.HANDOFF_NOTE}`, say in one line what you will do "
+            "next, and continue from its \"Next step\". Trust the note. Open a file only when you need its "
+            "exact lines.\n"
+            "\n"
+            f"Otherwise: write `{self.HANDOFF_NOTE}`, replacing any old one. Write it from what you already "
+            "know. Do not read files or run commands to prepare it. Keep it under 40 lines:\n"
+            "\n"
+            "- **Goal:** one sentence.\n"
+            "- **Done:** what is finished, and how it was checked.\n"
+            "- **State:** files changed (paths, with line numbers where they matter), the branch, and "
+            "anything uncommitted or half-done.\n"
+            "- **Decisions:** choices made and why, and what was tried and ruled out.\n"
+            "- **Next step:** the exact next action.\n"
+            "- **Open questions:** anything waiting on the user.\n"
+            "\n"
+            "Then reply with only this line: `Handoff written. Type /clear, then /handoff resume.`\n"
+        )
+
+    def _setup_handoff(self, ctx: Context) -> SetupItem | None:
+        if any(p.exists() for p in self._handoff_paths(ctx)):
+            return None  # one is already there (ours or yours); never overwrite it
+        path = ctx.home / ".claude" / "skills" / "handoff" / "SKILL.md"
+        return SetupItem(
+            id="claude-handoff-skill", adapter_id=self.id,
+            title="Add a /handoff shortcut to Claude Code",
+            why="The cheapest fix for a long session is /clear, but people skip it because the agent "
+                "forgets the task. /handoff has the agent write a short note first, and `/handoff resume` "
+                "picks it up in the fresh session, so you re-send a page instead of the whole history.",
+            changes=[{
+                "path": str(path), "kind": "create",
+                "content": self.handoff_skill(), "key": "handoff skill",
+                "reason": "new manual-only skill (about 1 KB; loaded only when you type /handoff)",
+            }],
+            done="added the /handoff shortcut",
+            notes=[f"The note goes in `{self.HANDOFF_NOTE}` in the project you're working in. "
+                   "Add that path to `.gitignore` if you don't want it committed.",
+                   "It is marked `disable-model-invocation`, so it adds nothing to each turn."],
+        )
 
     def _model_target(self, ctx: Context) -> tuple[str | None, Path | None, Path]:
         """(current default model, where it is set, file to edit). The last settings file that sets it wins."""
@@ -1494,6 +1559,7 @@ class ClaudeCodeAdapter(Adapter):
         """Per-turn usage, tool-call counts, and Read paths from the newest main sessions (logs only)."""
         from ..logcache import memo_by_stat
         out = []
+        handoff = self.handoff_hint(ctx)
         for mtime, path in _newest(_transcript_paths(ctx, subagents=False), limit, max_age_s):
             turns = memo_by_stat(path, "claude-turns", lambda path=path: _session_turns(path))
             if not turns:
@@ -1501,7 +1567,7 @@ class ClaudeCodeAdapter(Adapter):
             out.append({
                 "adapter": self.id, "session": path.stem[:8], "project": path.parent.name,
                 "path": str(path), "last_write": mtime, "turns": turns,
-                "clear_hint": "/clear", "compact_hint": "/compact",
+                "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": handoff,
             })
         return out
 
@@ -1522,7 +1588,7 @@ class ClaudeCodeAdapter(Adapter):
         return {
             "adapter": self.id, "session": real.stem[:8], "project": real.parent.name,
             "path": str(real), "last_write": mtime, "turns": turns,
-            "clear_hint": "/clear", "compact_hint": "/compact",
+            "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": self.handoff_hint(ctx),
         }
 
     def cache_ttl_s(self, ctx: Context) -> int | None:
