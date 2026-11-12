@@ -692,6 +692,7 @@ class ClaudeCodeAdapter(Adapter):
         out += self._w25(ctx)
         out += self._w26(ctx)
         out += self._w27(ctx)
+        out += self._w28(ctx)
         out += self._t01(ctx)
         return out
 
@@ -1306,6 +1307,27 @@ class ClaudeCodeAdapter(Adapter):
             "Deny rules don't stop reads through the shell.",
             "CC-SET (permissions)",
             file=", ".join(str(ctx.root / n) for n, _ in hits), key="bytes", value={n: b for n, b in hits},
+        )]
+
+    WAKE_MIN = 3             # same floor as watch: wake-ups in one conversation ...
+    WAKE_MIN_SENT = 300_000  # ... and tokens those extra steps re-sent
+
+    def _w28(self, ctx: Context) -> list[Finding]:
+        hit, sent, wakes = 0, 0, 0
+        for s in self.watch_sessions(ctx, limit=40, max_age_s=30 * 86400) or []:
+            woke = [t["history_tokens"] for t in s["turns"] if t.get("woken")]
+            if len(woke) >= self.WAKE_MIN and sum(woke) >= self.WAKE_MIN_SENT:
+                hit, sent, wakes = hit + 1, sent + sum(woke), wakes + len(woke)
+        if not hit:
+            return []
+        return [self.finding(
+            "W28", "helper-wakeups", "med", "waste",
+            f"In {hit} recent conversation{'s' if hit != 1 else ''}, helpers that finished one at a time woke the "
+            f"main conversation {wakes} times, and those extra steps re-sent about {sent / 1e6:.1f}M tokens of history.",
+            "Start helpers together in one message and wait for them in the foreground, so their results "
+            "arrive in one step. Ask a team lead for one final report, not one per helper.",
+            "CC-SUB, CC-CACHE",
+            key="wakeup_resent_tokens", value=sent,
         )]
 
     def _t01(self, ctx: Context) -> list[Finding]:
