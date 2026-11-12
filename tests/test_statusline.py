@@ -249,8 +249,8 @@ def test_watch_warns_when_a_session_starts_heavy(tmp_path):
         line = build_line(_ctx(w), {"transcript_path": str(_log(w))})
     assert [x.key[-1] for x in warns] == ["startup"] and quiet == []
     assert "started at ~78K tokens before doing any work" in warns[0].what
-    assert "trim" in warns[0].fix and "W03" in warns[0].fix and "/clear" not in warns[0].fix
-    assert line == "⚠ 79K/150K history · starts at 78K before any work: tokenstretch trim, tokenstretch doctor"
+    assert "tokenstretch startup" in warns[0].fix and "/clear" not in warns[0].fix
+    assert line == "⚠ 79K/150K history · starts at 78K before any work: tokenstretch startup"
 
 
 def test_light_start_and_missing_first_step_stay_quiet(tmp_path):
@@ -370,3 +370,43 @@ def test_nudge_cli_prints_one_json_object(tmp_path, monkeypatch):
     with credential_guard(), redirect_stdout(buf):
         code = main(["nudge", "--home", str(w / "home"), "--root", str(w / "root")])
     assert code == 0 and json.loads(buf.getvalue())["systemMessage"].startswith("tokenstretch: ")
+
+
+# ---- startup: what a session carries before the first prompt -----------------------------------
+
+def test_startup_sizes_local_parts_largest_first(tmp_path):
+    from tokenstretch.startup import build, format_report
+    w = _world(tmp_path, [_row(0, 0, read=20_000)])
+    home, root = w / "home", w / "root"
+    (root / "CLAUDE.md").write_text("x" * 8_000, encoding="utf-8")
+    (root / "pkg").mkdir()
+    (root / "pkg" / "CLAUDE.md").write_text("y" * 40_000, encoding="utf-8")       # loads only when working in pkg/
+    for name, extra in (("listed", ""), ("manual", "disable-model-invocation: true\n")):
+        d = home / ".claude" / "skills" / name
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {'d' * 396}\n{extra}---\nbody\n", encoding="utf-8")
+    with credential_guard():
+        data = build(_ctx(w))
+    claude = next(d for d in data if d["adapter"] == "claude-code")
+    names = [(p["kind"], p["name"], p["tokens"]) for p in claude["parts"]]
+    assert names[0][0] == "instruction file" and names[0][1].endswith("root/CLAUDE.md") and names[0][2] == 2_000
+    assert ("skill listing (user)", "listed", 100) in names
+    assert not any(n == "manual" for _, n, _ in names)             # manual-only skills cost nothing per session
+    assert not any("pkg" in n for _, n, _ in names)
+    assert claude["known"] == sum(t for _, _, t in names) and claude["measured_start"] is None and claude["rest"] is None
+    text = "\n".join(format_report(data))
+    assert "Sized from local files: ~2.1K tokens" in text and "no recent session with a clean first step" in text
+
+
+def test_startup_cli_json_and_rest(tmp_path, monkeypatch):
+    import tokenstretch.startup as st
+    w = _world(tmp_path, [_row(0, 0, read=20_000)])
+    (w / "root" / "CLAUDE.md").write_text("x" * 8_000, encoding="utf-8")
+    monkeypatch.setattr(st, "measured_starts", lambda ctx, ad, limit=5: [60_000, 58_000])
+    buf = io.StringIO()
+    with credential_guard(), redirect_stdout(buf):
+        code = main(["startup", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys"), "--json"])
+    d = next(x for x in json.loads(buf.getvalue()) if x["adapter"] == "claude-code")
+    assert code == 0 and d["measured_start"] == 60_000 and d["rest"] == 60_000 - d["known"] and d["recent_starts"] == [60_000, 58_000]
+    lines = "\n".join(st.format_report([d]))
+    assert "Recent sessions: 60K, 58K." in lines and "can't be sized from local files" in lines

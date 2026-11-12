@@ -231,6 +231,19 @@ def cmd_statusline(args) -> int:
     return run_statusline(args.home, args.root, getattr(args, "plan", None), cfg, wrap=args.wrap)
 
 
+def cmd_startup(args) -> int:
+    from .startup import build, format_report
+
+    ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    data = build(ctx)
+    if args.json:
+        print(json.dumps(data, indent=2))
+    else:
+        for line in format_report(data, top=10_000 if args.all else 12):
+            print(line)
+    return 0
+
+
 def cmd_nudge(args) -> int:
     from .nudge import run_nudge
     from .watch import WatchConfig
@@ -443,6 +456,12 @@ def main(argv=None) -> int:
     sl.add_argument("--wrap", metavar="COMMAND",
                     help="share the slot: run this status-line command too (same input) and add this line after its first line")
 
+    st = sub.add_parser("startup",
+                        help="what every session carries before you type: parts sized from local files, largest first")
+    _add_context_args(st)
+    st.add_argument("--all", action="store_true", help="list every part, not just the largest 12")
+    st.add_argument("--json", action="store_true")
+
     ng = sub.add_parser("nudge",
                         help="hook entry: print the top watch warning for the session a tool names on stdin")
     _add_context_args(ng)
@@ -527,6 +546,8 @@ def main(argv=None) -> int:
         return cmd_watch(a)
     if a.cmd == "statusline":
         return cmd_statusline(a)
+    if a.cmd == "startup":
+        return cmd_startup(a)
     if a.cmd == "nudge":
         return cmd_nudge(a)
     if a.cmd == "dashboard":
