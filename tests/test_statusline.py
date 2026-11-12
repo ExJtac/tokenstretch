@@ -236,3 +236,38 @@ def test_wrap_cli(tmp_path, monkeypatch):
     with credential_guard(), redirect_stdout(buf):
         code = main(["statusline", "--home", str(w / "home"), "--root", str(w / "root"), "--wrap", "echo CAVE"])
     assert code == 0 and buf.getvalue() == f"CAVE · 22K/150K history · {SONNET}\n"
+
+
+# ---- heavy start: history on the first step, before any work --------------------------------------
+
+def test_watch_warns_when_a_session_starts_heavy(tmp_path):
+    prompt = {"type": "user", "message": {"role": "user", "content": "build the thing"}}
+    w = _world(tmp_path, [prompt, _row(0, 0, read=10_000, write=68_000), _row(1, 40, read=79_000)])
+    with credential_guard():
+        warns = Watcher(_ctx(w)).scan()
+        quiet = Watcher(_ctx(w), WatchConfig(max_start=100_000)).scan()
+        line = build_line(_ctx(w), {"transcript_path": str(_log(w))})
+    assert [x.key[-1] for x in warns] == ["startup"] and quiet == []
+    assert "started at ~78K tokens before doing any work" in warns[0].what
+    assert "trim" in warns[0].fix and "W03" in warns[0].fix and "/clear" not in warns[0].fix
+    assert line == "⚠ 79K/150K history · starts at 78K before any work: tokenstretch trim, tokenstretch doctor"
+
+
+def test_light_start_and_missing_first_step_stay_quiet(tmp_path):
+    from tokenstretch.adapters.claude_code import _first_history_tokens
+    prompt = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "hi"}]}}
+    tool = {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "x"}]}}
+    w = _world(tmp_path, [prompt, tool, _row(0, 0, read=20_000), _row(1, 40, read=22_000)])
+    assert _first_history_tokens(_log(w)) == 20_010                       # tool results are not prompts
+    assert _first_history_tokens(_log(w), head_bytes=10) is None          # first usage line not in the head
+    assert _first_history_tokens(tmp_path / "missing.jsonl") is None
+    with credential_guard():
+        assert Watcher(_ctx(w)).scan() == []
+    # Not a true start: no prompt before the first step (a log tail), two prompts, or a summary.
+    heavy = _row(0, 0, read=10_000, write=90_000)
+    summary = {"type": "user", "isCompactSummary": True, "message": {"role": "user", "content": "summary"}}
+    for n, rows in enumerate(([heavy], [prompt, prompt, heavy], [summary, heavy])):
+        wn = _world(tmp_path / f"n{n}", rows)
+        assert _first_history_tokens(_log(wn)) is None
+        with credential_guard():
+            assert [x.key[-1] for x in Watcher(_ctx(wn)).scan()] == []

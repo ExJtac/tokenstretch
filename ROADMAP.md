@@ -20,6 +20,7 @@
 
 - Cache-expiry warning and `statusline` for Codex, Gemini CLI, and Copilot CLI, once each tool's cache counts and status-bar input are verified.
 - `/handoff` for Codex, Gemini CLI, and Copilot CLI, once each tool's custom-command format is verified. Measure the saving with `bench` (one long session against handoff, clear, resume).
+- `tokenstretch tools`: break a session's start-up size into instruction files, connectors, skills, and the rest, with per-item approx. tokens and a backed-up way to turn off the unused ones.
 - `setup`: offer to add the `statusLine` entry (backed up, undoable) when none is set.
 
 - A dashboard "copy command" button next to each fix (still read-only).

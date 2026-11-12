@@ -1568,6 +1568,7 @@ class ClaudeCodeAdapter(Adapter):
                 "adapter": self.id, "session": path.stem[:8], "project": path.parent.name,
                 "path": str(path), "last_write": mtime, "turns": turns,
                 "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": handoff,
+                "start_tokens": memo_by_stat(path, "claude-start", lambda path=path: _first_history_tokens(path)),
             })
         return out
 
@@ -1589,6 +1590,7 @@ class ClaudeCodeAdapter(Adapter):
             "adapter": self.id, "session": real.stem[:8], "project": real.parent.name,
             "path": str(real), "last_write": mtime, "turns": turns,
             "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": self.handoff_hint(ctx),
+            "start_tokens": _first_history_tokens(real),
         }
 
     def cache_ttl_s(self, ctx: Context) -> int | None:
@@ -1749,6 +1751,49 @@ class ClaudeCodeAdapter(Adapter):
             "Convert ignore-file rules into native permission deny rules (no third-party hook).",
             edit={"path": str(dest), "merge": {"permissions": {"deny": patterns}}},
         )]
+
+
+def _first_history_tokens(path: Path, head_bytes: int = 2_000_000) -> int | None:
+    """History size on the session's first step: what was sent before any work was done.
+
+    Read from the start of the log. None when the first usage line is not within head_bytes, or
+    when the log does not open with exactly one typed prompt (a continued or summarized
+    conversation starts with history that is not start-up overhead). Prompt text is never kept.
+    """
+    try:
+        with path.open("rb") as fh:
+            chunk = fh.read(head_bytes)
+    except OSError:
+        return None
+    prompts = 0
+    for raw in chunk.splitlines():
+        if b'"user"' not in raw and b'"assistant"' not in raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except (ValueError, UnicodeDecodeError):
+            continue
+        msg = obj.get("message") if isinstance(obj, dict) else None
+        if not isinstance(msg, dict):
+            continue
+        if obj.get("type") == "user":
+            if obj.get("isCompactSummary"):
+                return None
+            content = msg.get("content")
+            typed = isinstance(content, str) or (isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "text" for b in content))
+            prompts += 1 if typed else 0
+            continue
+        if obj.get("type") != "assistant":
+            continue
+        if prompts != 1:
+            return None
+        usage = msg.get("usage")
+        model = str(msg.get("model") or "")
+        if isinstance(usage, dict) and model and not model.startswith("<"):
+            return sum(int(usage.get(k) or 0) for k in
+                       ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+    return None
 
 
 def _last_assistant_usage(path: Path, tail_bytes: int = 2_000_000) -> tuple[str, dict] | None:
