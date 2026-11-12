@@ -93,11 +93,17 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     w = _world(tmp_path)
     before = _snapshot(w)
     res, out = _run(w, yes=True, installs=False)
-    assert res.mode == "applied" and len(res.manifests) == 4
-    assert "✔ switched default model to sonnet, backed up ~/.claude/settings.json" in out
+    assert res.mode == "applied" and len(res.manifests) == 5
+    assert "✔ switched default model to sonnet and turned on live warnings, backed up ~/.claude/settings.json" in out
     assert "/model opus" in out
     s = json.loads((w / "home" / ".claude" / "settings.json").read_text())
-    assert s == {"model": "sonnet", "theme": "dark"}
+    assert s["model"] == "sonnet" and s["theme"] == "dark"
+    # The live warnings ride in the same step as the model change: one edit per file.
+    assert s["statusLine"]["type"] == "command" and s["statusLine"]["command"].endswith(" statusline")
+    hook = s["hooks"]["UserPromptSubmit"][0]["hooks"][0]
+    assert hook["command"].endswith(" nudge") and hook["timeout"] == 5
+    assert set(s) == {"model", "theme", "statusLine", "hooks"}
+    assert "and turned on live warnings" in out
     assert "credit-rules start" in (w / "root" / "CLAUDE.md").read_text()
     assert json.loads((w / "home" / ".caveman" / "cloud.json").read_text())["telemetry"]["enabled"] is False
     # Re-running is a no-op plan.
@@ -107,7 +113,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     buf = io.StringIO()
     with credential_guard(), redirect_stdout(buf):
         code = main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
-    assert code == 0 and "Restored 3 file(s), deleted 1 created file(s)" in buf.getvalue()
+    assert code == 0 and "Restored 3 file(s), deleted 2 created file(s)" in buf.getvalue()
     assert _snapshot(w) == before
 
 
@@ -270,3 +276,54 @@ def test_watch_and_statusline_point_to_handoff_once_it_exists(tmp_path):
         line = build_line(_ctx(w))
     assert "type /handoff (writes a short note) and /clear" in after.fix and "/handoff resume" in after.fix
     assert line.endswith("· /handoff then /clear at the next task break")
+
+
+# ---- live warnings inside the tool, and /brief ------------------------------------------------
+
+def test_setup_keeps_your_status_line_and_wraps_it(tmp_path):
+    w = _world(tmp_path)
+    path = w / "home" / ".claude" / "settings.json"
+    mine = {"model": "sonnet", "statusLine": {"type": "command", "command": "bash ~/my line.sh", "padding": 0},
+            "hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}}
+    path.write_text(json.dumps(mine), encoding="utf-8")
+    items, _ = build_plan(_ctx(w))
+    item = next(i for i in items if i.id == "claude-live-warnings")
+    assert "your status line kept" in item.changes[0]["reason"]
+    _run(w, yes=True, installs=False)
+    s = json.loads(path.read_text())
+    assert s["statusLine"]["command"].endswith(" statusline --wrap 'bash ~/my line.sh'")
+    assert s["statusLine"]["padding"] == 0
+    cmds = [h["command"] for g in s["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
+    assert cmds[0] == "echo hi" and cmds[1].endswith(" nudge") and len(cmds) == 2
+    # A second run plans nothing for it: no double wrap, no second hook.
+    assert "claude-live-warnings" not in {i.id for i in build_plan(_ctx(w))[0]}
+    with credential_guard():
+        main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
+    assert json.loads(path.read_text()) == mine
+
+
+def test_setup_leaves_unreadable_or_unknown_settings_alone(tmp_path):
+    w = _world(tmp_path)
+    path = w / "home" / ".claude" / "settings.json"
+    path.write_text("{not json", encoding="utf-8")
+    assert "claude-live-warnings" not in {i.id for i in build_plan(_ctx(w))[0]}
+    path.write_text(json.dumps({"model": "sonnet", "statusLine": "custom"}), encoding="utf-8")
+    _run(w, yes=True, installs=False)
+    assert json.loads(path.read_text())["statusLine"] == "custom"   # a shape we do not know stays as it is
+
+
+def test_setup_adds_a_manual_only_brief_skill_and_never_replaces_yours(tmp_path):
+    from tokenstretch.files import frontmatter
+    w = _world(tmp_path)
+    skill = w / "home" / ".claude" / "skills" / "brief" / "SKILL.md"
+    _, out = _run(w, yes=True, installs=False)
+    assert "✔ added the /brief shortcut" in out
+    text = skill.read_text(encoding="utf-8")
+    fm = frontmatter(text)
+    assert fm.get("name") == "brief" and fm.get("disable-model-invocation") == "true"
+    assert "$ARGUMENTS" in text and "Done when" in text and "Missing" in text and len(text) < 1800
+    w2 = _world(tmp_path / "second")
+    mine = w2 / "root" / ".claude" / "commands" / "brief.md"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("my own brief\n", encoding="utf-8")
+    assert "claude-brief-skill" not in {i.id for i in build_plan(_ctx(w2))[0]}
