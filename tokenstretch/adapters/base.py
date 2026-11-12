@@ -316,6 +316,7 @@ class Adapter:
         With max_age_s, files not written within that many seconds are skipped before opening.
 
         [{adapter, session, project, path, last_write, clear_hint, compact_hint, handoff_hint (optional),
+          start_tokens (optional: history size on the session's first step),
           turns: [{ts, model, history_tokens, output_tokens, tool_calls (int|None), reads: [path]}]}]
         `reads` holds file paths from the tool's own read calls only; never file contents.
         A turn may also carry `cache_read` and `cache_write` (tokens); watch's cache-expiry check

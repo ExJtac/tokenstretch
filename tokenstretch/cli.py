@@ -219,7 +219,7 @@ def cmd_watch(args) -> int:
     from .watch import WatchConfig, run_watch
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
-    cfg = WatchConfig(max_context=args.max_context, max_reads=args.max_reads)
+    cfg = WatchConfig(max_context=args.max_context, max_reads=args.max_reads, max_start=args.max_start)
     return run_watch(ctx, cfg, interval=max(1.0, args.interval), once=bool(args.once), notify=bool(args.notify))
 
 
@@ -389,6 +389,8 @@ def main(argv=None) -> int:
     w.add_argument("--once", action="store_true", help="one pass, then exit")
     w.add_argument("--max-context", type=int, default=150_000, help="warn when history passes this (default 150000)")
     w.add_argument("--max-reads", type=int, default=3, help="warn when one file is read this many times (default 3)")
+    w.add_argument("--max-start", type=int, default=40_000,
+                   help="warn when a session's first step already carries this much history (default 40000)")
     w.add_argument("--notify", action="store_true", help="also show a local desktop notification (osascript/notify-send)")
 
     sl = sub.add_parser("statusline",
