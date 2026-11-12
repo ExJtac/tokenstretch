@@ -1434,7 +1434,9 @@ class ClaudeCodeAdapter(Adapter):
             added.append("statusLine: your status line kept, with the history size and top warning added after it"
                          if theirs else "statusLine: history size and top warning")
         if not any(f"{PACKAGE_NAME} nudge" in cmd for cmd, _ in _hook_cmds(data)):
-            if _ensure_hook(data, "UserPromptSubmit", f"{base} nudge"):
+            # Exit 2 from a prompt hook blocks the prompt, and an older copy of this tool without
+            # `nudge` would exit 2. So the hook command can only ever succeed.
+            if _ensure_hook(data, "UserPromptSubmit", f"{base} nudge 2>/dev/null || true"):
                 data["hooks"]["UserPromptSubmit"][-1]["hooks"][0]["timeout"] = 5
                 added.append("hooks.UserPromptSubmit: show the top warning in the session")
         return added

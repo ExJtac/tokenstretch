@@ -101,7 +101,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     # The live warnings ride in the same step as the model change: one edit per file.
     assert s["statusLine"]["type"] == "command" and s["statusLine"]["command"].endswith(" statusline")
     hook = s["hooks"]["UserPromptSubmit"][0]["hooks"][0]
-    assert hook["command"].endswith(" nudge") and hook["timeout"] == 5
+    assert hook["command"].endswith(" nudge 2>/dev/null || true") and hook["timeout"] == 5   # can never block a prompt
     assert set(s) == {"model", "theme", "statusLine", "hooks"}
     assert "and turned on live warnings" in out
     assert "credit-rules start" in (w / "root" / "CLAUDE.md").read_text()
@@ -294,7 +294,7 @@ def test_setup_keeps_your_status_line_and_wraps_it(tmp_path):
     assert s["statusLine"]["command"].endswith(" statusline --wrap 'bash ~/my line.sh'")
     assert s["statusLine"]["padding"] == 0
     cmds = [h["command"] for g in s["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
-    assert cmds[0] == "echo hi" and cmds[1].endswith(" nudge") and len(cmds) == 2
+    assert cmds[0] == "echo hi" and " nudge " in cmds[1] and len(cmds) == 2
     # A second run plans nothing for it: no double wrap, no second hook.
     assert "claude-live-warnings" not in {i.id for i in build_plan(_ctx(w))[0]}
     with credential_guard():

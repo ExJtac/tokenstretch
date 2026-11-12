@@ -190,7 +190,7 @@ Setup also adds a prompt hook, `tokenstretch nudge`. When you send a prompt and 
 
 - No warning, no output, so a clean session pays nothing.
 - The same kind of warning is repeated at most every 20 minutes per session.
-- It reads the one session log Claude Code names (token counts, never prompt text), always exits 0, and can't block a prompt.
+- It reads the one session log Claude Code names (token counts, never prompt text), always exits 0, and can't block a prompt (the hook command ends in `|| true`, so even a broken install can't).
 - It keeps one small file per session in `~/.tokenstretch/nudge/` to remember what it last said. Files older than a week are removed.
 
 ## Dashboard
