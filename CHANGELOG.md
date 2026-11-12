@@ -5,8 +5,12 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Added
+- `setup`: a `/credits` shortcut for Claude Code, written to `~/.claude/skills/credits/SKILL.md` (about 1 KB, `disable-model-invocation: true`). The agent runs `startup` and `watch --once` itself and reports, in under 150 words, what a new session carries, what is costing credits now, and a step for each that needs no terminal. It changes nothing without a yes. Setup skips it when a `credits` skill or command exists; `undo` deletes it.
 - `startup`: connectors are sized by difference. Each run remembers the unsized remainder of the measured start for the current set of connectors in `~/.tokenstretch/startup-history.json` (names and token counts only). When an earlier run saw the same set with one connector more or fewer, the change is reported as that connector's size, and a connector turned off since then is reported as tokens saved per session. Changes under 2K tokens are ignored. A change with the same local set is reported as a plugin or app connector change. `--no-save` keeps the run read-only.
 - `brief --review`: a review brief. The helper reads only the named files, changes nothing, reports problems one per line as `path:line: problem. fix.`, and replies `NO ISSUES` when there are none. `--max-reads N` caps file reads. A review of more than 8 files is flagged (`review-too-wide`), and `--split N` prints one brief per group of N files, keeping files from the same folder together, so each group goes to its own helper with a short history. Found in a live test, where one reviewer reading a whole site re-sent about 0.79M tokens.
+
+### Changed
+- `watch`, `statusline`, `nudge`: the heavy-start warning no longer assumes a terminal. With the `/credits` shortcut installed the fix says to type `/credits`; without it, it says to ask the agent to run `tokenstretch startup`.
 
 ## [0.2.0] - 2026-11-12
 

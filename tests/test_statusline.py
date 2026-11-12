@@ -250,7 +250,16 @@ def test_watch_warns_when_a_session_starts_heavy(tmp_path):
     assert [x.key[-1] for x in warns] == ["startup"] and quiet == []
     assert "started at ~78K tokens before doing any work" in warns[0].what
     assert "tokenstretch startup" in warns[0].fix and "/clear" not in warns[0].fix
+    assert "ask the agent to run `tokenstretch startup` (or run it in a terminal)" in warns[0].fix
     assert line == "⚠ 79K/150K history · starts at 78K before any work: tokenstretch startup"
+    skill = w / "home" / ".claude" / "skills" / "credits" / "SKILL.md"       # with the shortcut: no terminal needed
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: credits\n---\n", encoding="utf-8")
+    with credential_guard():
+        warns = Watcher(_ctx(w)).scan()
+        line = build_line(_ctx(w), {"transcript_path": str(_log(w))})
+    assert warns[0].fix.startswith("type `/credits` to see what it is made of") and "terminal" not in warns[0].fix
+    assert line == "⚠ 79K/150K history · starts at 78K before any work: /credits"
 
 
 def test_light_start_and_missing_first_step_stay_quiet(tmp_path):

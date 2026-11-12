@@ -277,6 +277,7 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
 
     # (f) heavy start: what the session carried on its first step, before any work
     start = s.get("start_tokens")
+    credits = s.get("credits_hint")     # a shortcut that runs the check in the chat, when installed
     if start and start > cfg.max_start:
         out.append(WatchWarning(base + ("startup",), **tag,
                            what=f"this session started at ~{_k(start)} tokens before doing any work "
@@ -284,9 +285,12 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
                            why="that is instruction files, tool and connector definitions, and skill listings. "
                                "It is in every session and is re-sent on every step, so a fresh start does not "
                                "remove it.",
-                           fix=f"run `{CLI_NAME} startup` to see what it is made of, largest first, with the fix for each "
-                               "part, then turn off what you don't use.",
-                           short=f"starts at {_k(start)} before any work: {CLI_NAME} startup"))
+                           fix=(f"type `{credits}` to see what it is made of, largest first, with the fix for each part"
+                                if credits else
+                                f"ask the agent to run `{CLI_NAME} startup` (or run it in a terminal) to see what it is "
+                                "made of, largest first, with the fix for each part") +
+                               ", then turn off what you don't use.",
+                           short=f"starts at {_k(start)} before any work: {credits or CLI_NAME + ' startup'}"))
 
     # (e) the cache expired during a pause: idle right now (needs the clock), or recorded in the logs
     ttl = ad.cache_ttl_s(ctx)

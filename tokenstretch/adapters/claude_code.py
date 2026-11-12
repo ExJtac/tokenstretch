@@ -1438,7 +1438,7 @@ class ClaudeCodeAdapter(Adapter):
                 items.append(live)
             else:
                 self._fold_live(ctx, same)   # one step per file: add the live keys to that step
-        for item in (self._setup_handoff(ctx), self._setup_brief(ctx)):
+        for item in (self._setup_handoff(ctx), self._setup_brief(ctx), self._setup_credits(ctx)):
             if item:
                 items.append(item)
         return items
@@ -1586,6 +1586,61 @@ class ClaudeCodeAdapter(Adapter):
             done="added the /brief shortcut",
             notes=[f"`{CLI_NAME} brief \"task\"` does the same from a terminal, with no model call.",
                    "It is marked `disable-model-invocation`, so it adds nothing to each turn."],
+        )
+
+    # ---- /credits: the cost check without a terminal ------------------------------------------
+    def _credits_paths(self, ctx: Context) -> list[Path]:
+        return [base / ".claude" / kind for base in (ctx.home, ctx.root)
+                for kind in (Path("skills") / "credits" / "SKILL.md", Path("commands") / "credits.md")]
+
+    def credits_hint(self, ctx: Context) -> str:
+        """`/credits` when that shortcut exists (stat only), else ""."""
+        return "/credits" if any(p.is_file() for p in self._credits_paths(ctx)) else ""
+
+    def credits_skill(self) -> str:
+        return (
+            "---\n"
+            "name: credits\n"
+            "description: Show what this session costs before any work and what is wasting credits now.\n"
+            "disable-model-invocation: true\n"
+            "---\n"
+            f"<!-- added by {PRODUCT_NAME}; `{CLI_NAME} undo` removes it -->\n"
+            f"Run these two commands, one call each, and nothing else:\n"
+            "\n"
+            f"1. `{CLI_NAME} startup`\n"
+            f"2. `{CLI_NAME} watch --once`\n"
+            "\n"
+            f"If `{CLI_NAME}` is not found, use `python3 -m {PACKAGE_NAME}` in its place. Both commands make "
+            "no network or model calls and change none of your project files.\n"
+            "\n"
+            "Then reply in under 150 words, in plain words, with no code block:\n"
+            "\n"
+            "- **Starts at:** the measured size of a new session, and its three largest parts.\n"
+            "- **Costing credits now:** each warning from the second command, one line each, most costly first.\n"
+            "- **What to do:** for each line above, the fix the command gives, worded as a step the user can "
+            "take in this app (a setting to turn off, something to type). Do not tell the user to open a terminal.\n"
+            "\n"
+            "Do not change any file or setting. Offer to make one change, the largest saving, and wait for a yes.\n"
+        )
+
+    def _setup_credits(self, ctx: Context) -> SetupItem | None:
+        if any(p.exists() for p in self._credits_paths(ctx)):
+            return None  # one is already there (ours or yours); never overwrite it
+        path = ctx.home / ".claude" / "skills" / "credits" / "SKILL.md"
+        return SetupItem(
+            id="claude-credits-skill", adapter_id=self.id,
+            title="Add a /credits shortcut to Claude Code",
+            why="The warnings point to commands, and not everyone has a terminal open. /credits has the agent "
+                "run the two read-only checks itself and say, in plain words, what a new session carries and "
+                "what is wasting credits now.",
+            changes=[{
+                "path": str(path), "kind": "create",
+                "content": self.credits_skill(), "key": "credits skill",
+                "reason": "new manual-only skill (about 1 KB; loaded only when you type /credits)",
+            }],
+            done="added the /credits shortcut",
+            notes=["It is marked `disable-model-invocation`, so it adds nothing to each turn.",
+                   "Unlike the commands it runs, /credits uses the model, so it costs one short reply."],
         )
 
     # ---- /handoff: makes a fresh start cheap ------------------------------------------------
@@ -1769,7 +1824,7 @@ class ClaudeCodeAdapter(Adapter):
         """Per-turn usage, tool-call counts, and Read paths from the newest main sessions (logs only)."""
         from ..logcache import memo_by_stat
         out = []
-        handoff, auto = self.handoff_hint(ctx), self.auto_compact_window(ctx)
+        handoff, auto, credits = self.handoff_hint(ctx), self.auto_compact_window(ctx), self.credits_hint(ctx)
         for mtime, path in _newest(_transcript_paths(ctx, subagents=False), limit, max_age_s):
             turns = memo_by_stat(path, "claude-turns", lambda path=path: _session_turns(path))
             if not turns:
@@ -1778,7 +1833,7 @@ class ClaudeCodeAdapter(Adapter):
                 "adapter": self.id, "session": path.stem[:8], "project": path.parent.name,
                 "path": str(path), "last_write": mtime, "turns": turns,
                 "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": handoff,
-                "auto_compact": auto,
+                "credits_hint": credits, "auto_compact": auto,
                 "start_tokens": memo_by_stat(path, "claude-start", lambda path=path: _first_history_tokens(path)),
                 "helpers": _helper_stats(path),
             })
@@ -1802,7 +1857,7 @@ class ClaudeCodeAdapter(Adapter):
             "adapter": self.id, "session": real.stem[:8], "project": real.parent.name,
             "path": str(real), "last_write": mtime, "turns": turns,
             "clear_hint": "/clear", "compact_hint": "/compact", "handoff_hint": self.handoff_hint(ctx),
-            "auto_compact": self.auto_compact_window(ctx),
+            "credits_hint": self.credits_hint(ctx), "auto_compact": self.auto_compact_window(ctx),
             "start_tokens": _first_history_tokens(real),
             "helpers": _helper_stats(real),
         }

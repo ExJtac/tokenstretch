@@ -315,7 +315,7 @@ class Adapter:
         """Per-turn records for `tokenstretch watch`, read-only. None => not supported yet.
         With max_age_s, files not written within that many seconds are skipped before opening.
 
-        [{adapter, session, project, path, last_write, clear_hint, compact_hint, handoff_hint (optional),
+        [{adapter, session, project, path, last_write, clear_hint, compact_hint, handoff_hint (optional), credits_hint (optional),
           start_tokens (optional: history size on the session's first step),
           auto_compact (optional: history size at which the tool summarizes by itself; watch then
            stays quiet about long history below it),
