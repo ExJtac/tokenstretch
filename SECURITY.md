@@ -5,7 +5,6 @@ tokenstretch runs locally and promises no telemetry, no network calls except pin
 ## Reporting a vulnerability
 
 - **Please don't open a public issue.** Use GitHub's private vulnerability reporting ("Security" tab → "Report a vulnerability") on this repository.
-- Or email james@cas-tx.com.
 - Include the version (`tokenstretch --version`), your OS, steps to reproduce, and what you expected.
 - Never include real API keys, tokens, or credential files. Redact them.
 
