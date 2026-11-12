@@ -236,7 +236,7 @@ def cmd_startup(args) -> int:
     from .startup import build, format_report
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
-    data = build(ctx)
+    data = build(ctx, remember=not args.no_save)
     if args.json:
         print(json.dumps(data, indent=2))
     else:
@@ -482,6 +482,8 @@ def main(argv=None) -> int:
                         help="what every session carries before you type: parts sized from local files, largest first")
     _add_context_args(st)
     st.add_argument("--all", action="store_true", help="list every part, not just the largest 12")
+    st.add_argument("--no-save", action="store_true",
+                    help="don't remember this run (it is used to size a connector by difference next time)")
     st.add_argument("--json", action="store_true")
 
     sub.add_parser("auto", help="hook entry: resumable compaction summaries and note pickup in a new chat "
