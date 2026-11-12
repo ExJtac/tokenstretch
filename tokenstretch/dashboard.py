@@ -23,6 +23,7 @@ from typing import Callable
 from .context import Context
 from .identity import CLI_NAME, PRODUCT_NAME, VERSION
 from .setup import LONG_HISTORY
+from .watch import long_history_tip
 
 LOOPBACK = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -131,9 +132,10 @@ class DashboardState:
         sess = []
         for s in sessions(self.ctx, self.adapters, limit=10, max_age_s=active):
             hist = s["history_tokens"]
+            tip = long_history_tip(hist, LONG_HISTORY, s.get("clear_hint", ""), s.get("auto_compact"))
             sess.append({"tool": s["tool"], "session": s["session"], "project": _short_project(s["project"]),
                          "model": s["model"], "history_tokens": hist,
-                         "pct": round(min(100.0, 100.0 * hist / LONG_HISTORY), 1), "long": hist > LONG_HISTORY,
+                         "pct": round(min(100.0, 100.0 * hist / LONG_HISTORY), 1), "long": bool(tip), "long_tip": tip,
                          "last_write": s["last_write"], "last_write_local": _local(s["last_write"]),
                          "active": (s["last_write"] or 0) >= t - active, "clear_hint": s.get("clear_hint", "")})
         for w in self.watcher.scan():
@@ -371,7 +373,7 @@ function render(s){
   if(s.sessions==null)wait(n);
   else if(!s.sessions.length)empty(n,"No sessions written in the last 2 hours.");
   else n.appendChild(table(["Tool","Project","Model","History re-sent per step","Last activity"],s.sessions.map(function(x){
-    var c=el("div");c.appendChild(el("span",x.long?"on":null,fmt(x.history_tokens)+(x.long?" · over "+fmt(s.limit)+": "+(x.clear_hint||"start fresh")+" at the next break":"")));c.appendChild(bar(x.pct,x.long));
+    var c=el("div");c.appendChild(el("span",x.long?"on":null,fmt(x.history_tokens)+(x.long?" · "+x.long_tip:"")));c.appendChild(bar(x.pct,x.long));
     return[x.tool,x.project,x.model,c,(x.active?"● ":"")+x.last_write_local]})));
   n=clear($("warnings"));
   if(s.warnings==null)wait(n);

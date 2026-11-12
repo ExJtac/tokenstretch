@@ -122,6 +122,17 @@ def cache_misses(turns: list[dict], cfg: WatchConfig) -> list[tuple[float, int]]
 AUTO_COMPACT_MARGIN = 1.15   # automatic compaction fires near its window, not exactly at it
 
 
+def long_history_tip(history: int, limit: int, clear: str = "", auto: int | None = None) -> str:
+    """The one-line tip for a session list, or "" when the session is not long.
+
+    With automatic summaries on (`auto`), a session is only long once it is well past that size,
+    and the tip is then to summarize once, never to clear by hand.
+    """
+    if auto:
+        return f"over {_k(auto)}: /compact once (automatic summary did not run)" if history > auto * AUTO_COMPACT_MARGIN else ""
+    return f"over {_k(limit)}: {clear or 'start fresh'} at the next task break" if history > limit else ""
+
+
 def payback_steps(history: int, start: int | None) -> int | None:
     """About how many more steps until a fresh start has paid for itself, or None when unknown.
 

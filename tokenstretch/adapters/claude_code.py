@@ -1737,7 +1737,7 @@ class ClaudeCodeAdapter(Adapter):
     def live_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict]:
         """Newest main sessions, read from the tail of each log. Logs only; never credentials."""
         from ..logcache import memo_by_stat
-        out = []
+        out, auto = [], self.auto_compact_window(ctx)
         for mtime, path in _newest(_transcript_paths(ctx, subagents=False), limit, max_age_s):
             last = memo_by_stat(path, "claude-last", lambda path=path: _last_assistant_usage(path))
             if not last:
@@ -1749,7 +1749,7 @@ class ClaudeCodeAdapter(Adapter):
                 "adapter": self.id, "session": path.stem[:8], "project": path.parent.name,
                 "model": model, "history_tokens": history, "last_write": mtime,
                 "size_bytes": path.stat().st_size, "path": str(path),
-                "clear_hint": "/clear",
+                "clear_hint": "/clear", "auto_compact": auto,
             })
         return out
 

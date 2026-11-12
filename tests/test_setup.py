@@ -176,10 +176,26 @@ def test_status_shows_applied_models_and_long_sessions(tmp_path):
         st = collect_status(_ctx(w))
     assert any(f["state"] == "applied" for m in st["applied"] for f in m["files"])
     assert any(m["model"] == "sonnet" for row in st["models"] for m in row["models"])
-    assert st["sessions"] and st["sessions"][0]["long"] and st["sessions"][0]["model"] == "claude-opus-4"
+    # Setup turned automatic summaries on at 200K, so a 200K session is not flagged.
+    assert st["sessions"] and not st["sessions"][0]["long"] and st["sessions"][0]["model"] == "claude-opus-4"
+    args = ["status", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")]
     buf = io.StringIO()
     with credential_guard(), redirect_stdout(buf):
-        main(["status", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
+        main(args)
+    assert "/clear" not in buf.getvalue() and "/compact once" not in buf.getvalue()
+    settings = w / "home" / ".claude" / "settings.json"
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    data["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = "120000"   # the session is well past this
+    settings.write_text(json.dumps(data), encoding="utf-8")
+    buf = io.StringIO()
+    with credential_guard(), redirect_stdout(buf):
+        main(args)
+    assert "over 120K: /compact once" in buf.getvalue() and "/clear at" not in buf.getvalue()
+    del data["env"]                                             # no automatic summaries: the manual tip
+    settings.write_text(json.dumps(data), encoding="utf-8")
+    buf = io.StringIO()
+    with credential_guard(), redirect_stdout(buf):
+        main(args)
     assert "/clear at the next task break" in buf.getvalue()
 
 
