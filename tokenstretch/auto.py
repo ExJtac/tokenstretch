@@ -11,6 +11,8 @@ the action:
   it is, and to read it and carry on with its next step, without asking for a go-ahead, unless the
   first message asks for something else. A hook cannot start the first turn of an interactive
   session, so the user still sends one message; any message will do.
+- SessionStart (after a compaction): tell the agent to carry on with the summary's next step in
+  the same turn, without stopping to report the summary or ask for a go-ahead.
 
 Core only. No network, no model calls. Always exits 0 and prints nothing on any failure: a hook
 must never block a session, a compaction, or a prompt.
@@ -40,6 +42,14 @@ KEEP = (
     "- Next step: the exact next action.\n"
     "- Open questions: anything waiting on the user.\n"
     "Leave out file contents, command output, search results and step-by-step history: they can be read again if needed."
+)
+
+CARRY_ON = (
+    f"{PRODUCT_NAME}: the conversation was just summarized to keep it short. If work was under way, carry on "
+    "with the summary's next step now, in this turn. Do not stop to tell the user about the summary, and do "
+    "not ask them to confirm or to say go. Anything the summary lists as waiting on the user still waits, and "
+    "so does anything that needs confirmation under your other rules. If nothing was under way, say nothing "
+    "about this."
 )
 
 
@@ -87,8 +97,10 @@ def newest_note(root: Path, now: float, fresh_s: float = FRESH_S) -> tuple[Path,
 
 
 def session_start(payload: dict, now: float) -> dict | None:
+    if payload.get("source") == "compact":
+        return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": CARRY_ON}}
     if payload.get("source") not in ("startup", "clear"):
-        return None  # resume, compact and fork already carry their own context
+        return None  # resume and fork already carry their own context
     root = _project(payload)
     found = newest_note(root, now) if root else None
     if not found:
