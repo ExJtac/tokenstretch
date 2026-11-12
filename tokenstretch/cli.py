@@ -282,7 +282,8 @@ def cmd_brief(args) -> int:
     research = True if args.research else False if args.no_research else None
     data = build(Brief(task=text, files=list(args.files or []), sources=list(args.sources or []), done=args.done or "",
                        reply_words=max(10, args.reply_words), research=research,
-                       max_searches=max(0, args.max_searches), no_build=bool(args.no_build), helper=bool(args.helper)))
+                       max_searches=max(0, args.max_searches), no_build=bool(args.no_build), helper=bool(args.helper),
+                       rules=list(args.rule or [])))
     if args.json:
         print(json.dumps(data, indent=2))
     elif args.check:
@@ -463,6 +464,8 @@ def main(argv=None) -> int:
     br.add_argument("--research", action="store_true", help="the task is research (default: decided from the wording)")
     br.add_argument("--no-research", action="store_true", help="forbid searching and new research")
     br.add_argument("--max-searches", type=int, default=0, help="cap searches for a research task")
+    br.add_argument("--rule", action="append", metavar="TEXT",
+                    help="add your own rule line to the brief; repeat for more")
     br.add_argument("--no-build", action="store_true", help="tell the agent not to run builds, tests, or installs")
     br.add_argument("--helper", action="store_true", help="word the brief for a helper (subagent)")
     br.add_argument("--check", action="store_true", help="only list what is missing; exit 1 if anything is")

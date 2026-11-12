@@ -45,6 +45,7 @@ class Brief:
     max_searches: int = 0             # 0 = no cap line
     no_build: bool = False
     helper: bool = False
+    rules: list[str] = field(default_factory=list)   # your own rules, added after the built-in ones
 
 
 def lint(b: Brief) -> list[Lint]:
@@ -105,6 +106,7 @@ def render(b: Brief) -> str:
     rules.append("Do not re-read a file you already read unless it changed.")
     if b.no_build:
         rules.append("Do not run builds, tests, or installs. The caller does that.")
+    rules += [r.strip() for r in b.rules if r and r.strip()]
     lines += ["Rules:"] + [f"- {r}" for r in rules] + [""]
     if b.done:
         lines += [f"Done when: {b.done.strip()}", ""]

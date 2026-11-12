@@ -45,6 +45,9 @@ def test_research_brief_gets_a_cap_and_a_place_to_write():
     forced = render(Brief("summarize the options", research=False))
     assert "No web search and no new research." in forced
     assert "Do not run builds" in render(Brief("write the page", no_build=True))
+    text = render(Brief("write the page", rules=["Keep prices out of the copy.", "  "]))
+    assert "- Keep prices out of the copy.\n" in text
+    assert "-  \n" not in text and "- \n" not in text
 
 
 def test_build_reports_size_and_a_tier():
