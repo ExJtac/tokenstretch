@@ -271,3 +271,50 @@ def test_light_start_and_missing_first_step_stay_quiet(tmp_path):
         assert _first_history_tokens(_log(wn)) is None
         with credential_guard():
             assert [x.key[-1] for x in Watcher(_ctx(wn)).scan()] == []
+
+
+# ---- helpers (subagents) and handoff payback ---------------------------------------------------------
+
+def _helper_log(w: Path, name: str, rows: list[dict]) -> None:
+    folder = _log(w).with_suffix("") / "subagents"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"agent-{name}.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+
+def test_watch_reports_helpers_that_cost_more_than_the_main_conversation(tmp_path):
+    w = _world(tmp_path, [_row(0, 0, read=30_000), _row(1, 40, read=32_000)])
+    _helper_log(w, "a", [_row(i, 40 * i, read=50_000 + 3_000 * i) for i in range(20)])     # ~1.57M sent
+    _helper_log(w, "b", [_row(i, 40 * i, read=50_000) for i in range(4)])                   # ~0.2M sent
+    with credential_guard():
+        warns = Watcher(_ctx(w)).scan()
+        line = build_line(_ctx(w), {"transcript_path": str(_log(w))})
+        quiet = Watcher(_ctx(w), WatchConfig(helper_min_sent=5_000_000)).scan()
+    assert [x.key[-1] for x in warns] == ["helpers"] and quiet == []
+    assert "2 helpers in this session re-sent ~1.8M tokens" in warns[0].what
+    assert "The longest ran 20 steps and reached ~107K" in warns[0].what and "narrow" in warns[0].fix
+    assert line.startswith("⚠ 32K/150K history · helpers re-sent ~1.8M (")
+
+
+def test_small_or_cheaper_helpers_stay_quiet(tmp_path):
+    main = [_row(i, 40 * i, read=100_000) for i in range(30)]                                # ~3M sent by main
+    w = _world(tmp_path, main)
+    _helper_log(w, "a", [_row(i, 40 * i, read=60_000) for i in range(20)])                  # 1.2M, under main
+    with credential_guard():
+        assert [x.key[-1] for x in Watcher(_ctx(w)).scan()] == []
+    w2 = _world(tmp_path / "b", [_row(0, 0, read=30_000)])
+    _helper_log(w2, "a", [_row(i, 40 * i, read=50_000) for i in range(5)])                  # over main, under 1M
+    with credential_guard():
+        assert Watcher(_ctx(w2)).scan() == []
+
+
+def test_long_history_warning_says_when_a_fresh_start_pays_back(tmp_path):
+    from tokenstretch.watch import payback_steps
+    assert payback_steps(133_000, 78_000) == 5 and payback_steps(200_000, 100_000) == 4
+    assert payback_steps(80_000, None) is None and payback_steps(70_000, 78_000) is None
+    prompt = {"type": "user", "message": {"role": "user", "content": "go"}}
+    w = _world(tmp_path, [prompt, _row(0, 0, read=30_000), _row(1, 40, read=199_990)])
+    with credential_guard():
+        warn = [x for x in Watcher(_ctx(w)).scan() if x.key[-1] == "context"][0]
+        line = build_line(_ctx(w), {"transcript_path": str(_log(w))})
+    assert "pays for itself after about 3 more steps (this session started at ~30K" in warn.fix
+    assert line == "⚠ 200K/150K history · /clear at the next task break (pays back in ~3 steps)"

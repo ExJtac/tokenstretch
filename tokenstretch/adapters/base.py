@@ -317,6 +317,7 @@ class Adapter:
 
         [{adapter, session, project, path, last_write, clear_hint, compact_hint, handoff_hint (optional),
           start_tokens (optional: history size on the session's first step),
+          helpers (optional: [{steps, sent, peak}] per subagent of this session, token counts only),
           turns: [{ts, model, history_tokens, output_tokens, tool_calls (int|None), reads: [path]}]}]
         `reads` holds file paths from the tool's own read calls only; never file contents.
         A turn may also carry `cache_read` and `cache_write` (tokens); watch's cache-expiry check

@@ -51,6 +51,8 @@ class WatchConfig:
     cache_min_history: int = 20_000  #     ... in a session with at least this much history ...
     cache_miss_share: float = 0.5   #     ... where the next step re-wrote this share of it
     max_start: int = 40_000         # (f) history on a session's first step, before any work
+    helper_min_sent: int = 1_000_000  # (g) helpers re-sent at least this much in total ...
+    helper_ratio: float = 1.0       #     ... and at least this many times the main conversation
     active_s: int = 2 * 3600        # only sessions written within this window
 
 
@@ -73,6 +75,10 @@ class WatchWarning:
 
 def _k(n: int) -> str:
     return f"{round(n / 1000)}K"
+
+
+def _m(n: int) -> str:
+    return f"{n / 1_000_000:.1f}M" if n >= 1_000_000 else _k(n)
 
 
 def _epoch(ts) -> float | None:
@@ -113,6 +119,18 @@ def cache_misses(turns: list[dict], cfg: WatchConfig) -> list[tuple[float, int]]
     return out
 
 
+def payback_steps(history: int, start: int | None) -> int | None:
+    """About how many more steps until a fresh start has paid for itself, or None when unknown.
+
+    A fresh start costs roughly two steps at the current size (writing the note, then the reply that
+    ends the session). After it, each step is smaller by (history - start), because the start-up
+    size comes back in every session. A rule of thumb from token counts, not a price calculation.
+    """
+    if not start or history <= start:
+        return None
+    return max(1, -(-2 * history // (history - start)))
+
+
 def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | None = None) -> list[WatchWarning]:
     """Every waste condition one session shows right now (deduping happens in Watcher).
 
@@ -134,14 +152,17 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
     # (a) long history
     if last["history_tokens"] > cfg.max_context:
         alt = f" or {compact} (keeps a short summary)" if compact else ""
+        back = payback_steps(last["history_tokens"], s.get("start_tokens"))
+        pays = (f" A fresh start pays for itself after about {back} more step{'s' if back != 1 else ''} "
+                f"(this session started at ~{_k(s['start_tokens'])}, and that part comes back)." if back else "")
         out.append(WatchWarning(base + ("context",), **tag,
                            what=f"history is ~{_k(last['history_tokens'])} tokens (over {_k(cfg.max_context)}).",
                            why="every step re-sends the whole conversation, so each reply now costs at least that "
                                "much input.",
                            fix=(f"finish this step, then type {handoff} (writes a short note) and {clear}; "
                                 f"`{handoff} resume` picks the task up in the fresh session."
-                                if handoff else f"finish this step, then type {clear} (fresh start){alt}."),
-                           short=f"{fresh} at the next task break"))
+                                if handoff else f"finish this step, then type {clear} (fresh start){alt}.") + pays,
+                           short=f"{fresh} at the next task break" + (f" (pays back in ~{back} steps)" if back else "")))
 
     # (b) top model on simple steps
     recent = turns[-cfg.simple_turns:]
@@ -190,6 +211,24 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
                                    fix="search first and read line ranges, trim noisy output, and start fresh "
                                        "at the next task break.",
                                    short=f"history +{_k(grew)} in {mins} min: read narrower"))
+
+    # (g) helpers (subagents) that re-sent more than the main conversation
+    helpers = s.get("helpers") or []
+    sent = sum(h["sent"] for h in helpers)
+    main_sent = sum(t["history_tokens"] for t in turns)
+    if helpers and sent >= cfg.helper_min_sent and sent >= main_sent * cfg.helper_ratio:
+        top = max(helpers, key=lambda h: h["sent"])
+        times = f"{sent / main_sent:.1f}x" if main_sent else "more than"
+        n = len(helpers)
+        out.append(WatchWarning(base + ("helpers",), **tag,
+                           what=f"{n} helper{'s' if n != 1 else ''} in this session re-sent ~{_m(sent)} tokens, "
+                                f"{times} the main conversation's ~{_m(main_sent)}. The longest ran "
+                                f"{top['steps']} steps and reached ~{_k(top['peak'])}.",
+                           why="each helper is its own conversation: it starts with its own overhead and re-sends "
+                               "its whole history on every step, so a long helper costs like a long session.",
+                           fix="give each helper one narrow task, name the files or notes to work from, say what "
+                               "not to look up again, and ask for a short reply. Split a long job into two helpers.",
+                           short=f"helpers re-sent ~{_m(sent)} ({times} main): narrower helper tasks"))
 
     # (f) heavy start: what the session carried on its first step, before any work
     start = s.get("start_tokens")
