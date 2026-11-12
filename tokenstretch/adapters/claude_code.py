@@ -957,6 +957,7 @@ class ClaudeCodeAdapter(Adapter):
         kept: list[list] = []
         index: dict[tuple, int] = {}
         for key, out_tok, tok, sub in rows:  # same rule as _dedupe_usage_records
+            key = tuple(key) if key else None     # a list when the row came from the on-disk cache
             if key is None:
                 kept.append([out_tok, tok, sub])
                 continue
@@ -1627,13 +1628,14 @@ class ClaudeCodeAdapter(Adapter):
             "disable-model-invocation: true\n"
             "---\n"
             f"<!-- added by {PRODUCT_NAME}; `{CLI_NAME} undo` removes it -->\n"
-            f"Run these two commands, one call each, and nothing else:\n"
+            f"Run these three commands, one call each, and nothing else:\n"
             "\n"
             f"1. `{CLI_NAME} startup`\n"
             f"2. `{CLI_NAME} watch --once`\n"
+            f"3. `{CLI_NAME} setup --list`\n"
             "\n"
-            f"If `{CLI_NAME}` is not found, use `python3 -m {PACKAGE_NAME}` in its place. Both commands make "
-            "no network or model calls and change none of your project files.\n"
+            f"If `{CLI_NAME}` is not found, use `python3 -m {PACKAGE_NAME}` in its place. All three make "
+            "no network or model calls and change no files.\n"
             "\n"
             "Then reply in under 150 words, in plain words, with no code block:\n"
             "\n"
@@ -1642,13 +1644,43 @@ class ClaudeCodeAdapter(Adapter):
             "- **What to do:** for each line above, the fix the command gives, worded as a step the user can "
             "take in this app (a setting to turn off, something to type). Do not tell the user to open a terminal.\n"
             "\n"
-            "Do not change any file or setting. Offer to make one change, the largest saving, and wait for a yes.\n"
+            "Do not change any file or setting yet. Offer one change, the largest saving, and wait for a yes.\n"
+            "\n"
+            "After a yes:\n"
+            "\n"
+            f"- If the fix is a step in the third command's list, run `{CLI_NAME} setup --only <id> --yes` with "
+            "that step's id. It backs up each file first. Say in one line what changed and that "
+            f"`{CLI_NAME} undo` reverses it.\n"
+            "- If it is not in that list (a connector, a plugin, a setting of this app), do not edit files "
+            "yourself. Say where in this app the user turns it off.\n"
+            "- One change per yes. Never pass `--with-installs`.\n"
         )
 
     def _setup_credits(self, ctx: Context) -> SetupItem | None:
-        if any(p.exists() for p in self._credits_paths(ctx)):
-            return None  # one is already there (ours or yours); never overwrite it
         path = ctx.home / ".claude" / "skills" / "credits" / "SKILL.md"
+        marker = f"<!-- added by {PRODUCT_NAME};"
+        others = [p for p in self._credits_paths(ctx) if p.exists() and p != path]
+        if others:
+            return None  # another /credits is already there; never touch it
+        if path.exists():
+            try:
+                old = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return None
+            if marker not in old or old == self.credits_skill():
+                return None  # yours (never overwrite it), or ours and already current
+            return SetupItem(
+                id="claude-credits-skill", adapter_id=self.id,
+                title="Update the /credits shortcut in Claude Code",
+                why="The copy on this machine is from an older version. The new one can also apply one fix "
+                    "for you after you say yes, with a backup, so no terminal is needed.",
+                changes=[{
+                    "path": str(path), "kind": "modify",
+                    "content": self.credits_skill(), "key": "credits skill",
+                    "reason": "replace the older text this tool wrote (about 1.5 KB; loaded only when you type /credits)",
+                }],
+                done="updated the /credits shortcut",
+            )
         return SetupItem(
             id="claude-credits-skill", adapter_id=self.id,
             title="Add a /credits shortcut to Claude Code",
@@ -1658,7 +1690,7 @@ class ClaudeCodeAdapter(Adapter):
             changes=[{
                 "path": str(path), "kind": "create",
                 "content": self.credits_skill(), "key": "credits skill",
-                "reason": "new manual-only skill (about 1 KB; loaded only when you type /credits)",
+                "reason": "new manual-only skill (about 1.5 KB; loaded only when you type /credits)",
             }],
             done="added the /credits shortcut",
             notes=["It is marked `disable-model-invocation`, so it adds nothing to each turn.",
@@ -1800,7 +1832,9 @@ class ClaudeCodeAdapter(Adapter):
             return None
         return SetupItem(
             id="claude-rules-block", adapter_id=self.id,
-            title="Add 5 short credit-saving rules to the project CLAUDE.md",
+            optional=not path.is_file(),   # never start a new file in someone's project unasked
+            title=("Add 5 short credit-saving rules to the project CLAUDE.md" if path.is_file()
+                   else "Create a project CLAUDE.md with 5 short credit-saving rules"),
             why="Long sessions re-read their whole history on every step, and broad file reads fill it fast. "
                 "These rules keep each task fresh, reads narrow, and replies short.",
             changes=[{

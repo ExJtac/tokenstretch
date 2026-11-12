@@ -16,10 +16,16 @@ from .mask import mask_finding_evidence, mask_text
 def doctor(args) -> int:
     ctx = build_context(args.home, args.root, args.sys_snapshot, args.plan)
     findings = []
-    for ad in REGISTRY:
-        if not ad.detect(ctx):
-            continue
-        findings += ad.privacy_checks(ctx) if args.privacy else ad.checks(ctx) + ad.privacy_checks(ctx)
+    from . import logcache
+    if not getattr(args, "no_cache", True) and not args.privacy:   # callers without the flag: no cache
+        logcache.open_disk_memo(ctx.home / STATE_DIRNAME / "cache" / "doctor-logs.json", VERSION)
+    try:
+        for ad in REGISTRY:
+            if not ad.detect(ctx):
+                continue
+            findings += ad.privacy_checks(ctx) if args.privacy else ad.checks(ctx) + ad.privacy_checks(ctx)
+    finally:
+        logcache.save_disk_memo()
     findings.sort(key=lambda f: (SEVERITY_ORDER.get(f.severity, 9), f.id))
     for f in findings:
         f.evidence = mask_finding_evidence(f.evidence)
@@ -179,7 +185,21 @@ def cmd_setup(args) -> int:
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
     installs = True if args.with_installs else (False if args.no_installs else None)
-    result = run_setup(ctx, yes=bool(args.yes), dry_run=bool(args.dry_run), installs=installs)
+    if args.list:
+        from .setup import build_plan, format_item_list
+        items, _ = build_plan(ctx)
+        if args.json:
+            print(json.dumps({"items": [i.to_json() for i in items]}, indent=2))
+        else:
+            print("\n".join(format_item_list(ctx, items)))
+        return 0
+    from .setup import UnknownItem
+    try:
+        result = run_setup(ctx, yes=bool(args.yes), dry_run=bool(args.dry_run), installs=installs,
+                           only=args.only, skip=args.skip)
+    except UnknownItem as e:
+        print(str(e), file=sys.stderr)
+        return 2
     if result.installs and not result.installs.get("ok"):
         return 1
     return 0
@@ -367,6 +387,8 @@ def main(argv=None) -> int:
     _add_context_args(d)
     d.add_argument("--json", action="store_true")
     d.add_argument("--privacy", action="store_true")
+    d.add_argument("--no-cache", action="store_true",
+                   help=f"re-read every session log and write nothing (default: keep per-log totals in ~/{STATE_DIRNAME}/cache)")
 
     inst = sub.add_parser(
         "install",
@@ -416,6 +438,13 @@ def main(argv=None) -> int:
     st.add_argument("--with-installs", action="store_true",
                     help="also run the pinned installs (network: rtk-oss, Caveman skill) without asking")
     st.add_argument("--no-installs", action="store_true", help="never offer the pinned installs")
+    st.add_argument("--list", action="store_true",
+                    help="list the steps available here with their ids; read-only, no doctor run")
+    st.add_argument("--only", action="append", metavar="ID",
+                    help="apply only this step (repeat, or separate ids with commas); see --list")
+    st.add_argument("--skip", action="append", metavar="ID",
+                    help="leave this step out of the plan (repeat, or separate ids with commas)")
+    st.add_argument("--json", action="store_true", help="with --list, print the steps as JSON")
 
     stt = sub.add_parser("status", help="what setup applied, current models, and newest sessions (read-only)")
     _add_context_args(stt)

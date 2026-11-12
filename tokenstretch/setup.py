@@ -71,6 +71,47 @@ def build_plan(ctx: Context, adapters=None) -> tuple[list[SetupItem], list[str]]
     return items, notes
 
 
+class UnknownItem(ValueError):
+    """`--only` / `--skip` named a step that is not in this machine's plan."""
+
+
+def _ids(values) -> list[str]:
+    """Flatten repeated and comma-separated ids: ["a,b", "c"] -> ["a", "b", "c"]."""
+    out: list[str] = []
+    for v in values or []:
+        out += [x.strip() for x in str(v).split(",") if x.strip()]
+    return out
+
+
+def select_items(items: list[SetupItem], only=None, skip=None) -> tuple[list[SetupItem], list[SetupItem]]:
+    """(chosen, left_out_optional). Default: every step that is not optional.
+    `only` picks steps by id, optional ones included. `skip` drops steps from either set."""
+    only, skip = _ids(only), _ids(skip)
+    known = {i.id for i in items}
+    bad = [x for x in only + skip if x not in known]
+    if bad:
+        raise UnknownItem(
+            "No step named " + ", ".join(bad) + " in this plan. "
+            + ("Steps here: " + ", ".join(i.id for i in items) + "." if items else "Nothing needs changing here."))
+    if only:
+        chosen = [i for i in items if i.id in only and i.id not in skip]
+    else:
+        chosen = [i for i in items if not i.optional and i.id not in skip]
+    picked = {i.id for i in chosen}
+    return chosen, [i for i in items if i.optional and i.id not in picked and i.id not in skip]
+
+
+def format_item_list(ctx: Context, items: list[SetupItem]) -> list[str]:
+    """`setup --list`: one line per step, with the id to pass to `--only`."""
+    if not items:
+        return ["Nothing to change. Your setup already matches the safe defaults."]
+    width = max(len(i.id) for i in items)
+    lines = [f"{len(items)} step{'s' if len(items) != 1 else ''} available. Apply one with `{CLI_NAME} setup --only <id>`:"]
+    for i in items:
+        lines.append(f"  {i.id:<{width}}  {i.title}" + ("  (optional: only when you ask for it)" if i.optional else ""))
+    return lines
+
+
 def install_offer(ctx: Context) -> list[dict]:
     """The optional pinned installs (network). Described from the catalog; nothing runs here."""
     from .catalog import clean_tools
@@ -103,12 +144,19 @@ def format_findings_summary(findings: list[Finding], limit: int = 8) -> list[str
     return lines
 
 
-def format_plan(ctx: Context, items: list[SetupItem], notes: list[str] | None = None) -> list[str]:
+def format_plan(ctx: Context, items: list[SetupItem], notes: list[str] | None = None,
+                optional: list[SetupItem] | None = None) -> list[str]:
+    extra = []
+    if optional:
+        extra.append("Optional, left out unless you ask for it by name:")
+        for item in optional:
+            extra.append(f"  - {item.title}  [{item.id}]")
+            extra.append(f"    Add it with: `{CLI_NAME} setup --only {item.id}`")
     if not items:
-        return ["Plan: nothing to change. Your setup already matches the safe defaults."]
+        return ["Plan: nothing to change. Your setup already matches the safe defaults."] + extra
     lines = [f"Plan ({len(items)} change{'s' if len(items) != 1 else ''}, all local, every file backed up first):"]
     for n, item in enumerate(items, 1):
-        lines.append(f"  {n}. {item.title}")
+        lines.append(f"  {n}. {item.title}  [{item.id}]")
         lines.append(f"     Why: {item.why}")
         for ch in item.changes:
             verb = "create" if ch.get("kind") == "create" else "edit"
@@ -118,7 +166,10 @@ def format_plan(ctx: Context, items: list[SetupItem], notes: list[str] | None = 
             lines.append(f"     Note: {note}")
     for note in notes or []:
         lines.append(f"  - {note}")
-    return lines
+    if len(items) > 1:
+        lines.append(f"Want only some of these? `{CLI_NAME} setup --only <id>` applies one step; "
+                     f"`--skip <id>` leaves one out. The id is in [brackets].")
+    return lines + extra
 
 
 # ---- apply ---------------------------------------------------------------------------
@@ -177,20 +228,34 @@ def _ask(prompt: str, input_fn, out) -> bool:
 
 def run_setup(ctx: Context, *, yes: bool = False, dry_run: bool = False, installs: bool | None = None,
               interactive: bool | None = None, input_fn=input, out: Callable[[str], None] = print,
-              runner=None) -> SetupResult:
-    """Doctor → plain-English plan → one confirmation → apply with backups → live progress."""
+              runner=None, only=None, skip=None) -> SetupResult:
+    """Doctor → plain-English plan → one confirmation → apply with backups → live progress.
+
+    `only` / `skip` (step ids) narrow the plan. With `only` the doctor summary and the pinned-install
+    offer are left out: the caller already knows which step it wants, and the summary is the slow part."""
     if interactive is None:
         interactive = sys_stdin_isatty()
+    picking = bool(_ids(only))
     adapters = detected_adapters(ctx)
+    all_items, notes = build_plan(ctx, adapters)
+    items, optional = select_items(all_items, only, skip)   # raises UnknownItem before anything prints
     out(f"{PRODUCT_NAME} {VERSION} setup. Nothing leaves this machine; files are only changed after you say yes.")
     out("Detected: " + (", ".join(a.display_name for a in adapters) or "nothing"))
     out("")
-    for line in format_findings_summary(collect_findings(ctx, adapters)):
+    if not picking:
+        from . import logcache
+        logcache.open_disk_memo(ctx.home / STATE_DIRNAME / "cache" / "doctor-logs.json", VERSION)
+        try:
+            found = collect_findings(ctx, adapters)
+        finally:
+            logcache.save_disk_memo()
+        for line in format_findings_summary(found):
+            out(line)
+        out("")
+    for line in format_plan(ctx, items, None if picking else notes, None if picking else optional):
         out(line)
-    out("")
-    items, notes = build_plan(ctx, adapters)
-    for line in format_plan(ctx, items, notes):
-        out(line)
+    if picking:
+        installs = False
     offer = install_offer(ctx)
     if offer and installs is not False:
         out("")
