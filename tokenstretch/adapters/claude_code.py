@@ -1444,7 +1444,12 @@ class ClaudeCodeAdapter(Adapter):
         return items
 
     # ---- live warnings inside Claude Code: status line + prompt hook --------------------------
+    AUTO_COMPACT_WINDOW = 200_000   # tokens; the tool's documented range is 100000 to 1000000
+
     LIVE_NOTES = [
+        "Long sessions are now summarized automatically at about 200K tokens, and a new chat in the same "
+        "project is told where the last note is. To change the size, edit `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` "
+        "in `~/.claude/settings.json`.",
         "Both run on your machine only and read token counts from the session log, never prompt text.",
         "The warning repeats at most every 20 minutes per session, and only while something is costing credits.",
     ]
@@ -1476,6 +1481,22 @@ class ClaudeCodeAdapter(Adapter):
             if _ensure_hook(data, "UserPromptSubmit", f"{base} nudge 2>/dev/null || true"):
                 data["hooks"]["UserPromptSubmit"][-1]["hooks"][0]["timeout"] = 5
                 added.append("hooks.UserPromptSubmit: show the top warning in the session")
+        # Keep sessions short with nothing to type: compact earlier, make the summary a resumable
+        # note, save it, and point a new chat at it.
+        have = {cmd for cmd, _ in _hook_cmds(data)}
+        if not any(f"{PACKAGE_NAME} auto" in cmd for cmd in have):
+            for event in ("PreCompact", "PostCompact", "SessionStart"):
+                if _ensure_hook(data, event, f"{base} auto 2>/dev/null || true"):
+                    data["hooks"][event][-1]["hooks"][0]["timeout"] = 5
+            added.append("hooks.PreCompact, PostCompact, SessionStart: summaries you can resume from, "
+                         "picked up by a new chat")
+        env = data.get("env")
+        mine = ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "DISABLE_AUTO_COMPACT")
+        untouched = (env is None or isinstance(env, dict)) and not any(k in (env or {}) for k in mine)
+        if untouched and "autoCompactWindow" not in data and data.get("autoCompactEnabled") is not False:
+            data["env"] = {**(env or {}), "CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(self.AUTO_COMPACT_WINDOW)}
+            added.append(f"env.CLAUDE_CODE_AUTO_COMPACT_WINDOW={self.AUTO_COMPACT_WINDOW}: summarize long "
+                         "sessions automatically at about that size")
         return added
 
     def _setup_live(self, ctx: Context) -> SetupItem | None:

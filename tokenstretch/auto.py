@@ -1,0 +1,117 @@
+"""`tokenstretch auto`: keep sessions short without the user typing anything.
+
+One hook entry for three events. The tool calls it with JSON on stdin; `hook_event_name` picks
+the action:
+
+- PreCompact: print what the summary must keep (goal, done, state, decisions, next step, open
+  questions) and what to drop, so an automatic compaction leaves a note you could resume from.
+- PostCompact: save that summary to `.claude/handoff-auto.md` in the project, so a new chat can
+  pick the work up too. The text comes from the tool on stdin; no log is read.
+- SessionStart (a new chat): if a recent handoff note exists in the project, tell the agent where
+  it is, and to read it only if the first request continues that work.
+
+Core only. No network, no model calls. Always exits 0 and prints nothing on any failure: a hook
+must never block a session, a compaction, or a prompt.
+"""
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Callable
+
+from .identity import PRODUCT_NAME
+from .statusline import parse_payload, read_raw
+
+NOTE = Path(".claude") / "handoff.md"            # written by the agent (/handoff)
+AUTO_NOTE = Path(".claude") / "handoff-auto.md"  # written here after a compaction
+FRESH_S = 72 * 3600                              # older notes are not offered
+MAX_NOTE_BYTES = 60_000
+
+KEEP = (
+    "Write the summary as a handoff note someone could resume from, under 40 lines:\n"
+    "- Goal: one sentence.\n"
+    "- Done: what is finished, and how it was checked.\n"
+    "- State: files changed (paths, line numbers where they matter), the branch, anything uncommitted or half-done.\n"
+    "- Decisions: choices made and why, and what was tried and ruled out.\n"
+    "- Next step: the exact next action.\n"
+    "- Open questions: anything waiting on the user.\n"
+    "Leave out file contents, command output, search results and step-by-step history: they can be read again if needed."
+)
+
+
+def _project(payload: dict) -> Path | None:
+    cwd = payload.get("cwd")
+    if not isinstance(cwd, str) or not cwd:
+        return None
+    p = Path(cwd)
+    return p if p.is_absolute() and p.is_dir() else None
+
+
+def _age(seconds: float) -> str:
+    if seconds < 5400:
+        return f"{max(1, round(seconds / 60))} min"
+    return f"{round(seconds / 3600)} h"
+
+
+def save_summary(payload: dict, now: float) -> Path | None:
+    root, text = _project(payload), payload.get("compact_summary")
+    if root is None or not isinstance(text, str) or not text.strip():
+        return None
+    path = root / AUTO_NOTE
+    if path.is_symlink():
+        return None  # never write through a link
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now))
+    body = text.strip().encode("utf-8")[:MAX_NOTE_BYTES].decode("utf-8", errors="ignore")
+    path.write_text(f"<!-- saved by {PRODUCT_NAME} after a compaction, {stamp}; safe to delete -->\n{body}\n",
+                    encoding="utf-8")
+    return path
+
+
+def newest_note(root: Path, now: float, fresh_s: float = FRESH_S) -> tuple[Path, float] | None:
+    best = None
+    for rel in (NOTE, AUTO_NOTE):
+        p = root / rel
+        try:
+            if p.is_file() and not p.is_symlink() and p.stat().st_size:
+                age = now - p.stat().st_mtime
+                if 0 <= age <= fresh_s and (best is None or age < best[1]):
+                    best = (rel, age)
+        except OSError:
+            continue
+    return best
+
+
+def session_start(payload: dict, now: float) -> dict | None:
+    if payload.get("source") not in ("startup", "clear"):
+        return None  # resume, compact and fork already carry their own context
+    root = _project(payload)
+    found = newest_note(root, now) if root else None
+    if not found:
+        return None
+    rel, age = found
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
+        f"{PRODUCT_NAME}: a handoff note from an earlier session in this project is at `{rel}` "
+        f"(saved {_age(age)} ago). If the user's first request continues that work, read it once before "
+        "anything else and continue from its next step. If the request is about something else, ignore it "
+        "and do not read it.")}}
+
+
+def run_auto(stdin=None, out: Callable[[str], None] = print, now: Callable[[], float] = time.time) -> int:
+    """Always exits 0. Any failure prints nothing."""
+    try:
+        payload = parse_payload(read_raw(sys.stdin if stdin is None else stdin))
+        event = payload.get("hook_event_name")
+        if event == "PreCompact":
+            out(KEEP)
+        elif event == "PostCompact":
+            save_summary(payload, now())
+        elif event == "SessionStart":
+            reply = session_start(payload, now())
+            if reply:
+                out(json.dumps(reply))
+    except Exception:  # noqa: BLE001 - a hook must never get in the way
+        return 0
+    return 0

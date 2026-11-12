@@ -244,6 +244,12 @@ def cmd_startup(args) -> int:
     return 0
 
 
+def cmd_auto(args) -> int:
+    from .auto import run_auto
+
+    return run_auto()
+
+
 def cmd_nudge(args) -> int:
     from .nudge import run_nudge
     from .watch import WatchConfig
@@ -462,6 +468,9 @@ def main(argv=None) -> int:
     st.add_argument("--all", action="store_true", help="list every part, not just the largest 12")
     st.add_argument("--json", action="store_true")
 
+    sub.add_parser("auto", help="hook entry: resumable compaction summaries and note pickup in a new chat "
+                                "(reads the tool's JSON on stdin)")
+
     ng = sub.add_parser("nudge",
                         help="hook entry: print the top watch warning for the session a tool names on stdin")
     _add_context_args(ng)
@@ -548,6 +557,8 @@ def main(argv=None) -> int:
         return cmd_statusline(a)
     if a.cmd == "startup":
         return cmd_startup(a)
+    if a.cmd == "auto":
+        return cmd_auto(a)
     if a.cmd == "nudge":
         return cmd_nudge(a)
     if a.cmd == "dashboard":

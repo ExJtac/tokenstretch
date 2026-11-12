@@ -102,7 +102,11 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     assert s["statusLine"]["type"] == "command" and s["statusLine"]["command"].endswith(" statusline")
     hook = s["hooks"]["UserPromptSubmit"][0]["hooks"][0]
     assert hook["command"].endswith(" nudge 2>/dev/null || true") and hook["timeout"] == 5   # can never block a prompt
-    assert set(s) == {"model", "theme", "statusLine", "hooks"}
+    assert set(s) == {"model", "theme", "statusLine", "hooks", "env"}
+    assert s["env"] == {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"}
+    for event in ("PreCompact", "PostCompact", "SessionStart"):
+        h = s["hooks"][event][0]["hooks"][0]
+        assert h["command"].endswith(" auto 2>/dev/null || true") and h["timeout"] == 5
     assert "and turned on live warnings" in out
     assert "credit-rules start" in (w / "root" / "CLAUDE.md").read_text()
     assert json.loads((w / "home" / ".caveman" / "cloud.json").read_text())["telemetry"]["enabled"] is False
@@ -327,3 +331,60 @@ def test_setup_adds_a_manual_only_brief_skill_and_never_replaces_yours(tmp_path)
     mine.parent.mkdir(parents=True)
     mine.write_text("my own brief\n", encoding="utf-8")
     assert "claude-brief-skill" not in {i.id for i in build_plan(_ctx(w2))[0]}
+
+
+# ---- autopilot: shorter sessions with nothing to type -------------------------------------------
+
+def test_setup_never_overrides_your_own_compaction_choices(tmp_path):
+    for mine in ({"env": {"DISABLE_AUTO_COMPACT": "1"}}, {"env": {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "60"}},
+                 {"autoCompactWindow": 400000}, {"autoCompactEnabled": False}, {"env": "odd"}):
+        w = _world(tmp_path / str(abs(hash(json.dumps(mine)))))
+        path = w / "home" / ".claude" / "settings.json"
+        path.write_text(json.dumps({"model": "sonnet", **mine}), encoding="utf-8")
+        _run(w, yes=True, installs=False)
+        s = json.loads(path.read_text())
+        assert "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in json.dumps(s)
+        assert {k: s[k] for k in mine} == mine
+        assert "SessionStart" in s["hooks"]          # the hooks still go in
+
+
+def test_auto_hook_shapes_the_summary_saves_it_and_points_a_new_chat_at_it(tmp_path):
+    import io as _io
+    from tokenstretch.auto import run_auto
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    def call(payload, now=1_000_000.0):
+        printed = []
+        assert run_auto(stdin=_io.StringIO(json.dumps(payload)), out=printed.append, now=lambda: now) == 0
+        return printed
+    pre = call({"hook_event_name": "PreCompact", "trigger": "auto", "cwd": str(proj)})
+    assert "Next step" in pre[0] and "Leave out file contents" in pre[0]
+    assert call({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj)}) == []   # no note yet
+    assert call({"hook_event_name": "PostCompact", "cwd": str(proj), "compact_summary": "Goal: ship it."}) == []
+    note = proj / ".claude" / "handoff-auto.md"
+    assert note.read_text().endswith("Goal: ship it.\n") and "safe to delete" in note.read_text()
+    import os
+    os.utime(note, (1_000_000.0, 1_000_000.0))
+    start = json.loads(call({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj)}, now=1_000_600.0)[0])
+    text = start["hookSpecificOutput"]["additionalContext"]
+    assert ".claude/handoff-auto.md" in text and "10 min ago" in text and "ignore it" in text
+    assert call({"hook_event_name": "SessionStart", "source": "resume", "cwd": str(proj)}, now=1_000_600.0) == []
+    assert call({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj)}, now=1_000_000.0 + 80 * 3600) == []
+
+
+def test_auto_hook_never_fails_or_writes_where_it_should_not(tmp_path):
+    import io as _io
+    from tokenstretch.auto import run_auto
+    printed = []
+    for raw in ("", "not json", "[1]", json.dumps({"hook_event_name": "PostCompact", "cwd": "relative", "compact_summary": "x"}),
+                json.dumps({"hook_event_name": "PostCompact", "cwd": str(tmp_path / "missing"), "compact_summary": "x"}),
+                json.dumps({"hook_event_name": "PostCompact", "cwd": str(tmp_path), "compact_summary": ""}),
+                json.dumps({"hook_event_name": "Other", "cwd": str(tmp_path)})):
+        assert run_auto(stdin=_io.StringIO(raw), out=printed.append) == 0
+    assert printed == [] and not (tmp_path / ".claude").exists()
+    target = tmp_path / "secret.txt"
+    target.write_text("keep", encoding="utf-8")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "handoff-auto.md").symlink_to(target)
+    run_auto(stdin=_io.StringIO(json.dumps({"hook_event_name": "PostCompact", "cwd": str(tmp_path), "compact_summary": "x"})))
+    assert target.read_text() == "keep"

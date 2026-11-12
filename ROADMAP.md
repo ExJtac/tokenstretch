@@ -9,6 +9,7 @@
 - Status-bar line: `tokenstretch statusline` (history size and the most urgent watch warning).
 - Brief writer: `tokenstretch brief` (prompt generator and lint, local rules), and a `/brief` shortcut for Claude Code added by `setup`.
 - Start-up breakdown: `tokenstretch startup` (local parts sized, measured first step, the unsized rest).
+- Autopilot for Claude Code: automatic summaries at a set size, shaped and saved as a resumable note, picked up by a new chat (`tokenstretch auto`, added by `setup`).
 - Always on for Claude Code: `setup` adds the status line (wrapping an existing one) and a prompt hook, `tokenstretch nudge`, that shows the top warning in the session.
 - `/handoff` shortcut for Claude Code, added by `setup` (note, `/clear`, `/handoff resume`).
 - `watch`: cache-expiry warning for Claude Code (logged, and predicted for idle sessions).
