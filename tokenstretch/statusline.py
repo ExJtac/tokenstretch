@@ -7,11 +7,16 @@ important warning in short form. Sessions and per-turn records come from adapter
 A status bar runs this on every update, so it builds a light context (no `ps`, no `crontab`) and
 reads one session log. It is read-only, opens no socket, and prints nothing rather than an error:
 a broken status line must never get in the way of the tool it sits in.
+
+A tool has one status-line slot. `--wrap COMMAND` shares it: the command you already use (another
+tool's status line) gets the same input, and this line is added after its first line. That is the
+only case where statusline starts another program, and only the one you name.
 """
 from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -23,6 +28,8 @@ from .watch import WatchConfig, WatchWarning, _k, session_warnings
 # Most urgent first: what is costing credits on every step, then what already happened.
 PRIORITY = ("context", "cache", "top-model", "growth", "rereads")
 MAX_STDIN = 1_000_000
+WRAP_TIMEOUT_S = 3.0
+SEP = " · "
 
 
 def light_context(home: Path | None = None, root: Path | None = None, plan: str | None = None) -> Context:
@@ -38,15 +45,50 @@ def light_context(home: Path | None = None, root: Path | None = None, plan: str 
     )
 
 
-def read_payload(stream) -> dict:
-    """The JSON a tool pipes to its status-line command, or {} (a terminal, no input, not JSON)."""
+def read_raw(stream) -> str:
+    """What the tool piped in, as text, or "" (a terminal, no input, unreadable)."""
     try:
         if stream is None or stream.isatty():
-            return {}
-        data = json.loads(stream.read(MAX_STDIN) or "{}")
+            return ""
+        return stream.read(MAX_STDIN) or ""
     except (OSError, ValueError):
+        return ""
+
+
+def parse_payload(raw: str) -> dict:
+    try:
+        data = json.loads(raw or "{}")
+    except ValueError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def read_payload(stream) -> dict:
+    """The JSON a tool pipes to its status-line command, or {} (a terminal, no input, not JSON)."""
+    return parse_payload(read_raw(stream))
+
+
+def run_wrapped(command: str, raw: str, timeout: float = WRAP_TIMEOUT_S) -> str:
+    """Output of the status-line command being wrapped, given the same input. "" on any failure.
+
+    It runs through the shell because that is how the tool itself runs a status-line command.
+    """
+    try:
+        done = subprocess.run(command, shell=True, input=raw, capture_output=True, text=True,
+                              timeout=timeout, check=False)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return ""
+    return done.stdout.rstrip("\n") if done.returncode == 0 else ""
+
+
+def join_lines(theirs: str, ours: str) -> str:
+    """Their status line with ours added to the end of its first line; either one alone if the other is empty."""
+    if not theirs.strip():
+        return ours
+    if not ours:
+        return theirs
+    first, _, rest = theirs.partition("\n")
+    return f"{first}{SEP}{ours}" + (f"\n{rest}" if rest else "")
 
 
 def find_session(ctx: Context, adapters, payload: dict, active_s: float) -> tuple[object, dict] | None:
@@ -95,13 +137,16 @@ def build_line(ctx: Context, payload: dict | None = None, cfg: WatchConfig | Non
 
 
 def run_statusline(home: Path | None = None, root: Path | None = None, plan: str | None = None,
-                   cfg: WatchConfig | None = None, stdin=None, out: Callable[[str], None] = print) -> int:
-    """Always exits 0. Any failure prints nothing."""
+                   cfg: WatchConfig | None = None, stdin=None, out: Callable[[str], None] = print,
+                   wrap: str | None = None) -> int:
+    """Always exits 0. Any failure prints nothing (with `wrap`: the wrapped line alone)."""
+    raw = read_raw(sys.stdin if stdin is None else stdin)
+    theirs = run_wrapped(wrap, raw) if wrap else ""
     try:
-        payload = read_payload(sys.stdin if stdin is None else stdin)
-        line = build_line(light_context(home, root, plan), payload, cfg)
+        ours = build_line(light_context(home, root, plan), parse_payload(raw), cfg)
     except Exception:  # noqa: BLE001 - a status line must never break the tool that runs it
-        return 0
+        ours = ""
+    line = join_lines(theirs, ours)
     if line:
         out(line)
     return 0

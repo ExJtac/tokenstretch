@@ -186,3 +186,53 @@ def test_statusline_cli(tmp_path, monkeypatch):
         code = main(["statusline", "--home", str(w / "home"), "--root", str(w / "root"), "--max-context", "100000"])
     assert code == 0 and buf.getvalue().strip().startswith("⚠ 160K/100K history · ")
     assert buf.getvalue().count("\n") == 1
+
+
+# ---- --wrap: share the status-line slot with another tool ---------------------------------------
+
+def test_wrap_adds_our_line_after_the_other_tools_first_line(tmp_path):
+    import sys
+    from tokenstretch.statusline import join_lines, run_wrapped
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=22_000)])
+    payload = json.dumps({"transcript_path": str(_log(w)), "model": {"display_name": "Sonnet"}})
+    # A stand-in for another tool's status line: it reads the same JSON and prints two lines.
+    other = tmp_path / "other.py"
+    other.write_text("import json,sys\nd=json.load(sys.stdin)\nprint('[CAVE] ' + d['model']['display_name'])\nprint('line two')\n",
+                     encoding="utf-8")
+    cmd = f'"{sys.executable}" "{other}"'
+    assert run_wrapped(cmd, payload) == "[CAVE] Sonnet\nline two"          # it got the same input
+    printed: list[str] = []
+    with credential_guard():
+        run_statusline(w / "home", w / "root", "subscription", stdin=io.StringIO(payload), out=printed.append, wrap=cmd)
+    assert printed == [f"[CAVE] Sonnet · 22K/150K history · {SONNET}\nline two"]
+    assert join_lines("a", "") == "a" and join_lines("", "b") == "b" and join_lines("  \n", "b") == "b"
+
+
+def test_wrap_failures_never_cost_either_line(tmp_path):
+    import sys
+    from tokenstretch.statusline import run_wrapped
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=22_000)])
+    payload = json.dumps({"transcript_path": str(_log(w))})
+    ours = f"22K/150K history · {SONNET}"
+    slow = f'"{sys.executable}" -c "import time; time.sleep(30)"'
+    assert run_wrapped("exit 3", payload) == "" and run_wrapped("definitely-not-a-command-xyz", payload) == ""
+    assert run_wrapped(slow, payload, timeout=0.3) == ""
+    for bad in ("exit 3", "definitely-not-a-command-xyz"):                  # the other tool broke: ours still shows
+        printed: list[str] = []
+        with credential_guard():
+            assert run_statusline(w / "home", w / "root", "subscription", stdin=io.StringIO(payload),
+                                  out=printed.append, wrap=bad) == 0
+        assert printed == [ours]
+    printed = []                                                            # ours has nothing: theirs still shows
+    assert run_statusline(tmp_path / "nohome", tmp_path, None, stdin=io.StringIO("{}"), out=printed.append,
+                          wrap="echo THEIRS") == 0
+    assert printed == ["THEIRS"]
+
+
+def test_wrap_cli(tmp_path, monkeypatch):
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=22_000)])
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"transcript_path": str(_log(w))})))
+    buf = io.StringIO()
+    with credential_guard(), redirect_stdout(buf):
+        code = main(["statusline", "--home", str(w / "home"), "--root", str(w / "root"), "--wrap", "echo CAVE"])
+    assert code == 0 and buf.getvalue() == f"CAVE · 22K/150K history · {SONNET}\n"
