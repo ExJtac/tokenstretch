@@ -422,6 +422,13 @@ def test_auto_hook_shapes_the_summary_saves_it_and_points_a_new_chat_at_it(tmp_p
     assert "what's happening?" in text and "in the same turn" in text and "Do not ask the user to confirm" in text
     assert "waiting on the user still waits" in text and len(text) < 900
     assert call({"hook_event_name": "SessionStart", "source": "resume", "cwd": str(proj)}, now=1_000_600.0) == []
+    # After a compaction the work restarts by itself: carry on with the next step, no go-ahead asked.
+    after = json.loads(call({"hook_event_name": "SessionStart", "source": "compact", "cwd": str(proj)},
+                            now=1_000_600.0)[0])["hookSpecificOutput"]
+    assert after["hookEventName"] == "SessionStart"
+    assert "carry on with the summary's next step now, in this turn" in after["additionalContext"]
+    assert "do not ask them to confirm or to say go" in after["additionalContext"]
+    assert "waiting on the user still waits" in after["additionalContext"]
     assert call({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj)}, now=1_000_000.0 + 80 * 3600) == []
 
 
