@@ -331,6 +331,14 @@ class Adapter:
         Must refuse anything outside the tool's log folder (never a credential file)."""
         return None
 
+    def startup_parts(self, ctx: Context) -> list[dict] | None:
+        """What every session loads before the first prompt, for `startup`: [{kind, name, tokens, fix}].
+
+        `tokens` is an estimate (bytes / 4) or None when the size can't be read locally. Return None
+        when the tool isn't supported, so `startup` skips it.
+        """
+        return None
+
     def cache_ttl_s(self, ctx: Context) -> int | None:
         """How long the tool's prompt cache lives without activity, in seconds. None => unknown,
         and watch then makes no idle prediction for this tool."""

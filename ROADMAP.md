@@ -8,6 +8,7 @@
 - Instruction-file trimmer: `tokenstretch trim` (dry run by default, safe mechanical edits only, backed up, undoable).
 - Status-bar line: `tokenstretch statusline` (history size and the most urgent watch warning).
 - Brief writer: `tokenstretch brief` (prompt generator and lint, local rules), and a `/brief` shortcut for Claude Code added by `setup`.
+- Start-up breakdown: `tokenstretch startup` (local parts sized, measured first step, the unsized rest).
 - Always on for Claude Code: `setup` adds the status line (wrapping an existing one) and a prompt hook, `tokenstretch nudge`, that shows the top warning in the session.
 - `/handoff` shortcut for Claude Code, added by `setup` (note, `/clear`, `/handoff resume`).
 - `watch`: cache-expiry warning for Claude Code (logged, and predicted for idle sessions).

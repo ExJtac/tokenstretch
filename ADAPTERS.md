@@ -23,6 +23,7 @@ Each adapter implements:
 | `model_tiers()` / `is_top_model(model)` / `model_switch_hint(model)` | Model picker facts: `{light, mid, top}` names (empty = no tier map), top-tier test, and the in-tool switch command. |
 | `plan_default_model(ctx, tier)` | **Planner only**: a `SetupItem` that sets the default model; the core applies it with backup + manifest. |
 | `official_command(prompt)` / `bench_key_env` / `supports_prepare` | Optional bench facts: the adapter's official headless argv, the env var *name* the API-key bench needs (its value is never read), and whether `bench --prepare` can scope that tool's logs to a repo. |
+| `startup_parts(ctx)` | What every session loads before the first prompt, for `startup`: `[{kind, name, tokens, fix}]`, with `tokens` an estimate or `None` when it can't be read locally. Return `None` if unsupported. |
 | `watch_session_at(ctx, path)` | The one `watch_sessions` record for a session log path, for `statusline`. Must return `None` for anything outside the tool's own log folder. Read-only. |
 | `cache_ttl_s(ctx)` | Seconds the tool's prompt cache lives without activity; `None` = unknown (no idle prediction). Turns that carry `cache_read` and `cache_write` get watch's cache-expiry check. |
 | `watch_hint` | Optional: why `watch` cannot cover this tool yet, shown next to "not supported yet". |

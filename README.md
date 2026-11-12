@@ -219,6 +219,25 @@ It's read-only: it never changes a file, it only shows the commands to run. It l
 
 `tokenstretch report --weekly` writes the same weekly numbers to a self-contained HTML file under `~/.tokenstretch/reports/` (`--weeks 8`, `--out FILE`, or `--json`).
 
+## See what every session starts with
+
+Every session carries a block before you type anything: instruction files, skill and helper listings, and tool and connector definitions. It is re-sent on every step, and a fresh start doesn't remove it. `tokenstretch startup` shows what it is made of.
+
+```text
+Claude Code: what every session carries before you type
+  Measured: the newest session's first step was ~77K tokens. Recent sessions: 77K, 80K, 75K.
+  Sized from local files: ~2.5K tokens (approx., bytes / 4).
+    ~  1.3K  instruction file: ~/work/CLAUDE.md
+             `tokenstretch trim` removes duplicates and moves reference blocks out.
+    ~  0.9K  instruction file: ~/work/app/CLAUDE.md
+  The rest, ~75K tokens, can't be sized from local files: the tool's own system prompt and built-in tools, connector tool lists, and plugin listings.
+  To size one of those: turn it off, start a new session, and run this again. The measured number shows the difference.
+```
+
+That output is from a real machine, with paths changed. The instruction files were under 4% of the start-up size, so trimming them would not have helped much there; the connectors and plugins were the place to look. The command exists to tell you which case you are in before you spend time on the wrong fix.
+
+Sizes are estimates (bytes / 4). Skills marked `disable-model-invocation` are left out because they aren't listed to the model. Instruction files deeper in the project are left out because they load only when the agent works in that folder. `--all` lists every part and `--json` prints the data. Read-only, Claude Code only for now.
+
 ## Trim instruction files
 
 Your CLAUDE.md, AGENTS.md, and similar files are resent on every turn, so a bloated one quietly costs credits all day. `tokenstretch trim` looks at the project you're in (or `--project DIR`) plus your user-level files, and shows what each tool loads per turn:
@@ -360,7 +379,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 ## More
 
-- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `statusline`, `nudge`, `brief`, `model`, `trim`, and `undo`.
+- All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `statusline`, `startup`, `nudge`, `brief`, `model`, `trim`, and `undo`.
 - Technical details and pins: `docs/DETAILS.md`, `ADAPTERS.md`, `tokenstretch/catalog.py`
 - Contributing: `CONTRIBUTING.md` · Roadmap: `ROADMAP.md` · Security: `SECURITY.md`
 

@@ -239,9 +239,9 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
                            why="that is instruction files, tool and connector definitions, and skill listings. "
                                "It is in every session and is re-sent on every step, so a fresh start does not "
                                "remove it.",
-                           fix=f"run `{CLI_NAME} trim` for instruction files and `{CLI_NAME} doctor` for unused "
-                               "connectors (W03) and large skill listings (W25), then turn off what you don't use.",
-                           short=f"starts at {_k(start)} before any work: {CLI_NAME} trim, {CLI_NAME} doctor"))
+                           fix=f"run `{CLI_NAME} startup` to see what it is made of, largest first, with the fix for each "
+                               "part, then turn off what you don't use.",
+                           short=f"starts at {_k(start)} before any work: {CLI_NAME} startup"))
 
     # (e) the cache expired during a pause: idle right now (needs the clock), or recorded in the logs
     ttl = ad.cache_ttl_s(ctx)

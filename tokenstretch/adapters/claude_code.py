@@ -1215,6 +1215,43 @@ class ClaudeCodeAdapter(Adapter):
             out[scope] = rows
         return out
 
+    def startup_parts(self, ctx: Context) -> list[dict]:
+        parts: list[dict] = []
+        at_start = {ctx.root, *ctx.root.parents}
+        for f in self.list_instruction_files(ctx):
+            fp = Path(f.path)
+            # Loaded at the start: files in the project folder or above it, and the user's own.
+            # A file deeper in the project loads only when the agent works in that folder.
+            if f.always_loaded and f.bytes and (fp.parent in at_start or ctx.home / ".claude" in fp.parents):
+                parts.append({"kind": "instruction file", "name": _tilde(f.path, ctx), "tokens": max(1, f.bytes // 4),
+                              "fix": f"`{CLI_NAME} trim` removes duplicates and moves reference blocks out."})
+        for scope, base in (("user", ctx.home / ".claude"), ("project", ctx.root / ".claude")):
+            d = base / "skills"
+            for sk in sorted(d.iterdir()) if d.is_dir() else []:
+                counted = count_lines_bytes(sk / "SKILL.md") if sk.is_dir() else None
+                if not counted:
+                    continue
+                fm = frontmatter(counted[2])
+                if fm.get("disable-model-invocation", "").lower() in {"true", "yes", "on", "1"}:
+                    continue   # manual-only: not listed, costs nothing per session
+                listing = len(fm.get("name") or sk.name) + len(fm.get("description") or "")
+                parts.append({"kind": f"skill listing ({scope})", "name": sk.name, "tokens": max(1, listing // 4),
+                              "fix": "add `disable-model-invocation: true` if you only run it by hand."})
+            d = base / "agents"
+            for md in sorted(d.glob("*.md")) if d.is_dir() else []:
+                counted = count_lines_bytes(md)
+                if not counted:
+                    continue
+                fm = frontmatter(counted[2])
+                listing = len(fm.get("name") or md.stem) + len(fm.get("description") or "")
+                parts.append({"kind": f"helper listing ({scope})", "name": md.stem, "tokens": max(1, listing // 4),
+                              "fix": "shorten its description, or remove the helper if unused."})
+        for srv in self.list_mcp_servers(ctx):
+            if srv.enabled:
+                parts.append({"kind": "connector", "name": f"{srv.name} ({srv.scope})", "tokens": None,
+                              "fix": "its tool list loads in every session; turn it off if you don't use it"})
+        return parts
+
     SKILL_LISTING_MAX = 15  # [reasoning] starting threshold; bench should calibrate it.
 
     def _w25(self, ctx: Context) -> list[Finding]:
@@ -2054,6 +2091,11 @@ def _plan_items(plan) -> list[str]:
     if isinstance(plan, dict):
         return list(plan.get("items") or [])
     return list(plan)
+
+
+def _tilde(path: str, ctx: Context) -> str:
+    home = str(ctx.home)
+    return "~" + path[len(home):] if path.startswith(home + "/") else path
 
 
 def _load_json_file(path: Path) -> dict:
