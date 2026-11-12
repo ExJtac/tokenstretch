@@ -228,7 +228,7 @@ def cmd_statusline(args) -> int:
     from .watch import WatchConfig
 
     cfg = WatchConfig(max_context=args.max_context, max_reads=args.max_reads)
-    return run_statusline(args.home, args.root, getattr(args, "plan", None), cfg)
+    return run_statusline(args.home, args.root, getattr(args, "plan", None), cfg, wrap=args.wrap)
 
 
 def cmd_dashboard(args) -> int:
@@ -396,6 +396,8 @@ def main(argv=None) -> int:
     _add_context_args(sl)
     sl.add_argument("--max-context", type=int, default=150_000, help="warn when history passes this (default 150000)")
     sl.add_argument("--max-reads", type=int, default=3, help="warn when one file is read this many times (default 3)")
+    sl.add_argument("--wrap", metavar="COMMAND",
+                    help="share the slot: run this status-line command too (same input) and add this line after its first line")
 
     dash = sub.add_parser("dashboard", help="read-only local web page with live usage, warnings, and doctor results")
     _add_context_args(dash)
