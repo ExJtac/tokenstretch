@@ -6,6 +6,8 @@
 - Weekly savings report: `tokenstretch report --weekly`.
 - Local dashboard: `tokenstretch dashboard` (loopback only, read-only, live).
 - Instruction-file trimmer: `tokenstretch trim` (dry run by default, safe mechanical edits only, backed up, undoable).
+- Status-bar line: `tokenstretch statusline` (history size and the most urgent watch warning).
+- `watch`: cache-expiry warning for Claude Code (logged, and predicted for idle sessions).
 - Codex: session labels from the rollout's working directory, and a light/mid/top tier map for `model suggest` / `model default`.
 
 ## Next
@@ -14,6 +16,9 @@
 - Codex: confirm whether `reasoning_output_tokens` is inside `output_tokens` (the research sample's `total_tokens` suggests it is); if so, split it like Copilot so weekly totals don't count reasoning twice.
 - Gemini CLI and Copilot CLI: use `install_steps` (RTK `--gemini` / `--copilot`) from setup's pinned-install step instead of asking you to run them.
 - Exercise the live pinned installs on macOS and Linux outside the test suite.
+
+- Cache-expiry warning and `statusline` for Codex, Gemini CLI, and Copilot CLI, once each tool's cache counts and status-bar input are verified.
+- `setup`: offer to add the `statusLine` entry (backed up, undoable) when none is set.
 
 - A dashboard "copy command" button next to each fix (still read-only).
 

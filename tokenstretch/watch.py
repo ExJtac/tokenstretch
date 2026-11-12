@@ -47,6 +47,9 @@ class WatchConfig:
     max_reads: int = 3              # (c) same file read this many times
     growth_tokens: int = 60_000     # (d) history growth ...
     growth_window_s: int = 300      #     ... within this window
+    cache_min_gap_s: int = 300      # (e) a pause at least this long (the shortest cache lifetime) ...
+    cache_min_history: int = 20_000  #     ... in a session with at least this much history ...
+    cache_miss_share: float = 0.5   #     ... where the next step re-wrote this share of it
     active_s: int = 2 * 3600        # only sessions written within this window
 
 
@@ -59,6 +62,7 @@ class WatchWarning:
     what: str
     why: str
     fix: str
+    short: str = ""                 # one-line form for `statusline`
 
     def lines(self) -> list[str]:
         return [f"⚠ [{self.adapter} {self.session} · {_short_project(self.project)}] {self.what}",
@@ -86,8 +90,34 @@ def _short(path: str, home: Path) -> str:
         return path
 
 
-def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig) -> list[WatchWarning]:
-    """Every waste condition one session shows right now (deduping happens in Watcher)."""
+def cache_misses(turns: list[dict], cfg: WatchConfig) -> list[tuple[float, int]]:
+    """[(idle seconds, tokens re-written)] for each step where the logs show the cache had expired.
+
+    Read from the tool's own counts, not guessed: after a pause, the same model re-wrote most of
+    the history to the cache and read almost none of it back. A compaction (history shrank) or a
+    model switch is not counted; those rebuild the cache for a different reason.
+    """
+    out = []
+    for prev, cur in zip(turns, turns[1:]):
+        if "cache_read" not in cur or "cache_write" not in cur or cur["model"] != prev["model"]:
+            continue
+        a, b = _epoch(prev.get("ts")), _epoch(cur.get("ts"))
+        if a is None or b is None or b - a < cfg.cache_min_gap_s:
+            continue
+        hist = cur["history_tokens"]
+        if hist < cfg.cache_min_history or hist < prev["history_tokens"] * 0.5:
+            continue
+        if cur["cache_write"] >= hist * cfg.cache_miss_share and cur["cache_read"] <= hist * 0.2:
+            out.append((b - a, cur["cache_write"]))
+    return out
+
+
+def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | None = None) -> list[WatchWarning]:
+    """Every waste condition one session shows right now (deduping happens in Watcher).
+
+    `now` turns on the one check that needs the clock: a session sitting idle past its cache
+    lifetime. Without it (weekly report, old sessions) only what the logs record is reported.
+    """
     turns = s.get("turns") or []
     if not turns:
         return []
@@ -105,7 +135,8 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig) -> list[WatchW
                            what=f"history is ~{_k(last['history_tokens'])} tokens (over {_k(cfg.max_context)}).",
                            why="every step re-sends the whole conversation, so each reply now costs at least that "
                                "much input.",
-                           fix=f"finish this step, then type {clear} (fresh start){alt}."))
+                           fix=f"finish this step, then type {clear} (fresh start){alt}.",
+                           short=f"{clear} at the next task break"))
 
     # (b) top model on simple steps
     recent = turns[-cfg.simple_turns:]
@@ -120,7 +151,8 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig) -> list[WatchW
                            what=f"the top model ({recent[-1]['model']}) ran the last {len(recent)} steps, "
                                 "and they look simple (short replies, few tool calls).",
                            why="the top model costs several times more per step than the mid tier for the same work.",
-                           fix=fix + f" `{CLI_NAME} model suggest \"<task>\"` helps pick."))
+                           fix=fix + f" `{CLI_NAME} model suggest \"<task>\"` helps pick.",
+                           short=f"simple steps on the top model: {switch}"))
 
     # (c) the same file read again and again (paths only)
     counts: dict[str, int] = {}
@@ -135,7 +167,8 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig) -> list[WatchW
                            what=f"the same file was read {hot[0][0]}+ times: {names}{more}.",
                            why="each re-read adds the file to the history again, and the history is re-sent on "
                                "every later step.",
-                           fix=f"ask for line ranges or a short note instead of full re-reads; {clear} also clears them."))
+                           fix=f"ask for line ranges or a short note instead of full re-reads; {clear} also clears them.",
+                           short=f"same file read {hot[0][0]}+ times"))
 
     # (d) fast growth, measured against the session's own newest timestamp
     end = _epoch(last.get("ts"))
@@ -150,7 +183,36 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig) -> list[WatchW
                                    why="fast growth usually means whole-file reads or long command output, and "
                                        "every added token is re-sent on each later step.",
                                    fix="search first and read line ranges, trim noisy output, and start fresh "
-                                       "at the next task break."))
+                                       "at the next task break.",
+                                   short=f"history +{_k(grew)} in {mins} min: read narrower"))
+
+    # (e) the cache expired during a pause: idle right now (needs the clock), or recorded in the logs
+    ttl = ad.cache_ttl_s(ctx)
+    idle = now - (s.get("last_write") or now) if now is not None else 0
+    misses = cache_misses(turns, cfg)
+    if ttl and idle >= ttl and last["history_tokens"] >= cfg.cache_min_history and "cache_read" in last:
+        mins = round(idle / 60)
+        note = f" {compact} would re-read the whole history first, so it doesn't help now." if compact else ""
+        out.append(WatchWarning(base + ("cache",), **tag,
+                           what=f"idle for {mins} min with ~{_k(last['history_tokens'])} tokens of history; the "
+                                f"saved-context discount has probably expired (it lasts about {round(ttl / 60)} min "
+                                "without activity).",
+                           why="once it expires, your next message re-sends the whole conversation at full "
+                               "price instead of the discounted re-read.",
+                           fix=f"if that task is done, type {clear} before your next message.{note}",
+                           short=f"idle {mins} min, cache probably expired: {clear} if the task is done"))
+    elif misses:
+        longest = round(max(g for g, _ in misses) / 60)
+        total = sum(n for _, n in misses)
+        times = "once" if len(misses) == 1 else f"{len(misses)} times"
+        out.append(WatchWarning(base + ("cache",), **tag,
+                           what=f"the saved-context discount expired {times} during a pause (longest ~{longest} "
+                                f"min), and ~{_k(total)} tokens were re-sent at full price.",
+                           why="after a pause longer than the cache lifetime, the next message re-pays for the "
+                               "whole conversation instead of the discounted re-read.",
+                           fix=f"before a break, finish the task and type {clear}, so you come back to a small "
+                               "history. Coming back to a big idle session? Start fresh instead of continuing it.",
+                           short=f"cache expired after ~{longest} min idle (~{_k(total)} re-sent): {clear} before breaks"))
     return out
 
 
@@ -201,7 +263,7 @@ class Watcher:
             for s in ad.watch_sessions(self.ctx, max_age_s=self.cfg.active_s) or []:
                 if (s.get("last_write") or 0) < cutoff:
                     continue
-                for w in session_warnings(self.ctx, ad, s, self.cfg):
+                for w in session_warnings(self.ctx, ad, s, self.cfg, now=self.now()):
                     if w.key in self.seen:
                         continue
                     self.seen.add(w.key)

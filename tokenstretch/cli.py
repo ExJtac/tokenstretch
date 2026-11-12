@@ -223,6 +223,14 @@ def cmd_watch(args) -> int:
     return run_watch(ctx, cfg, interval=max(1.0, args.interval), once=bool(args.once), notify=bool(args.notify))
 
 
+def cmd_statusline(args) -> int:
+    from .statusline import run_statusline
+    from .watch import WatchConfig
+
+    cfg = WatchConfig(max_context=args.max_context, max_reads=args.max_reads)
+    return run_statusline(args.home, args.root, getattr(args, "plan", None), cfg)
+
+
 def cmd_dashboard(args) -> int:
     from .dashboard import run_dashboard
 
@@ -383,6 +391,12 @@ def main(argv=None) -> int:
     w.add_argument("--max-reads", type=int, default=3, help="warn when one file is read this many times (default 3)")
     w.add_argument("--notify", action="store_true", help="also show a local desktop notification (osascript/notify-send)")
 
+    sl = sub.add_parser("statusline",
+                        help="one read-only line for a status bar: history size and the top watch warning")
+    _add_context_args(sl)
+    sl.add_argument("--max-context", type=int, default=150_000, help="warn when history passes this (default 150000)")
+    sl.add_argument("--max-reads", type=int, default=3, help="warn when one file is read this many times (default 3)")
+
     dash = sub.add_parser("dashboard", help="read-only local web page with live usage, warnings, and doctor results")
     _add_context_args(dash)
     dash.add_argument("--host", default="127.0.0.1", help="only 127.0.0.1 is accepted (loopback only)")
@@ -438,6 +452,8 @@ def main(argv=None) -> int:
         return cmd_report(a)
     if a.cmd == "watch":
         return cmd_watch(a)
+    if a.cmd == "statusline":
+        return cmd_statusline(a)
     if a.cmd == "dashboard":
         return cmd_dashboard(a)
     if a.cmd == "model":
