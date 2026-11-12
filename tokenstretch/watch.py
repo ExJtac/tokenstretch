@@ -53,6 +53,8 @@ class WatchConfig:
     max_start: int = 40_000         # (f) history on a session's first step, before any work
     helper_min_sent: int = 1_000_000  # (g) helpers re-sent at least this much in total ...
     helper_ratio: float = 1.0       #     ... and at least this many times the main conversation
+    wake_min: int = 3               # (h) finished helpers woke the conversation at least this often ...
+    wake_min_sent: int = 300_000    #     ... and those extra steps re-sent at least this much
     active_s: int = 2 * 3600        # only sessions written within this window
 
 
@@ -255,6 +257,23 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
                            fix="give each helper one narrow task, name the files or notes to work from, say what "
                                "not to look up again, and ask for a short reply. Split a long job into two helpers.",
                            short=f"helpers re-sent ~{_m(sent)} ({times} main): narrower helper tasks"))
+
+    # (h) each background helper that finishes starts a new step here, at the full history size
+    wakes = [t for t in turns if t.get("woken")]
+    wake_sent = sum(t["history_tokens"] for t in wakes)
+    if len(wakes) >= cfg.wake_min and wake_sent >= cfg.wake_min_sent:
+        out.append(WatchWarning(base + ("wakeups",), **tag,
+                           what=f"helpers finishing woke this conversation {len(wakes)} times, and those "
+                                f"{len(wakes)} extra steps re-sent ~{_m(wake_sent)} tokens "
+                                f"(the largest ~{_k(max(t['history_tokens'] for t in wakes))}).",
+                           why="a helper that finishes in the background starts a new step here, and every step "
+                               "re-sends the whole conversation, even when the step only says it is still waiting.",
+                           fix="start helpers while this conversation is still short, start the ones that belong "
+                               "together in one message, and run them in the foreground where the tool allows it, so "
+                               "their results arrive in one step. If this conversation reports to another one, send "
+                               "one final report, not one per helper.",
+                           short=f"helpers woke this chat {len(wakes)}x (~{_m(wake_sent)} re-sent): start them early, "
+                                 "together"))
 
     # (f) heavy start: what the session carried on its first step, before any work
     start = s.get("start_tokens")

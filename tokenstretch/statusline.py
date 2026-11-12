@@ -26,7 +26,7 @@ from .context import Context
 from .watch import WatchConfig, WatchWarning, _k, session_warnings
 
 # Most urgent first: what is costing credits on every step, then what already happened.
-PRIORITY = ("context", "cache", "helpers", "top-model", "growth", "rereads", "startup")
+PRIORITY = ("context", "cache", "helpers", "wakeups", "top-model", "growth", "rereads", "startup")
 MAX_STDIN = 1_000_000
 WRAP_TIMEOUT_S = 3.0
 SEP = " · "

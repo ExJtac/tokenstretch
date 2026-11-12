@@ -410,3 +410,45 @@ def test_startup_cli_json_and_rest(tmp_path, monkeypatch):
     assert code == 0 and d["measured_start"] == 60_000 and d["rest"] == 60_000 - d["known"] and d["recent_starts"] == [60_000, 58_000]
     lines = "\n".join(st.format_report([d]))
     assert "Recent sessions: 60K, 58K." in lines and "can't be sized from local files" in lines
+
+
+# ---- helper wake-ups ---------------------------------------------------------------------------------
+
+def _notice(at_s: int, *, origin: bool = True) -> dict:
+    ts = (T0 + timedelta(seconds=at_s)).isoformat().replace("+00:00", "Z")
+    row = {"type": "user", "timestamp": ts,
+           "message": {"role": "user", "content": "<task-notification>\n<status>completed</status> HELPER_REPLY_TEXT"}}
+    if origin:
+        row["origin"] = {"kind": "task-notification"}
+    return row
+
+
+def test_watch_counts_steps_started_by_finished_helpers(tmp_path):
+    rows = [_row(0, 0, read=60_000)]
+    for i in range(1, 5):                                   # four notices, each followed by two steps
+        rows += [_notice(100 * i, origin=i % 2 == 0), _row(2 * i, 100 * i + 5, read=100_000 + 5_000 * i),
+                 _row(2 * i + 1, 100 * i + 40, read=101_000 + 5_000 * i)]
+    w = _world(tmp_path, rows)
+    with credential_guard():
+        warns = Watcher(_ctx(w)).scan()
+        line = build_line(_ctx(w), {"transcript_path": str(_log(w))})
+        quiet = Watcher(_ctx(w), WatchConfig(wake_min=5)).scan()
+        small = Watcher(_ctx(w), WatchConfig(wake_min_sent=1_000_000)).scan()
+    wake = [x for x in warns if x.key[-1] == "wakeups"]
+    assert len(wake) == 1 and "wakeups" not in [x.key[-1] for x in quiet + small]
+    assert "woke this conversation 4 times" in wake[0].what and "re-sent ~450K tokens" in wake[0].what
+    assert "largest ~120K" in wake[0].what and "one final report" in wake[0].fix
+    assert "helpers woke this chat 4x" in line
+    assert "HELPER_REPLY_TEXT" not in "".join(x.what + x.why + x.fix for x in warns) + line
+
+
+def test_ordinary_user_messages_are_not_wake_ups(tmp_path):
+    said = {"type": "user", "message": {"role": "user", "content": "what does a task-notification row mean?"}}
+    tool = {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "content": "<task-notification> quoted in a file"}]}}
+    rows = [_row(0, 0, read=100_000)]
+    for i in range(1, 6):
+        rows += [said, tool, _row(i, 50 * i, read=100_000 + 1_000 * i)]
+    w = _world(tmp_path, rows)
+    with credential_guard():
+        assert "wakeups" not in [x.key[-1] for x in Watcher(_ctx(w)).scan()]
