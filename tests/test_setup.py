@@ -93,7 +93,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     w = _world(tmp_path)
     before = _snapshot(w)
     res, out = _run(w, yes=True, installs=False)
-    assert res.mode == "applied" and len(res.manifests) == 5
+    assert res.mode == "applied" and len(res.manifests) == 6
     assert "✔ switched default model to sonnet and turned on live warnings, backed up ~/.claude/settings.json" in out
     assert "/model opus" in out
     s = json.loads((w / "home" / ".claude" / "settings.json").read_text())
@@ -117,7 +117,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     buf = io.StringIO()
     with credential_guard(), redirect_stdout(buf):
         code = main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
-    assert code == 0 and "Restored 3 file(s), deleted 2 created file(s)" in buf.getvalue()
+    assert code == 0 and "Restored 3 file(s), deleted 3 created file(s)" in buf.getvalue()
     assert _snapshot(w) == before
 
 
@@ -381,6 +381,28 @@ def test_setup_adds_a_manual_only_brief_skill_and_never_replaces_yours(tmp_path)
     mine.parent.mkdir(parents=True)
     mine.write_text("my own brief\n", encoding="utf-8")
     assert "claude-brief-skill" not in {i.id for i in build_plan(_ctx(w2))[0]}
+
+
+def test_setup_adds_a_manual_only_credits_skill_and_never_replaces_yours(tmp_path):
+    from tokenstretch.files import frontmatter
+    w = _world(tmp_path)
+    skill = w / "home" / ".claude" / "skills" / "credits" / "SKILL.md"
+    _, out = _run(w, yes=True, installs=False)
+    assert "✔ added the /credits shortcut" in out
+    text = skill.read_text(encoding="utf-8")
+    fm = frontmatter(text)
+    assert fm.get("name") == "credits" and fm.get("disable-model-invocation") == "true"
+    assert "`tokenstretch startup`" in text and "`tokenstretch watch --once`" in text and len(text) < 1800
+    assert "Do not change any file or setting." in text and "Do not tell the user to open a terminal." in text
+    assert "claude-credits-skill" not in {i.id for i in build_plan(_ctx(w))[0]}      # a second run plans nothing
+    with credential_guard():
+        main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
+    assert not skill.exists()
+    w2 = _world(tmp_path / "second")
+    mine = w2 / "root" / ".claude" / "commands" / "credits.md"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("my own credits\n", encoding="utf-8")
+    assert "claude-credits-skill" not in {i.id for i in build_plan(_ctx(w2))[0]}
 
 
 # ---- autopilot: shorter sessions with nothing to type -------------------------------------------
