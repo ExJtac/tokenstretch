@@ -317,6 +317,8 @@ class Adapter:
 
         [{adapter, session, project, path, last_write, clear_hint, compact_hint, handoff_hint (optional),
           start_tokens (optional: history size on the session's first step),
+          auto_compact (optional: history size at which the tool summarizes by itself; watch then
+           stays quiet about long history below it),
           helpers (optional: [{steps, sent, peak}] per subagent of this session, token counts only),
           turns: [{ts, model, history_tokens, output_tokens, tool_calls (int|None), reads: [path]}]}]
         `reads` holds file paths from the tool's own read calls only; never file contents.

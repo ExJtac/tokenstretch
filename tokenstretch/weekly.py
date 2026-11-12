@@ -141,13 +141,15 @@ def sessions(ctx: Context, adapters=None, limit: int = 10, max_age_s: float | No
                 rows.append({"adapter": s["adapter"], "tool": ad.display_name, "session": s["session"],
                              "project": s.get("project", ""), "model": last.get("model") or "",
                              "history_tokens": int(last.get("history_tokens") or 0),
-                             "last_write": s.get("last_write"), "clear_hint": s.get("clear_hint", "")})
+                             "last_write": s.get("last_write"), "clear_hint": s.get("clear_hint", ""),
+                             "auto_compact": s.get("auto_compact")})
             continue
         for s in ad.live_sessions(ctx, limit=limit, max_age_s=max_age_s) or []:
             rows.append({"adapter": s.get("adapter", ad.id), "tool": ad.display_name, "session": s.get("session", ""),
                          "project": s.get("project", ""), "model": s.get("model") or "",
                          "history_tokens": int(s.get("history_tokens") or 0),
-                         "last_write": s.get("last_write"), "clear_hint": s.get("clear_hint", "")})
+                         "last_write": s.get("last_write"), "clear_hint": s.get("clear_hint", ""),
+                             "auto_compact": s.get("auto_compact")})
     rows.sort(key=lambda r: r.get("last_write") or 0, reverse=True)
     return rows[:limit]
 

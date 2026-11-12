@@ -119,6 +119,20 @@ def cache_misses(turns: list[dict], cfg: WatchConfig) -> list[tuple[float, int]]
     return out
 
 
+AUTO_COMPACT_MARGIN = 1.15   # automatic compaction fires near its window, not exactly at it
+
+
+def long_history_tip(history: int, limit: int, clear: str = "", auto: int | None = None) -> str:
+    """The one-line tip for a session list, or "" when the session is not long.
+
+    With automatic summaries on (`auto`), a session is only long once it is well past that size,
+    and the tip is then to summarize once, never to clear by hand.
+    """
+    if auto:
+        return f"over {_k(auto)}: /compact once (automatic summary did not run)" if history > auto * AUTO_COMPACT_MARGIN else ""
+    return f"over {_k(limit)}: {clear or 'start fresh'} at the next task break" if history > limit else ""
+
+
 def payback_steps(history: int, start: int | None) -> int | None:
     """About how many more steps until a fresh start has paid for itself, or None when unknown.
 
@@ -149,8 +163,20 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
     handoff = s.get("handoff_hint")     # a note-then-clear shortcut, when the tool has one installed
     fresh = f"{handoff} then {clear}" if handoff else clear
 
-    # (a) long history
-    if last["history_tokens"] > cfg.max_context:
+    # (a) long history. When the tool summarizes by itself at a known size, say nothing below
+    # that size (plus a margin): advice to clear by hand would contradict the automatic step.
+    # Well past it, the session predates the setting or a compaction failed: one thing to type.
+    auto = s.get("auto_compact")
+    if auto and compact and last["history_tokens"] > cfg.max_context:
+        if last["history_tokens"] > auto * AUTO_COMPACT_MARGIN:
+            out.append(WatchWarning(base + ("context",), **tag,
+                               what=f"history is ~{_k(last['history_tokens'])} tokens, past the ~{_k(auto)} where "
+                                    "it should have been summarized automatically.",
+                               why="this session probably started before automatic summaries were set up, so "
+                                   "every step still re-sends the whole conversation.",
+                               fix=f"type {compact} once; sessions started from now on do this by themselves.",
+                               short=f"{compact} once (automatic summary did not run)"))
+    elif last["history_tokens"] > cfg.max_context:
         alt = f" or {compact} (keeps a short summary)" if compact else ""
         back = payback_steps(last["history_tokens"], s.get("start_tokens"))
         pays = (f" A fresh start pays for itself after about {back} more step{'s' if back != 1 else ''} "

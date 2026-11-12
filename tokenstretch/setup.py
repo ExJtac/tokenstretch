@@ -20,6 +20,7 @@ from .context import Context
 from .findings import SEVERITY_ORDER, Finding
 from .identity import CLI_NAME, PRODUCT_NAME, STATE_DIRNAME, VERSION
 from .installer import _now_stamp, apply_changes, kit_root, sha256_file
+from .watch import long_history_tip
 from .mask import mask_finding_evidence, mask_text
 
 
@@ -292,7 +293,9 @@ def live_sessions(ctx: Context, adapters=None, limit: int = 5) -> list[dict]:
         rows += ad.live_sessions(ctx, limit=limit) or []
     rows.sort(key=lambda r: r.get("last_write") or 0, reverse=True)
     for r in rows[:limit]:
-        r["long"] = (r.get("history_tokens") or 0) > LONG_HISTORY
+        r["long_tip"] = long_history_tip(r.get("history_tokens") or 0, LONG_HISTORY, r.get("clear_hint", ""),
+                                         r.get("auto_compact"))
+        r["long"] = bool(r["long_tip"])
         r["last_write_local"] = datetime.fromtimestamp(r["last_write"]).astimezone().strftime("%b %d %I:%M %p %Z") \
             if r.get("last_write") else ""
     return rows[:limit]
@@ -332,7 +335,7 @@ def format_status(ctx: Context, status: dict) -> list[str]:
     if not status["sessions"]:
         lines.append("  no local session logs found")
     for s in status["sessions"]:
-        flag = f"  ⚠ over {_k(LONG_HISTORY)}: {s.get('clear_hint', 'start fresh')} at the next task break" if s["long"] else ""
+        flag = f"  ⚠ {s['long_tip']}" if s["long"] else ""
         lines.append(f"  {s['last_write_local']}  {_short_project(s['project'])}  {s['model']}  ~{_k(s['history_tokens'])}{flag}")
     return lines
 
@@ -416,7 +419,7 @@ def build_report_html(ctx: Context) -> str:
     if status["sessions"]:
         h.append("<table><tr><th>Last write</th><th>Project</th><th>Model</th><th>History re-read per step</th></tr>")
         for s in status["sessions"]:
-            tip = f" <span class='warn'>over {_k(LONG_HISTORY)}: {_e(s.get('clear_hint', 'start fresh'))} at the next task break</span>" if s["long"] else ""
+            tip = f" <span class='warn'>{_e(s['long_tip'])}</span>" if s["long"] else ""
             h.append(f"<tr><td>{_e(s['last_write_local'])}</td><td>{_e(_short_project(s['project']))}</td><td>{_e(s['model'])}</td>"
                      f"<td>~{_e(_k(s['history_tokens']))}{tip}</td></tr>")
         h.append("</table>")
