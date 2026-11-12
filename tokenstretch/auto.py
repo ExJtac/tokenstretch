@@ -8,7 +8,9 @@ the action:
 - PostCompact: save that summary to `.claude/handoff-auto.md` in the project, so a new chat can
   pick the work up too. The text comes from the tool on stdin; no log is read.
 - SessionStart (a new chat): if a recent handoff note exists in the project, tell the agent where
-  it is, and to read it only if the first request continues that work.
+  it is, and to read it and carry on with its next step, without asking for a go-ahead, unless the
+  first message asks for something else. A hook cannot start the first turn of an interactive
+  session, so the user still sends one message; any message will do.
 
 Core only. No network, no model calls. Always exits 0 and prints nothing on any failure: a hook
 must never block a session, a compaction, or a prompt.
@@ -94,9 +96,12 @@ def session_start(payload: dict, now: float) -> dict | None:
     rel, age = found
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
         f"{PRODUCT_NAME}: a handoff note from an earlier session in this project is at `{rel}` "
-        f"(saved {_age(age)} ago). If the user's first request continues that work, read it once before "
-        "anything else and continue from its next step. If the request is about something else, ignore it "
-        "and do not read it.")}}
+        f"(saved {_age(age)} ago). If the user's first message continues that work, or is a greeting or an "
+        "open question such as \"continue\" or \"what's happening?\", read the note once before anything else, "
+        "say where things stand in at most three lines, and do its next step in the same turn. Do not ask the "
+        "user to confirm or to say go first. Anything the note lists as waiting on the user still waits, and "
+        "so does anything that needs confirmation under your other rules. If the first message asks for "
+        "something else, ignore the note and do not read it.")}}
 
 
 def run_auto(stdin=None, out: Callable[[str], None] = print, now: Callable[[], float] = time.time) -> int:
