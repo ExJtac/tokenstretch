@@ -16,7 +16,7 @@ A commit can't contain its own hash, so the pin always goes in a follow-up commi
 
 ## Steps
 
-1. **Release commit (A).** Set the version in `pyproject.toml` and `tokenstretch/identity.py`, and move `CHANGELOG.md` `[Unreleased]` into a dated `[X.Y.Z]` section. Run the tests, including the network-blocked run.
+1. **Release commit (A).** Set the version in `pyproject.toml` and `tokenstretch/identity.py`, and move `CHANGELOG.md` `[Unreleased]` into a dated `[X.Y.Z]` section. Run the tests, including the network-blocked run. That run needs Linux (`unshare -rn`); on macOS, skip it locally and rely on CI, which runs it on every push. Don't publish until CI is green on the release commit.
 2. **Tag A locally:** `git tag -a vX.Y.Z -m "tokenstretch X.Y.Z"`. Make the tag on the machine that will push. A commit applied with `git am` gets a new hash, so never copy a hash from another machine.
 3. **Pin commit (B):** `sh scripts/release-pin.sh vX.Y.Z`. It checks that the tagged commit has version X.Y.Z everywhere, then fills `TS_PIN_TAG` and `TS_PIN_COMMIT` from the local tag and removes the README's "Not released yet" line. It leaves the tarball SHA-256 empty and commits. Preview with `--dry-run`.
 4. **Check B locally:** in a temporary `HOME`, run `sh scripts/install.sh --source "file://$PWD"`. It clones the tag from this repo and checks HEAD against the pin. Then `tokenstretch --version`, then `--uninstall`.

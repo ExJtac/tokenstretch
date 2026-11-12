@@ -151,6 +151,9 @@ def test_created_file_is_deleted_by_undo(tmp_path):
     (w / "root" / "CLAUDE.md").unlink()
     (w / "root" / ".claude").mkdir()
     res, out = _run(w, yes=True, installs=False)
+    assert not (w / "root" / "CLAUDE.md").exists()         # a new project file is opt-in
+    assert "left out unless you ask" in out and "setup --only claude-rules-block" in out
+    res, out = _run(w, yes=True, only=["claude-rules-block"])
     assert (w / "root" / "CLAUDE.md").is_file()
     assert "created" in out
     with credential_guard(), redirect_stdout(io.StringIO()):
@@ -393,7 +396,9 @@ def test_setup_adds_a_manual_only_credits_skill_and_never_replaces_yours(tmp_pat
     fm = frontmatter(text)
     assert fm.get("name") == "credits" and fm.get("disable-model-invocation") == "true"
     assert "`tokenstretch startup`" in text and "`tokenstretch watch --once`" in text and len(text) < 1800
-    assert "Do not change any file or setting." in text and "Do not tell the user to open a terminal." in text
+    assert "`tokenstretch setup --list`" in text and "setup --only <id> --yes" in text
+    assert "wait for a yes" in text and "Never pass `--with-installs`" in text
+    assert "Do not change any file or setting yet." in text and "Do not tell the user to open a terminal." in text
     assert "claude-credits-skill" not in {i.id for i in build_plan(_ctx(w))[0]}      # a second run plans nothing
     with credential_guard():
         main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
@@ -403,6 +408,81 @@ def test_setup_adds_a_manual_only_credits_skill_and_never_replaces_yours(tmp_pat
     mine.parent.mkdir(parents=True)
     mine.write_text("my own credits\n", encoding="utf-8")
     assert "claude-credits-skill" not in {i.id for i in build_plan(_ctx(w2))[0]}
+
+
+def test_setup_updates_its_own_older_credits_skill_but_not_yours(tmp_path):
+    w = _world(tmp_path)
+    skill = w / "home" / ".claude" / "skills" / "credits" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: credits\n---\n<!-- added by tokenstretch; `tokenstretch undo` removes it -->\nold text\n",
+                     encoding="utf-8")
+    item = next(i for i in build_plan(_ctx(w))[0] if i.id == "claude-credits-skill")
+    assert item.title.startswith("Update") and item.changes[0]["kind"] == "modify"
+    _, out = _run(w, yes=True, only=["claude-credits-skill"])
+    assert "✔ updated the /credits shortcut, backed up" in out
+    assert "setup --only <id> --yes" in skill.read_text(encoding="utf-8")
+    assert "claude-credits-skill" not in {i.id for i in build_plan(_ctx(w))[0]}
+    with credential_guard(), redirect_stdout(io.StringIO()):
+        main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
+    assert skill.read_text(encoding="utf-8").endswith("old text\n")      # undo brings the old copy back
+    skill.write_text("my own credits skill\n", encoding="utf-8")         # no marker: it is yours
+    assert "claude-credits-skill" not in {i.id for i in build_plan(_ctx(w))[0]}
+
+
+# ---- pick one step: --list, --only, --skip -------------------------------------------------------
+
+def _cli(w, *args):
+    buf, err = io.StringIO(), io.StringIO()
+    from contextlib import redirect_stderr
+    with credential_guard(), redirect_stdout(buf), redirect_stderr(err):
+        code = main(["setup", "--home", str(w / "home"), "--root", str(w / "root"),
+                     "--sys-snapshot", str(w / "sys"), *args])
+    return code, buf.getvalue(), err.getvalue()
+
+
+def test_setup_list_names_every_step_and_changes_nothing(tmp_path):
+    w = _world(tmp_path)
+    before = _snapshot(w)
+    code, out, _ = _cli(w, "--list")
+    ids = {i.id for i in build_plan(_ctx(w))[0]}
+    assert code == 0 and ids and all(i in out for i in ids)
+    assert "Doctor found" not in out and "setup --only <id>" in out
+    code, out, _ = _cli(w, "--list", "--json")
+    assert {i["id"] for i in json.loads(out)["items"]} == ids
+    assert _snapshot(w) == before
+
+
+def test_setup_only_applies_one_step_and_skip_leaves_one_out(tmp_path):
+    w = _world(tmp_path)
+    settings = (w / "home" / ".claude" / "settings.json").read_text(encoding="utf-8")
+    code, out, _ = _cli(w, "--only", "caveman-telemetry-off", "--yes")
+    assert code == 0 and "Plan (1 change" in out and "Doctor found" not in out and "pinned installs" not in out
+    assert json.loads((w / "home" / ".caveman" / "cloud.json").read_text())["telemetry"]["enabled"] is False
+    assert (w / "home" / ".claude" / "settings.json").read_text(encoding="utf-8") == settings
+    assert (w / "root" / "CLAUDE.md").read_text(encoding="utf-8") == "# Project\n"
+    assert not (w / "home" / ".claude" / "skills" / "credits").exists()
+    w2 = _world(tmp_path / "second")
+    code, out, _ = _cli(w2, "--skip", "claude-rules-block,claude-credits-skill", "--yes", "--no-installs")
+    assert code == 0 and "[caveman-telemetry-off]" in out
+    assert (w2 / "root" / "CLAUDE.md").read_text(encoding="utf-8") == "# Project\n"
+    assert not (w2 / "home" / ".claude" / "skills" / "credits").exists()
+    assert json.loads((w2 / "home" / ".caveman" / "cloud.json").read_text())["telemetry"]["enabled"] is False
+
+
+def test_setup_only_without_yes_or_a_terminal_is_a_dry_run(tmp_path):
+    w = _world(tmp_path)
+    before = _snapshot(w)
+    code, out, _ = _cli(w, "--only", "caveman-telemetry-off")
+    assert code == 0 and "nothing was changed" in out and _snapshot(w) == before
+
+
+def test_setup_unknown_step_stops_before_changing_anything(tmp_path):
+    w = _world(tmp_path)
+    before = _snapshot(w)
+    for flag in ("--only", "--skip"):
+        code, out, err = _cli(w, flag, "no-such-step", "--yes")
+        assert code == 2 and out == "" and "No step named no-such-step" in err and "caveman-telemetry-off" in err
+    assert _snapshot(w) == before
 
 
 # ---- autopilot: shorter sessions with nothing to type -------------------------------------------

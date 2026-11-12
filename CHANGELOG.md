@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `setup --list`, `--only <id>` and `--skip <id>`: apply one step of the plan, or leave one out. Each step's id is shown in [brackets] in the plan. `--list` is read-only and skips the checkup; `--only` skips the checkup summary and the pinned-install offer. An unknown id stops with exit code 2 before anything changes.
+- `/credits` can apply a fix: after you say yes to one change, the agent runs `setup --only <id> --yes` for that step, with the same backup and `undo`. For anything outside the plan it says where to turn it off instead of editing files. Setup updates an older `/credits` that this tool wrote and still never touches one of your own.
+- `doctor` keeps per-log totals in `~/.tokenstretch/cache/doctor-logs.json`, so a repeat run doesn't re-read unchanged session logs. Measured on one machine with about 4 GB of logs: 21 s for the first run, 2 s for the next, identical output. `doctor --no-cache` writes nothing.
+
+### Changed
+- `setup` no longer starts a new `CLAUDE.md` or `AGENTS.md` in a project by default. Adding the rules block to an existing file is still in the plan; creating the file is listed as optional and applied only with `--only`.
+
+### Fixed
+- `docs/RELEASING.md` says what to do about the network-blocked test run on macOS, where `unshare` doesn't exist.
+
 ## [0.2.1] - 2026-11-12
 
 ### Added

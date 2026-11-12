@@ -95,6 +95,49 @@ _MEMO_LOCK = threading.Lock()
 _MEMO_MAX = 8192
 
 
+# Tags whose value is a small JSON-safe summary of one log (numbers, booleans, short lists), so
+# it can be kept between runs. Callers of these tags must accept a list where they built a tuple.
+DISK_TAGS = frozenset({"claude-w13", "claude-w14", "claude-w15", "codex-w14", "gemini-w14"})
+DISK_VERSION = 1
+DISK_MAX_BYTES = 8 << 20
+_DISK: dict | None = None      # {"path": Path, "rows": {"<tag>\t<file>": [sig, value]}, "dirty": bool}
+
+
+def open_disk_memo(path: Path, version: str = "") -> None:
+    """Keep DISK_TAGS results between runs in one local JSON file. A missing, damaged, oversized or
+    other-version file is treated as empty. Nothing is written until `save_disk_memo`."""
+    global _DISK
+    rows: dict = {}
+    try:
+        if path.is_file() and path.stat().st_size <= DISK_MAX_BYTES:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data.get("v") == [DISK_VERSION, version] and isinstance(data.get("rows"), dict):
+                rows = data["rows"]
+    except (OSError, ValueError):
+        rows = {}
+    _DISK = {"path": path, "rows": rows, "dirty": False, "version": version}
+
+
+def save_disk_memo() -> bool:
+    """Write the cache if it changed, dropping rows for logs that are gone. Never raises."""
+    global _DISK
+    d, _DISK = _DISK, None
+    if not d or not d["dirty"]:
+        return False
+    rows = {k: v for k, v in d["rows"].items() if os.path.exists(k.split("\t", 1)[1])}
+    try:
+        text = json.dumps({"v": [DISK_VERSION, d["version"]], "rows": rows}, separators=(",", ":"))
+        if len(text) > DISK_MAX_BYTES:
+            return False
+        d["path"].parent.mkdir(parents=True, exist_ok=True)
+        tmp = d["path"].with_name(d["path"].name + f".{os.getpid()}.tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, d["path"])
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
 def memo_by_stat(path: Path, tag: str, fn: Callable[[], object]):
     """fn() result for this file, recomputed only when its (inode, size, mtime) changes."""
     sig = stat_sig(path)
@@ -103,11 +146,21 @@ def memo_by_stat(path: Path, tag: str, fn: Callable[[], object]):
         hit = _MEMO.get(key)
     if hit is not None and sig is not None and hit[0] == sig:
         return hit[1]
+    disk = _DISK if tag in DISK_TAGS and sig is not None else None
+    dkey = f"{tag}\t{path}"
+    if disk is not None:
+        row = disk["rows"].get(dkey)
+        if isinstance(row, list) and len(row) == 2 and row[0] == list(sig):
+            return row[1]
     value = fn()
     with _MEMO_LOCK:
         if len(_MEMO) >= _MEMO_MAX:
             _MEMO.pop(next(iter(_MEMO)))
         _MEMO[key] = (sig, value)
+    # Only a log that has been still for a minute: a live session's row would be stale at once.
+    if disk is not None and time.time() - sig[2] / 1e9 > 60:
+        disk["rows"][dkey] = [list(sig), value]
+        disk["dirty"] = True
     return value
 
 

@@ -144,10 +144,12 @@ class SetupItem:
     done: str = ""      # past-tense progress line, e.g. "switched default model to sonnet"
     undo: str = f"{CLI_NAME} undo"
     notes: list[str] = field(default_factory=list)  # e.g. how to use the top model for hard work
+    optional: bool = False  # left out of the default plan; applied only when asked for by id
 
     def to_json(self) -> dict:
         return {
             "id": self.id, "adapter": self.adapter_id, "title": self.title, "why": self.why,
+            "optional": self.optional,
             "changes": [{k: v for k, v in c.items() if k != "content"} for c in self.changes],
             "done": self.done, "undo": self.undo, "notes": list(self.notes),
         }

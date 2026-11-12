@@ -82,7 +82,7 @@ Security model:
 
 Tests run the server on 127.0.0.1 with the socket guard narrowed to loopback only. Under `unshare -rn` the `p00_outer` run brings up `lo` (`ip link set lo up`) so they run there too; in a namespace without loopback they skip with the reason `LOOPBACK-UNAVAILABLE` instead of passing silently.
 
-`doctor` is read-only. Exit codes: 0 = clean (or info only), 1 = waste findings, 2 = a ToS or privacy high.
+`doctor` changes none of your files. Its only write is its own cache, `~/.tokenstretch/cache/doctor-logs.json`: per-log totals keyed by each session log's inode, size and modified time, so an unchanged log isn't parsed again. A log modified in the last minute is never cached, the file is dropped when the version changes, and `doctor --no-cache` neither reads nor writes it. Exit codes: 0 = clean (or info only), 1 = waste findings, 2 = a ToS or privacy high.
 
 ## Privacy guarantees
 

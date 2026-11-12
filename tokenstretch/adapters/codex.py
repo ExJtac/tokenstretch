@@ -659,7 +659,9 @@ class CodexAdapter(Adapter):
             return []
         return [SetupItem(
             id="codex-rules-block", adapter_id=self.id,
-            title="Add 5 short credit-saving rules to the project AGENTS.md",
+            optional=not path.is_file(),   # never start a new file in someone's project unasked
+            title=("Add 5 short credit-saving rules to the project AGENTS.md" if path.is_file()
+                   else "Create a project AGENTS.md with 5 short credit-saving rules"),
             why="Codex re-sends the conversation each step. Fresh tasks, narrow reads, and short replies keep that small.",
             changes=[{
                 "path": str(path), "kind": "modify" if path.is_file() else "create",
