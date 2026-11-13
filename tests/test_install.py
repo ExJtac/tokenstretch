@@ -90,7 +90,7 @@ def test_dry_run_default_writes_nothing_and_prints_plan(tmp_path):
     paths = {ch["path"] for ch in result.file_changes}
     assert any(Path(p).as_posix().endswith("/.claude/settings.json") for p in paths)
     assert any("permissions" in (ch.get("reason") or "").lower() or "deny" in (ch.get("reason") or "").lower()
-               or p.endswith("/.claude/settings.json") for p in paths for ch in result.file_changes)
+               or Path(p).as_posix().endswith("/.claude/settings.json") for p in paths for ch in result.file_changes)
     assert any("ccusage" in ch["path"] or "offline" in (ch.get("reason") or "").lower()
                for ch in result.file_changes)
 
@@ -573,7 +573,7 @@ def test_headroom_apply_uses_require_hashes_and_beacon_env(tmp_path):
 
     from tokenstretch.api_proxy import HEADROOM_TELEMETRY_ENV, plan_proxy_file_changes
     planned = plan_proxy_file_changes(ctx, "headroom", "127.0.0.1")
-    settings = next(ch for ch in planned if ch["path"].endswith("/.claude/settings.json"))
+    settings = next(ch for ch in planned if Path(ch["path"]).as_posix().endswith("/.claude/settings.json"))
     env = json.loads(settings["content"]).get("env") or {}
     for key, val in HEADROOM_TELEMETRY_ENV.items():
         assert env.get(key) == val, key
@@ -581,7 +581,7 @@ def test_headroom_apply_uses_require_hashes_and_beacon_env(tmp_path):
     assert not str(env.get("ANTHROPIC_BASE_URL")).endswith("/v1")
     assert "HEADROOM_ALLOW_UNAUTHENTICATED_BIND" not in env
     assert "HEADROOM_PROXY_TOKEN" not in env
-    codex = next(ch for ch in planned if ch["path"].endswith("/.codex/config.toml"))
+    codex = next(ch for ch in planned if Path(ch["path"]).as_posix().endswith("/.codex/config.toml"))
     assert 'openai_base_url = "http://127.0.0.1:8787/v1"' in codex["content"]
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -165,6 +166,7 @@ def test_gemini_watch_and_live_sessions(tmp_path):
     assert [t["history_tokens"] for t in s["turns"]] == [12100, 20000]
     assert s["turns"][0]["tool_calls"] == 2 and s["turns"][0]["reads"] == []
     assert live[0]["history_tokens"] == 20000 and live[0]["model"] == "gemini-2.5-flash"
+    time.sleep(0.05)  # Windows clocks tick in ~15 ms steps; let the file age past the 1 microsecond cutoff
     assert GEM.watch_sessions(ctx, limit=5, max_age_s=0.000001) == []
 
 
