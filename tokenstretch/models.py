@@ -7,6 +7,7 @@ adapter (`plan_default_model`) and applies it with the same backup + manifest pa
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Callable
 
 from .context import Context
@@ -128,6 +129,43 @@ def effort_mix(sessions: list[dict]) -> dict:
         used += 1 if seen else 0
     return {"sessions": used, "read": len(sessions), "main": main, "helpers": helpers,
             "advice": _effort_advice(main, helpers)}
+
+
+def effort_by_session(sessions: list[dict]) -> list[dict]:
+    """One row per conversation: the model and effort most of its steps used, newest first.
+
+    Use it to check that a session you set to one model and effort was logged at that setting.
+    """
+    rows = []
+    for s in sorted(sessions, key=lambda s: s.get("last_write") or 0, reverse=True):
+        turns = s.get("turns") or []
+        if not turns:
+            continue
+        models = Counter(t.get("model") or "" for t in turns)
+        efforts = Counter(t.get("effort") for t in turns if t.get("effort") in LOGGED_EFFORTS)
+        rows.append({
+            "session": s.get("session") or "", "project": s.get("project") or "",
+            "model": models.most_common(1)[0][0], "models": len(models),
+            "effort": efforts.most_common(1)[0][0] if efforts else "", "efforts": len(efforts),
+            "steps": len(turns), "output": sum(int(t.get("output_tokens") or 0) for t in turns),
+            "helpers": len(s.get("helpers") or []),
+        })
+    return rows
+
+
+def format_effort_by_session(rows: list[dict]) -> list[str]:
+    if not rows:
+        return []
+    lines = ["", "Per conversation, newest first (the model and effort most steps used; * means it changed mid-way):"]
+    for r in rows:
+        model = r["model"] + ("*" if r["models"] > 1 else "")
+        effort = (r["effort"].upper() + ("*" if r["efforts"] > 1 else "")) if r["effort"] else "not logged"
+        helpers = f", {r['helpers']} helper{'s' if r['helpers'] != 1 else ''}" if r["helpers"] else ""
+        lines.append(f"  {r['session']}  {r['project'][-40:]}  {model}  {effort}  "
+                     f"{r['steps']} steps, {r['output']:,} output tokens{helpers}")
+    lines.append("If a row shows a different model or effort than the one you chose for that session, "
+                 "the setting did not take: set it again in the session itself.")
+    return lines
 
 
 def _effort_advice(main: dict, helpers: dict) -> list[str]:

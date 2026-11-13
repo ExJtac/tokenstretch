@@ -218,6 +218,27 @@ def test_model_effort_reports_the_logged_mix(tmp_path):
     assert "MEDIUM 12 steps (100%)" in text and "HIGH 12 steps (100%)" in text
 
 
+def test_model_effort_by_session_lists_each_conversation(tmp_path):
+    w = _effort_world(tmp_path, "medium", "high")
+    args = ["--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")]
+    buf = io.StringIO()
+    with redirect_stdout(buf), credential_guard():
+        assert main(["model", "effort", *args, "--by-session", "--json"]) == 0
+    rows = json.loads(buf.getvalue())["by_session"]
+    assert len(rows) == 1
+    assert rows[0]["model"] == "claude-sonnet-4-5" and rows[0]["effort"] == "medium"
+    assert rows[0]["steps"] == 12 and rows[0]["helpers"] == 2 and rows[0]["efforts"] == 1
+    buf = io.StringIO()
+    with redirect_stdout(buf), credential_guard():
+        assert main(["model", "effort", *args, "--by-session"]) == 0
+    text = buf.getvalue()
+    assert "claude-sonnet-4-5  MEDIUM  12 steps" in text and "2 helpers" in text
+    buf = io.StringIO()
+    with redirect_stdout(buf), credential_guard():
+        assert main(["model", "effort", *args]) == 0
+    assert "Per conversation" not in buf.getvalue()
+
+
 def test_model_effort_says_so_when_logs_record_none(tmp_path):
     w = _world(tmp_path, [_row(0, "claude-sonnet-4-5", 1000)])
     buf = io.StringIO()

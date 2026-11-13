@@ -317,7 +317,12 @@ def cmd_model(args) -> int:
         for ad in detected_adapters(ctx):
             sessions += ad.watch_sessions(ctx, limit=max(1, min(int(args.sessions), 50))) or []
         mix = effort_mix(sessions)
-        print(json.dumps(mix, indent=2) if args.json else "\n".join(format_effort_mix(mix)))
+        lines = format_effort_mix(mix)
+        if args.by_session:
+            from .models import effort_by_session, format_effort_by_session
+            mix["by_session"] = effort_by_session(sessions)
+            lines += format_effort_by_session(mix["by_session"])
+        print(json.dumps(mix, indent=2) if args.json else "\n".join(lines))
         return 0
     return run_default(ctx, args.tier, tool=args.tool, apply=bool(args.apply) and not args.dry_run)
 
@@ -591,6 +596,8 @@ def main(argv=None) -> int:
     me = msub.add_parser("effort", help="the reasoning effort your recent sessions ran at (read from local logs)")
     _add_context_args(me)
     me.add_argument("--sessions", type=int, default=10, help="newest conversations to read per tool (default 10)")
+    me.add_argument("--by-session", action="store_true",
+                    help="also list each conversation with the model and effort it was logged at")
     me.add_argument("--json", action="store_true")
     md = msub.add_parser("default", help="set a tool's default model by tier (dry-run unless --apply)")
     _add_context_args(md)
