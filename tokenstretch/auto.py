@@ -96,7 +96,18 @@ def newest_note(root: Path, now: float, fresh_s: float = FRESH_S) -> tuple[Path,
     return best
 
 
-def session_start(payload: dict, now: float) -> dict | None:
+def session_start(payload: dict, now: float, home: Path | None = None) -> dict | None:
+    reply = _session_start(payload, now)
+    if payload.get("source") in ("startup", "clear", "resume"):
+        from .dashlink import reminder_text
+        extra = reminder_text(home if home is not None else Path.home(), payload, now)
+        if extra:
+            ctx = reply["hookSpecificOutput"]["additionalContext"] + "\n" if reply else ""
+            reply = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx + extra}}
+    return reply
+
+
+def _session_start(payload: dict, now: float) -> dict | None:
     if payload.get("source") == "compact":
         return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": CARRY_ON}}
     if payload.get("source") not in ("startup", "clear"):
@@ -116,7 +127,8 @@ def session_start(payload: dict, now: float) -> dict | None:
         "something else, ignore the note and do not read it.")}}
 
 
-def run_auto(stdin=None, out: Callable[[str], None] = print, now: Callable[[], float] = time.time) -> int:
+def run_auto(stdin=None, out: Callable[[str], None] = print, now: Callable[[], float] = time.time,
+             home: Path | None = None) -> int:
     """Always exits 0. Any failure prints nothing."""
     try:
         payload = parse_payload(read_raw(sys.stdin if stdin is None else stdin))
@@ -126,7 +138,7 @@ def run_auto(stdin=None, out: Callable[[str], None] = print, now: Callable[[], f
         elif event == "PostCompact":
             save_summary(payload, now())
         elif event == "SessionStart":
-            reply = session_start(payload, now())
+            reply = session_start(payload, now(), home)
             if reply:
                 out(json.dumps(reply))
     except Exception:  # noqa: BLE001 - a hook must never get in the way

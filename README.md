@@ -229,6 +229,8 @@ Setup also adds a prompt hook, `tokenstretch nudge`. When you send a prompt and 
 ```bash
 tokenstretch dashboard            # opens http://127.0.0.1:8765/<one-time key>/ in your browser
 tokenstretch dashboard --no-open  # just print the link; --port 9000 to pick a port
+tokenstretch dashboard --url      # print the link of the dashboard that is running now
+tokenstretch dashboard --remind on|off   # the once-per-session link reminder (see below)
 ```
 
 One page, refreshed every 5 seconds while it runs:
@@ -243,10 +245,13 @@ One page, refreshed every 5 seconds while it runs:
 - **Setup status:** what tokenstretch applied and whether `tokenstretch undo` can restore it.
 - **Token-saving tools** found on your machine and whether their telemetry is off.
 - **Since setup** (a before/after from your own logs, clearly labeled observational) and **bench results** if you've measured one.
+- **Pace**, **team queue**, **cost**, **redo work**, **start-up size** and **watch** panels. Each one reads the same data as its command (`pace`, `queue list`, `model cost`, `model rework`, `startup`, `watch`) and shows a one-line reason when there is nothing to show yet. Cost figures are estimates from published price ratios, not a bill, and the redo-work and start-up numbers are heuristics from your own logs.
 
 The page opens instantly and shows "warming up" while it reads your logs in the background; usage numbers and doctor results fill in as they're ready (seconds on a large log folder, the first time). After that it only reads what changed. `--weeks 8` sets how far back it reads.
 
-It's read-only: it never changes a file, it only shows the commands to run. It listens on 127.0.0.1 only, needs the one-time key in the link for every request, and loads nothing from the internet. Press Ctrl-C to stop it.
+It's read-only: it never changes your files, it only shows the commands to run. The one file it writes is its own link file, `~/.tokenstretch/dashboard.json`, while it runs, and it removes that file when it stops. It listens on 127.0.0.1 only, needs the one-time key in the link for every request, and loads nothing from the internet. Press Ctrl-C to stop it.
+
+**Link reminder (off until you turn it on).** `tokenstretch setup` offers one extra, undoable item for Claude Code that switches on a reminder. When it is on, the session-start hook that setup already installs adds one line to a new session's starting context, once per session, that asks the assistant to end its last message with "View your tokenstretch dashboard at <link>" if the dashboard is running, or with the `tokenstretch dashboard` command if it is not. It is a request to the assistant, so whether the line shows up is up to the assistant. It never asks you anything and is meant not to stop the task. The link only ever points at 127.0.0.1. The switch is the file `~/.tokenstretch/dashboard-remind.json`; `tokenstretch dashboard --remind off` (or `tokenstretch undo` after setup) turns it off at once. A link file left behind by a dashboard that crashed is ignored when its port no longer answers.
 
 `tokenstretch report --weekly` writes the same weekly numbers to a self-contained HTML file under `~/.tokenstretch/reports/` (`--weeks 8`, `--out FILE`, or `--json`).
 

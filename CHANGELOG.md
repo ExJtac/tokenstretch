@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- Dashboard panels for pace, the team queue, cost, redo work, start-up size and watch warnings. Each reads the same code as its command, refreshes on its own schedule, and shows a one-line reason when it has no data. `tokenstretch dashboard --url` prints the link of the running dashboard. A link reminder, off by default, can be switched on by `setup` (undoable) or `dashboard --remind on`: the session-start hook then asks the assistant to end its last message with the loopback dashboard link, once per session. The running dashboard writes `~/.tokenstretch/dashboard.json` and removes it on exit.
+
 ### Changed
 - README: `pace auto` needs a session where the status line runs (Claude Code in a terminal). Sessions inside the desktop app stored no reading in our check.
 
