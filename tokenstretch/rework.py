@@ -279,5 +279,7 @@ def format_rework(view: dict) -> list[str]:
                      "edit paths or command results here.")
     if view["skipped_sessions"]:
         lines.append(f"{view['skipped_sessions']} session(s) skipped: the raw log could not be matched to its steps.")
-    lines += [view["left_out"], "", view["comparison"]]
+    lines += [view["left_out"],
+              "Only the newest part of a long log is read (about the last 4 MB), and edits made through shell "
+              "commands are not seen, so the counts are a floor.", "", view["comparison"]]
     return lines

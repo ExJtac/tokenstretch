@@ -248,6 +248,8 @@ def done_task(root, tid: str, note: str = "") -> dict:
     if note:
         t["notes"].append({"kind": "done", "note": note})
     _write_atomic(qd / f"{tid}.json", t)
+    with contextlib.suppress(OSError):
+        _claim_path(qd, tid).unlink()
     return t
 
 
