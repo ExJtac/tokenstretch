@@ -197,3 +197,27 @@ def test_crlf_file_keeps_line_endings(tmp_path):
     data = (w / "root" / "CLAUDE.md").read_bytes()
     assert b"\r\n" in data and b"\n" not in data.replace(b"\r\n", b"")
     assert b"use the `release-process` skill." in data
+
+
+def test_file_shared_with_another_tool_is_planned_with_a_note(tmp_path):
+    w = _world(tmp_path, "# Project\n\n" + STYLE + "\n" + RELEASE)
+    (w / "home" / ".copilot").mkdir()
+    out = _run(w, "--no-diff")
+    assert "Planned moves (1)" in out
+    assert "GitHub Copilot CLI also reads this file" in out and "only the pointer line" in out
+
+
+def test_project_root_memory_file_is_not_counted_but_auto_memory_is(tmp_path):
+    import re
+    from tokenstretch.adapters.claude_code import ClaudeCodeAdapter
+    from tokenstretch.context import build_context
+    w = _world(tmp_path, "# Project\n")
+    root = w / "root"
+    (root / "MEMORY.md").write_text("- a note\n" * 50, encoding="utf-8")
+    ctx = build_context(w / "home", root, w / "sys")
+    names = lambda: [Path(f.path) for f in ClaudeCodeAdapter().list_instruction_files(ctx)]
+    assert root / "MEMORY.md" not in names()
+    auto = w / "home" / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(ctx.root)) / "memory" / "MEMORY.md"
+    auto.parent.mkdir(parents=True)
+    auto.write_text("- [Note](note.md) - hook\n", encoding="utf-8")
+    assert auto in names()

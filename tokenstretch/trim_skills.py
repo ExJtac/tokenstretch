@@ -199,9 +199,6 @@ def _eligible(f, ctx: Context) -> str | None:
         return ""
     if f.text is None or not f.editable:
         return f.note or "not opened"
-    others = [n for t, n in zip(f.tools, f.tool_names) if t != "claude-code"]
-    if others:
-        return f"also loaded by {', '.join(others)}, which does not read Claude Code skills"
     if not (_under(f.real, ctx.root) or f.scope == "user"):
         return "outside the project and ~/.claude"
     return None
@@ -237,6 +234,7 @@ def plan_skills(ctx: Context, min_tokens: int = DEFAULT_MIN_TOKENS, adapters=Non
             if body_tokens < min_tokens or not looks_like_procedure(sec):
                 continue
             label = {"file": f.display, "heading": sec.heading, "tokens": approx_tokens("\n".join(sec.lines))}
+            others = [n for t, n in zip(f.tools, f.tool_names) if t != "claude-code"]
             if any(sec.start <= r < sec.end for r in rules):
                 kept.append({**label, "reason": f"contains the {PRODUCT_NAME} rules block"})
                 continue
@@ -260,7 +258,7 @@ def plan_skills(ctx: Context, min_tokens: int = DEFAULT_MIN_TOKENS, adapters=Non
             mv = {**label, "slug": slug, "description": desc, "pointer": pointer,
                   "skill_path": str(sdir / "SKILL.md"), "skill_display": _show_skill(sdir / "SKILL.md", ctx),
                   "removed": approx_tokens("\n".join(sec.lines)), "pointer_tokens": approx_tokens(pointer),
-                  "listing_tokens": approx_tokens(f"{slug} {desc}"), "_sec": sec}
+                  "listing_tokens": approx_tokens(f"{slug} {desc}"), "also_loaded_by": others, "_sec": sec}
             if mv["removed"] - mv["pointer_tokens"] - mv["listing_tokens"] <= 0:
                 kept.append({**label, "reason": "moving it adds more per turn than it removes"})
                 continue
@@ -328,6 +326,9 @@ def format_plan(data: dict, *, show_diff: bool = True) -> list[str]:
             out.append(f"  {m['file']}: \"{m['heading']}\" (~{m['tokens']:,} tokens approx.)")
             out.append(f"    -> {m['skill_display']}")
             out.append(f"    description: {m['description']}")
+            if m.get("also_loaded_by"):
+                out.append(f"    note: {', '.join(m['also_loaded_by'])} also reads this file and does not read Claude Code "
+                           f"skills, so it will see only the pointer line.")
     else:
         out.append("Planned moves: none.")
     if data["kept"]:
