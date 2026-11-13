@@ -1,4 +1,4 @@
-"""The dashboard's link file and the once-per-session "View your dashboard" reminder.
+"""The dashboard's link file and the "View your dashboard" reminder.
 
 Two small state files live under the state directory (`~/.tokenstretch/`):
 
@@ -8,7 +8,7 @@ Two small state files live under the state directory (`~/.tokenstretch/`):
     until `tokenstretch setup` (or `dashboard --remind on`) turns it on.
 
 The reminder rides the SessionStart hook that `setup` already installs. It adds one short line to
-the session's starting context, once per session, asking the assistant to end its last message with
+the session's starting context, once per session and again after each compaction, asking the assistant to end each finished task with
 the link. It never interrupts the task and never asks the user anything.
 
 Only the loopback address is ever produced (http://127.0.0.1:<port>/<token>/). The token is written
@@ -113,7 +113,7 @@ def set_remind(home: Path | str, on: bool) -> None:
 def setup_change(home: Path | str) -> dict:
     """The change `setup` plans for the switch (core file, backed up and undone like any other)."""
     return {"path": str(remind_path(home)), "kind": "modify" if remind_path(home).is_file() else "create", "content": json.dumps({"remind": True}) + "\n",
-            "reason": "lets the session-start hook ask the assistant to end with your dashboard link (once per session)",
+            "reason": "lets the session-start hook ask the assistant to end each finished task with your dashboard link (asked once per session)",
             "key": "dashboard-remind"}
 
 
@@ -123,20 +123,23 @@ def _mark(home: Path | str, session: str) -> Path | None:
     return state_dir(home) / MARK_DIR / f"{session}.json" if SAFE_ID.fullmatch(session or "") else None
 
 
-def reminder_text(home: Path | str, payload: dict, now: float, check=_answers) -> str | None:
-    """One short line for this session's starting context, or None (off, no safe session id, or already given)."""
+def reminder_text(home: Path | str, payload: dict, now: float, check=_answers, again: bool = False) -> str | None:
+    """One short line for this session's context, or None (off, no safe session id, or already given).
+
+    `again=True` gives the line a second time in the same session: a compaction summarizes the first
+    one away, so the hook repeats it then, with the link as it is at that moment."""
     try:
         mark = _mark(home, str(payload.get("session_id") or ""))
         if mark is None:
             return None  # no id: cannot say "once", so say nothing (and nothing is read)
-        if not remind_enabled(home) or mark.exists():
+        if not remind_enabled(home) or (mark.exists() and not again):
             return None
         url = live_url(home, check)
         if url:
-            text = (f"{PRODUCT_NAME}: when you finish the user's task, end your last message with this line: "
+            text = (f"{PRODUCT_NAME}: each time you finish a task for the user, end that message with this line: "
                     f"View your tokenstretch dashboard at {url}")
         else:
-            text = (f"{PRODUCT_NAME}: when you finish the user's task, end your last message with this line: "
+            text = (f"{PRODUCT_NAME}: each time you finish a task for the user, end that message with this line: "
                     f"Run `{CLI_NAME} dashboard` to see your usage dashboard.")
         mark.parent.mkdir(parents=True, exist_ok=True)
         mark.write_text(json.dumps({"ts": now}), encoding="utf-8")

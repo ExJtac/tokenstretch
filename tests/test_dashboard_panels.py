@@ -215,7 +215,7 @@ def test_old_markers_are_forgotten(tmp_path):
     assert not marker.exists()
 
 
-def test_hook_adds_the_reminder_to_session_start_only_once(tmp_path, monkeypatch):
+def test_hook_adds_the_reminder_once_at_session_start_and_again_after_a_compaction(tmp_path, monkeypatch):
     home = _home(tmp_path)
     monkeypatch.setattr(dashlink, "_answers", lambda port, timeout=0.4: True)
     monkeypatch.setattr(dashlink, "live_url", lambda h, check=None: URL)
@@ -226,9 +226,10 @@ def test_hook_adds_the_reminder_to_session_start_only_once(tmp_path, monkeypatch
     ctx = first[0]["hookSpecificOutput"]["additionalContext"]
     assert first[0]["hookSpecificOutput"]["hookEventName"] == "SessionStart" and URL in ctx
     assert _hook(home, {"hook_event_name": "SessionStart", "source": "resume", "session_id": "s1", "cwd": str(proj)}) == []
-    # A compaction restarts the work in the same session: no second reminder, the carry-on note is untouched.
-    comp = _hook(home, {"hook_event_name": "SessionStart", "source": "compact", "session_id": "s9", "cwd": str(proj)})
-    assert "carry on" in comp[0]["hookSpecificOutput"]["additionalContext"] and URL not in json.dumps(comp)
+    # A compaction summarizes the first reminder away: it is given again, after the carry-on note.
+    comp = _hook(home, {"hook_event_name": "SessionStart", "source": "compact", "session_id": "s1", "cwd": str(proj)})
+    ctx = comp[0]["hookSpecificOutput"]["additionalContext"]
+    assert "carry on" in ctx and ctx.index("carry on") < ctx.index(URL)
 
 
 def test_hook_keeps_the_handoff_note_and_adds_the_reminder(tmp_path, monkeypatch):
@@ -322,3 +323,22 @@ def test_run_dashboard_leaves_a_link_while_running_and_removes_it(tmp_path, loop
     srv.shutdown()
     t.join(10)
     assert not dashlink.link_path(home).exists() and dashlink.live_url(home) is None
+
+
+def test_reminder_is_given_again_after_a_compaction_with_the_link_of_that_moment(tmp_path):
+    from tokenstretch import auto
+    home = _home(tmp_path)
+    dashlink.set_remind(home, True)
+    first = dashlink.reminder_text(home, {"session_id": "s1"}, NOW)
+    assert first and "each time you finish a task" in first and "http" not in first
+    assert dashlink.reminder_text(home, {"session_id": "s1"}, NOW + 5) is None
+    dashlink.write_link(home, URL, 8765)
+    again = dashlink.reminder_text(home, {"session_id": "s1"}, NOW + 9, check=lambda p: True, again=True)
+    assert again and f"View your tokenstretch dashboard at {URL}" in again
+    dashlink.clear_link(home, URL)
+    reply = auto.session_start({"source": "compact", "session_id": "s1"}, NOW + 10, home=home)
+    ctx = reply["hookSpecificOutput"]["additionalContext"]
+    assert auto.CARRY_ON in ctx and "tokenstretch dashboard" in ctx
+    dashlink.set_remind(home, False)
+    reply = auto.session_start({"source": "compact", "session_id": "s1"}, NOW + 11, home=home)
+    assert reply["hookSpecificOutput"]["additionalContext"] == auto.CARRY_ON

@@ -327,7 +327,7 @@ Setup also adds a prompt hook, `tokenstretch nudge`. When you send a prompt and 
 tokenstretch dashboard            # opens http://127.0.0.1:8765/<one-time key>/ in your browser
 tokenstretch dashboard --no-open  # just print the link; --port 9000 to pick a port
 tokenstretch dashboard --url      # print the link of the dashboard that is running now
-tokenstretch dashboard --remind on|off   # the once-per-session link reminder (see below)
+tokenstretch dashboard --remind on|off   # the link reminder (see below)
 ```
 
 One page, refreshed every 5 seconds while it runs:
@@ -348,7 +348,7 @@ The page opens instantly and shows "warming up" while it reads your logs in the 
 
 It's read-only: it never changes your files, it only shows the commands to run. It writes only inside its own folder, `~/.tokenstretch/`: a link file, `dashboard.json`, while it runs (removed when it stops), and the read caches under `cache/` that hold times, model names and token counts so later reads are fast. It listens on 127.0.0.1 only, needs the one-time key in the link for every request, and loads nothing from the internet. Press Ctrl-C to stop it.
 
-**Link reminder (off until you turn it on).** `tokenstretch setup` offers one extra, undoable item for Claude Code that switches on a reminder. When it is on, the session-start hook that setup already installs adds one line to a new session's starting context, once per session, that asks the assistant to end its last message with "View your tokenstretch dashboard at <link>" if the dashboard is running, or with the `tokenstretch dashboard` command if it is not. It is a request to the assistant, so whether the line shows up is up to the assistant. It never asks you anything and is meant not to stop the task. The link only ever points at 127.0.0.1. The switch is the file `~/.tokenstretch/dashboard-remind.json`; `tokenstretch dashboard --remind off` (or `tokenstretch undo` after setup) turns it off at once. A link file left behind by a dashboard that crashed is ignored when its port no longer answers.
+**Link reminder (off until you turn it on).** `tokenstretch setup` offers one extra, undoable item for Claude Code that switches on a reminder. When it is on, the session-start hook that setup already installs adds one line to a new session's starting context, and again after each automatic summary, that asks the assistant to end each finished task with "View your tokenstretch dashboard at <link>" if the dashboard is running, or with the `tokenstretch dashboard` command if it is not. It is a request to the assistant, so whether the line shows up is up to the assistant. It never asks you anything and is meant not to stop the task. The link only ever points at 127.0.0.1. The switch is the file `~/.tokenstretch/dashboard-remind.json`; `tokenstretch dashboard --remind off` (or `tokenstretch undo` after setup) turns it off at once. A link file left behind by a dashboard that crashed is ignored when its port no longer answers.
 
 `tokenstretch report --weekly` writes the same weekly numbers to a self-contained HTML file under `~/.tokenstretch/reports/` (`--weeks 8`, `--out FILE`, or `--json`).
 

@@ -818,7 +818,7 @@ def main(argv=None) -> int:
                       help="weeks of usage logs to read (default 8); older log files are skipped unopened")
     dash.add_argument("--url", action="store_true", help="print the running dashboard's link and exit (1 if none is running)")
     dash.add_argument("--remind", choices=["on", "off"],
-                      help="turn the once-per-session 'view your dashboard' reminder on or off, then exit")
+                      help="turn the 'view your dashboard' reminder on or off, then exit")
 
     tr = sub.add_parser("trim", help="find waste in instruction files resent every turn; propose a safe trim (dry-run unless --apply)")
     _add_context_args(tr)
