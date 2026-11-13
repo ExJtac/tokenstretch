@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-13
+
 ### Changed
 - Dashboard link reminder: the assistant is now asked to end each finished task with the dashboard link, not only the last message of a session. The request is repeated after each automatic summary, which used to drop it, and the link is looked up again at that time.
 
