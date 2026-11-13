@@ -21,11 +21,17 @@ python -m tokenstretch undo       # restore the latest manifest under --home
 python -m tokenstretch watch [--once] [--interval 10] [--max-context 150000] [--max-reads 3] [--notify]
 python -m tokenstretch statusline [--max-context 150000] [--max-reads 3] [--wrap COMMAND]   # reads the tool's JSON on stdin
 python -m tokenstretch startup [--all] [--json] [--no-save]   # what a session carries before the first prompt
+python -m tokenstretch startup --agent [--json] [--no-save]   # lean profile for a worker agent: what to switch off and what it saves; writes nothing
 python -m tokenstretch auto   # hook entry for PreCompact, PostCompact and SessionStart; reads the tool's JSON on stdin
 python -m tokenstretch nudge [--max-context 150000] [--max-reads 3]   # prompt-hook entry; reads the tool's JSON on stdin, prints hook JSON or nothing
 python -m tokenstretch brief "task" [--files P..] [--from P..] [--done TEXT] [--helper] [--review] [--max-reads N] [--split N] [--no-build] [--rule TEXT] [--preset NAME] [--max-searches N] [--max-fetches N] [--brief-only] [--check] [--json]
 python -m tokenstretch model suggest "task" [--file F] [--json]
 python -m tokenstretch model cost [--grid] [--sessions 12] [--json]   # where the credits went per model and effort, price-weighted; read-only
+python -m tokenstretch model rework [--sessions 10] [--json]   # redo-work estimate per model and effort (heuristic); read-only
+python -m tokenstretch queue add "task" [--files P..] [--done TEXT] [--preset NAME] [--hard] | --from-plan FILE   # one task, or one per plan step
+python -m tokenstretch queue next [--agent NAME]       # gate, then claim oldest open task and print its brief; exit 3 over the pace line, 4 empty
+python -m tokenstretch queue done ID [--note TEXT]  |  queue fail ID --note TEXT   # fail: back to open, needs-lead after 2
+python -m tokenstretch queue list [--json]  |  queue release --stale MINUTES  |  queue touch ID  |  queue loop-prompt
 python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
 python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8]
 python -m tokenstretch model default --tier light|mid|top [--tool claude|codex|gemini] [--apply]

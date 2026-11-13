@@ -257,6 +257,11 @@ def cmd_startup(args) -> int:
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
     data = build(ctx, remember=not args.no_save)
+    if getattr(args, "agent", False):  # --- worker agent profile block ---
+        from .startup import agent_profile, format_agent
+        profiles = [agent_profile(d) for d in data]
+        print(json.dumps(profiles, indent=2) if args.json else "\n".join(format_agent(profiles)))
+        return 0
     if args.json:
         print(json.dumps(data, indent=2))
     else:
@@ -338,6 +343,15 @@ def cmd_model(args) -> int:
             return 0
         print(json.dumps(view, indent=2) if args.json else "\n".join(format_cost_view(view)))
         return 0
+    if args.model_cmd == "rework":  # --- rework meter block ---
+        from .rework import format_rework, rework_view
+        from .setup import detected_adapters
+        sessions = []
+        for ad in detected_adapters(ctx):
+            sessions += ad.watch_sessions(ctx, limit=max(1, min(int(args.sessions), 50))) or []
+        view = rework_view(sessions)
+        print(json.dumps(view, indent=2) if args.json else "\n".join(format_rework(view)))
+        return 0
     return run_default(ctx, args.tier, tool=args.tool, apply=bool(args.apply) and not args.dry_run)
 
 
@@ -395,6 +409,70 @@ def cmd_brief(args) -> int:
     else:
         print("\n".join(format_report(data)))
     return 1 if args.check and data["lint"] else 0
+
+
+# --- team queue block ---
+def cmd_queue(args) -> int:
+    from . import queue as q
+
+    root = Path(getattr(args, "root", None) or Path.cwd()).expanduser().resolve()
+    home = Path(args.home).expanduser().resolve() if getattr(args, "home", None) else Path.home()
+    sub = args.queue_cmd
+    if sub == "add":
+        preset = args.preset or ""
+        if args.from_plan:
+            try:
+                text = args.from_plan.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                print(f"cannot read {args.from_plan}: {exc}", file=sys.stderr)
+                return 2
+            tasks = q.add_from_plan(root, text, preset=preset)
+            if not tasks:
+                print("no numbered steps found in the plan", file=sys.stderr)
+                return 2
+        else:
+            text = " ".join(args.task or []).strip()
+            if not text:
+                print('describe the task: queue add "fix the retry" --files src/a.py --done "tests pass"  (or --from-plan FILE)',
+                      file=sys.stderr)
+                return 2
+            tasks = [q.add_task(root, text, files=args.files or [], done=args.done or "", preset=preset, hard=args.hard)]
+        for t in tasks:
+            print(f"added {t['id']}: {t['task'][:70]}")
+        return 0
+    if sub == "next":
+        gate = q.pace_gate(home)
+        if not gate["open"]:
+            print(f"Over the even-pace line: wait about {gate['wait_seconds']} seconds, then ask again. "
+                  "Start no new task.")
+            return q.EXIT_OVER_LINE
+        task, why = q.claim_next(root, args.agent or "")
+        if task is None:
+            print("Open tasks exist but wait on files another agent holds." if why == "blocked"
+                  else "The queue has no open task.")
+            return q.EXIT_EMPTY
+        print(q.next_text(task))
+        return 0
+    if sub in ("done", "fail"):
+        try:
+            t = q.done_task(root, args.id, args.note or "") if sub == "done" else q.fail_task(root, args.id, args.note)
+        except KeyError as exc:
+            print(str(exc).strip("'"), file=sys.stderr)
+            return 2
+        print(f"{t['id']}: {t['status']}" + (" (needs the lead: failed twice)" if t["status"] == "needs-lead" else ""))
+        return 0
+    if sub == "list":
+        rows = q.list_view(root)
+        print(json.dumps(rows, indent=2) if args.json else "\n".join(q.format_list(rows)))
+        return 0
+    if sub == "release":
+        ids = q.release_stale(root, args.stale)
+        print(f"released {len(ids)} stale claim(s)" + (": " + ", ".join(ids) if ids else ""))
+        return 0
+    if sub == "touch":
+        return 0 if q.touch_task(root, args.id) else 2
+    print(q.loop_prompt())
+    return 0
 
 
 def cmd_trim(args) -> int:
@@ -550,6 +628,8 @@ def main(argv=None) -> int:
     st.add_argument("--all", action="store_true", help="list every part, not just the largest 12")
     st.add_argument("--no-save", action="store_true",
                     help="don't remember this run (it is used to size a connector by difference next time)")
+    st.add_argument("--agent", action="store_true",  # --- worker agent profile block ---
+                    help="a lean profile for a worker agent: what to switch off, tokens saved, and the saving over 50 steps (prints settings; writes nothing)")
     st.add_argument("--json", action="store_true")
 
     sub.add_parser("auto", help="hook entry: resumable compaction summaries and note pickup in a new chat "
@@ -612,6 +692,37 @@ def main(argv=None) -> int:
     br.add_argument("--check", action="store_true", help="only list what is missing; exit 1 if anything is")
     br.add_argument("--json", action="store_true")
 
+    # --- team queue block ---
+    qp = sub.add_parser("queue", help="file-based task queue for an autonomous team: agents pull briefs, no lead steps")
+    qsub = qp.add_subparsers(dest="queue_cmd", required=True)
+    qa = qsub.add_parser("add", help="add a task (or one task per step of a numbered plan)")
+    _add_context_args(qa)
+    qa.add_argument("task", nargs="*", help="the task, in a sentence")
+    qa.add_argument("--files", nargs="+", metavar="PATH", help="the only files the agent may change")
+    qa.add_argument("--done", help='the check, e.g. "tests pass"')
+    qa.add_argument("--preset", choices=sorted(_BRIEF_PRESETS), help="brief preset")
+    qa.add_argument("--hard", action="store_true", help="mark a hard step (suggests the top model)")
+    qa.add_argument("--from-plan", type=Path, metavar="FILE", help="split a numbered plan into one task per step")
+    qn = qsub.add_parser("next", help="check the pace gate, claim the oldest open task, print its brief (exit 3 over line, 4 empty)")
+    _add_context_args(qn)
+    qn.add_argument("--agent", help="a name for the claim")
+    for name, text in (("done", "mark a task done"), ("fail", "send a task back to open with a note (needs-lead after 2)")):
+        qx = qsub.add_parser(name, help=text)
+        _add_context_args(qx)
+        qx.add_argument("id")
+        qx.add_argument("--note", required=(name == "fail"))
+    ql = qsub.add_parser("list", help="every task and its state")
+    _add_context_args(ql)
+    ql.add_argument("--json", action="store_true")
+    qr = qsub.add_parser("release", help="drop claims with no update for MINUTES")
+    _add_context_args(qr)
+    qr.add_argument("--stale", type=float, required=True, metavar="MINUTES")
+    qt = qsub.add_parser("touch", help="mark a claim as still alive")
+    _add_context_args(qt)
+    qt.add_argument("id")
+    qsub.add_parser("loop-prompt", help="print the standing prompt for a queue worker session").add_argument(
+        "--home", type=Path, help=argparse.SUPPRESS)
+
     m = sub.add_parser("model", help="heuristic model picker and a backed-up default-model switch")
     msub = m.add_subparsers(dest="model_cmd", required=True)
     ms = msub.add_parser("suggest", help="suggest light / mid / top for a task (local rules, no model calls)")
@@ -631,6 +742,11 @@ def main(argv=None) -> int:
     mc.add_argument("--grid", action="store_true",
                     help="one line per model and effort: what a step cost on average, dearest first")
     mc.add_argument("--json", action="store_true")
+    # --- rework meter block ---
+    mr = msub.add_parser("rework", help="estimate how much spend went to redo work, per model and effort (heuristic)")
+    _add_context_args(mr)
+    mr.add_argument("--sessions", type=int, default=10, help="newest conversations to read per tool (default 10)")
+    mr.add_argument("--json", action="store_true")
     md = msub.add_parser("default", help="set a tool's default model by tier (dry-run unless --apply)")
     _add_context_args(md)
     md.add_argument("--tier", choices=("light", "mid", "top"), required=True)
@@ -673,5 +789,7 @@ def main(argv=None) -> int:
         return cmd_brief(a)
     if a.cmd == "trim":
         return cmd_trim(a)
+    if a.cmd == "queue":  # --- team queue block ---
+        return cmd_queue(a)
     print(f"{a.cmd}: not implemented yet", file=sys.stderr)
     return 3

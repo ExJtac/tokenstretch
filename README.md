@@ -33,6 +33,7 @@ Stars, bug reports, and pull requests help just as much.
 - **A brief writer.** `brief "<task>"` turns a one-line task into a brief that names the files, the notes to work from, what not to do again, the stop condition, and the reply length, and lists what your task leaves open.
 - **A model and effort picker.** `model suggest "<task>"` recommends light, mid, or top for a task, a reasoning effort to go with it, and names the model for each tool you have. `model default --tier mid` changes your default model, with a backup and undo.
 - **A price view per model and effort.** `model cost` weighs your recent sessions' tokens by published price ratios and shows, for each model and effort, where the credits went (history re-read, history saved again, new content, output and thinking) and the one change that removes the most. `model cost --grid` puts the average cost of a step side by side.
+- **A team that lasts at full effort.** `queue` hands agents one task per fresh session from a file-based queue, `startup --agent` shows what a worker session can switch off, and `model rework` estimates what redo work cost per model and effort. See [Run a team at full effort](#run-a-team-at-full-effort).
 - **A shareable report.** `report` writes a single self-contained HTML file with the findings, the plan, what was applied, undo commands, and current status. It loads nothing from the internet.
 - **A weekly report.** `report --weekly` adds up your local usage logs per week: tokens by type and by model, your biggest session histories, waste spots, and a before/after view since setup. Cost appears only where your logs report it.
 - **A local dashboard.** `dashboard` opens one live page on your own machine with all of the above, updated every 5 seconds. See [Dashboard](#dashboard).
@@ -272,6 +273,32 @@ The `Price` line puts the block in price terms for the model the newest session 
 Sizes are estimates (bytes / 4). Skills marked `disable-model-invocation` are left out because they aren't listed to the model. Instruction files deeper in the project are left out because they load only when the agent works in that folder. `--all` lists every part and `--json` prints the data. Claude Code only for now.
 
 Connector tool lists aren't in any local file, so they are sized by difference. Each run remembers the unsized remainder for the current set of connectors in `~/.tokenstretch/startup-history.json` (connector names and token counts only). Turn one connector off, start a new session, and run `startup` again: it reports how much lighter sessions now start, and if you turn the connector back on it is listed with that size. The two numbers come from two different sessions, so a change under 2K tokens is ignored and the size is approximate. When the local files and connectors are the same as last time but the start moved by 2K or more, it says so: a plugin or an app connector changed. `--no-save` keeps the run read-only.
+
+<!-- team: full-effort section -->
+## Run a team at full effort
+
+These commands are on `main` and ship in the next release after 0.4.0. Until then, run them from a checkout (`python -m tokenstretch ...`).
+
+Lowering the effort of a long-running team is not the only way to make a plan's weekly limit last. On logs from a team at a top effort, most of the spend was not thinking: about 60% was old history saved to the cache again (after a pause longer than the cache lifetime, or in a resumed session), about 27% was history re-read, and about 10% was output and thinking. Sessions also started at ~76K tokens before any work, and every step re-reads that. So the levers are the shape of the work, not the dial:
+
+- One task per fresh session, with no pause. `tokenstretch queue` is a file-based queue in the project (`.tokenstretch/queue/`, one JSON file per task, each holding a ready `brief`), so agents pull work and the lead spends no steps on dispatch.
+- A light start-up for workers. `tokenstretch startup --agent` lists what a worker can switch off and what that saves over 50 steps in price units. It prints settings to use; it writes nothing.
+- Proof of what redo work costs. `tokenstretch model rework` estimates, per model and effort, how much spend went to redo steps and what a finished task cost, with four named heuristic signals.
+
+```text
+tokenstretch queue add "fix the retry" --files src/upload.py --done "tests pass"
+tokenstretch queue add --from-plan plan.md      # one task per numbered step; keeps each step's files and check
+tokenstretch queue next --agent w1              # gate, then claim the oldest open task and print its brief
+tokenstretch queue done T0001 --note "ok"       # or: queue fail T0001 --note "what went wrong"
+tokenstretch queue list                         # open, claimed, done, needs-lead
+tokenstretch queue release --stale 30           # free claims with no update for 30 minutes
+tokenstretch queue loop-prompt                  # the standing prompt for a worker session
+```
+
+`queue next` checks the pace gate first (`tokenstretch pace --gate`, when the pace meter is installed; without it the gate is open). Over the even-pace line it prints the wait and exits 3; an empty queue exits 4. A claim is a file created with an exclusive open, so two agents never get the same task, and a task whose files overlap a claimed task's files is skipped. `queue fail` sends the task back to open with the note added to its brief, so the next agent does not repeat the mistake; after two failures it is marked `needs-lead` for the lead to look at. The worker's standing prompt ends the session after each task: a fresh short session per task keeps the history small and the cache hot.
+
+`model rework` reads local Claude Code logs, read-only. The signals are a file edited again after a failing test or build, the same file edited 3 or more times, a prompt with a correction word ("still", "again", "wrong", ...), and the steps from a failing check to the next passing one. These are heuristics: a file edited twice may be good work, and the counts are a floor (only the newest part of a long log is read, and edits made through shell commands are not seen). It compares efforts in one sentence only when both have 3 or more sessions, and otherwise says the sample is too small. Units are price-weighted estimates, not dollars and not a bill; models without a published ratio show steps only.
+<!-- /team: full-effort section -->
 
 ## Trim instruction files
 
