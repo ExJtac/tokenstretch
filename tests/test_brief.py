@@ -129,3 +129,62 @@ def test_cli_split_prints_one_brief_per_group():
     assert out.count("Review only") == 2 and "Give each brief to its own helper." in out
     code, out = _cli("brief", "review the pages", "--review", "--split", "2", "--files", "a/1.md", "a/2.md", "b/3.md", "--json")
     assert code == 0 and [len(d["lint"]) for d in json.loads(out)] == [0, 0]
+
+
+def test_build_preset_names_one_example_and_keeps_the_reply_short():
+    from tokenstretch.brief import from_preset
+    b = from_preset("build", task="build the pricing page", files=["pages/pricing.py"], sources=["pages/about.py"],
+                    done="the check prints NO ISSUES")
+    assert lint(b) == [] and b.reply_words == 60
+    text = render(b)
+    assert "- Follow the one example named in `Work from`. Read nothing else in bulk." in text
+    assert "- At most one helper." in text and "- No web search and no new research." in text
+    assert "Reply in under 60 words" in text
+    assert build(b)["effort"] == "medium" and build(b)["preset"] == "build"
+    assert _codes(from_preset("build", task="build the pricing page", files=["p.py"], done="tests pass")) == ["no-example"]
+
+
+def test_research_preset_caps_searches_and_wants_questions():
+    from tokenstretch.brief import from_preset
+    b = from_preset("research", task="Which permits apply? What do they cost?", files=["notes/permits.md"],
+                    done="both questions are answered or listed as gaps")
+    assert lint(b) == [] and b.helper and b.max_searches == 8 and b.max_fetches == 6
+    text = render(b)
+    assert "- At most 8 searches and 6 page fetches." in text
+    assert "- Answer only the questions in the task." in text and "your only output" in text
+    assert build(b)["effort"] == "low"
+    assert "no-questions" in _codes(from_preset("research", task="permit rules", files=["n.md"], done="tests pass"))
+
+
+def test_design_preset_looks_first_allows_reference_pages_and_gets_a_longer_reply():
+    from tokenstretch.brief import from_preset
+    b = from_preset("design", task="redesign the landing page so the form is the first thing seen",
+                    files=["static/site.css"], done="the page reads well at phone and desktop width")
+    assert lint(b) == []
+    text = render(b)
+    assert "- Look first:" in text and "- Write the direction down in a short note before you edit" in text
+    assert "The web is allowed for reference looks only, at most 5 pages." in text
+    assert "No web search" not in text and "Every fact gets its full URL" not in text
+    assert "Reply in under 200 words: the direction you chose and why" in text
+    assert build(b)["effort"] in ("high", "xhigh")
+    assert build(from_preset("design", task="fix the button colour", files=["a.css"], done="tests pass"))["effort"] == "high"
+
+
+def test_preset_defaults_lose_to_what_you_type(capsys):
+    code = main(["brief", "Which rules apply?", "--preset", "research", "--files", "notes.md", "--done", "answered",
+                 "--max-searches", "3", "--reply-words", "40"])
+    out = capsys.readouterr().out
+    assert code == 0 and "At most 3 searches and 6 page fetches." in out and "Reply in under 40 words" in out
+    assert "preset `research`" in out and "model effort --by-session" in out
+    code = main(["brief", "write the page", "--files", "a.py", "--done", "tests pass"])
+    out = capsys.readouterr().out
+    assert code == 0 and "Reply in under 80 words" in out and "preset" not in out
+
+
+def test_unknown_preset_is_refused():
+    import pytest
+    from tokenstretch.brief import from_preset
+    with pytest.raises(ValueError):
+        from_preset("nope", task="x")
+    with pytest.raises(SystemExit):
+        main(["brief", "x", "--preset", "nope"])

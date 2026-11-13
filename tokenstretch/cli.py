@@ -328,7 +328,7 @@ def cmd_model(args) -> int:
 
 
 def cmd_brief(args) -> int:
-    from .brief import Brief, build, format_report, split
+    from .brief import Brief, build, format_report, from_preset, split
 
     text = " ".join(args.task or [])
     if args.file:
@@ -342,10 +342,19 @@ def cmd_brief(args) -> int:
               file=sys.stderr)
         return 2
     research = True if args.research else False if args.no_research else None
-    brief = Brief(task=text, files=list(args.files or []), sources=list(args.sources or []), done=args.done or "",
-                       reply_words=max(10, args.reply_words), research=research,
-                       max_searches=max(0, args.max_searches), max_fetches=max(0, args.max_fetches), no_build=bool(args.no_build), helper=bool(args.helper) or bool(args.review),
-                  review=bool(args.review), max_reads=max(0, args.max_reads), rules=list(args.rule or []))
+    given = {"task": text, "files": list(args.files or []), "sources": list(args.sources or []), "done": args.done or "",
+             "no_build": bool(args.no_build), "review": bool(args.review), "rules": list(args.rule or [])}
+    # only what was typed goes in, so a preset's defaults fill the rest
+    if research is not None:
+        given["research"] = research
+    if args.reply_words is not None:
+        given["reply_words"] = max(10, args.reply_words)
+    for name in ("max_searches", "max_fetches", "max_reads"):
+        if getattr(args, name) is not None:
+            given[name] = max(0, getattr(args, name))
+    if args.helper or args.review:
+        given["helper"] = True
+    brief = from_preset(args.preset, **given) if args.preset else Brief(**given)
     parts = split(brief, args.split) if args.split > 0 else [brief]
     if len(parts) > 1:
         many = [build(p) for p in parts]
@@ -566,11 +575,11 @@ def main(argv=None) -> int:
     br.add_argument("--files", nargs="+", metavar="PATH", help="the only files the agent may change")
     br.add_argument("--from", dest="sources", nargs="+", metavar="PATH", help="notes or reference files to work from")
     br.add_argument("--done", help='the stop condition, e.g. "tests pass"')
-    br.add_argument("--reply-words", type=int, default=80, help="cap on the reply length (default 80)")
+    br.add_argument("--reply-words", type=int, default=None, help="cap on the reply length (default 80)")
     br.add_argument("--research", action="store_true", help="the task is research (default: decided from the wording)")
     br.add_argument("--no-research", action="store_true", help="forbid searching and new research")
-    br.add_argument("--max-searches", type=int, default=0, help="cap searches for a research task")
-    br.add_argument("--max-fetches", type=int, default=0, metavar="N",
+    br.add_argument("--max-searches", type=int, default=None, help="cap searches for a research task")
+    br.add_argument("--max-fetches", type=int, default=None, metavar="N",
                     help="for research: cap the number of pages opened")
     br.add_argument("--brief-only", action="store_true",
                     help="print only the brief, ready to paste or pipe (no token line, no missing list)")
@@ -580,7 +589,10 @@ def main(argv=None) -> int:
     br.add_argument("--helper", action="store_true", help="word the brief for a helper (subagent)")
     br.add_argument("--review", action="store_true",
                     help="a review brief: read the named files, report problems as path:line, change nothing")
-    br.add_argument("--max-reads", type=int, default=0, help="cap the number of file reads (0 = no cap line)")
+    from .brief import PRESETS as _BRIEF_PRESETS
+    br.add_argument("--preset", choices=sorted(_BRIEF_PRESETS),
+                    help="start from a job shape: " + "; ".join(f"{k} = {v['about']}" for k, v in sorted(_BRIEF_PRESETS.items())))
+    br.add_argument("--max-reads", type=int, default=None, help="cap the number of file reads (0 = no cap line)")
     br.add_argument("--split", type=int, default=0, metavar="N",
                     help="print one brief per group of N files, each for its own helper")
     br.add_argument("--check", action="store_true", help="only list what is missing; exit 1 if anything is")
