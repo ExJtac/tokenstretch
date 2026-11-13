@@ -38,6 +38,7 @@ python -m tokenstretch pace clear --window NAME
 python -m tokenstretch pace [--window NAME] [--model ID] [--effort E] [--sessions 500] [--json]   # estimates per window; read-only apart from pace.json
 python -m tokenstretch pace --gate [--window NAME] [--reserve 3] [--json]   # exit 0 at or under the line, 3 over; 0 when no reading
 python -m tokenstretch pace --team N [--model ID] [--effort E] [--json]     # agents at once and hours a day on the line
+python -m tokenstretch pace auto [--off]                                    # status line stores the limits the tool reports (off by default)
 python -m tokenstretch pace --what-if [--team N] [--json]                   # no re-saved history, re-read halved
 python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
 python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8]

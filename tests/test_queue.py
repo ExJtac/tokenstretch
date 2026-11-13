@@ -89,8 +89,8 @@ def test_release_stale(tmp_path):
     assert q.claim_next(tmp_path, "b")[0]["id"] == t["id"]
 
 
-def test_pace_gate_open_without_module():
-    assert q.pace_gate(None)["open"] is True
+def test_pace_gate_open_with_no_reading_stored(tmp_path):
+    assert q.pace_gate(tmp_path)["open"] is True
 
 
 def test_cli_gate_closed_exit_3_and_empty_exit_4(tmp_path, monkeypatch, capsys):
@@ -109,11 +109,11 @@ def test_cli_roundtrip_and_json(tmp_path, capsys):
     assert cli.main(["queue", "add", "do it", "--root", root, "--files", "a.py", "--done", "ok"]) == 0
     assert cli.main(["queue", "list", "--root", root, "--json"]) == 0
     assert json.loads(capsys.readouterr().out.split("\n", 1)[1])[0]["id"] == "T0001"
-    assert cli.main(["queue", "next", "--root", root]) == 0
+    assert cli.main(["queue", "next", "--root", root, "--home", root]) == 0
     assert cli.main(["queue", "done", "T0001", "--root", root, "--note", "fine"]) == 0
     assert cli.main(["queue", "fail", "T0009", "--root", root, "--note", "x"]) == 2
     assert cli.main(["queue", "release", "--stale", "5", "--root", root]) == 0
-    assert cli.main(["queue", "loop-prompt"]) == 0
+    assert cli.main(["queue", "loop-prompt", "--home", root]) == 0
     assert "queue next" in capsys.readouterr().out
 
 
