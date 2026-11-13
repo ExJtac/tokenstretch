@@ -212,8 +212,11 @@ def build_watch(feed: list[dict], cfg, scrub: Callable[[str], str]) -> dict:
 # the JS uses the page's own helpers (el, clear, table, bar, fmt, wait) and builds nodes with
 # textContent only, so nothing from a log or a task ever becomes markup.
 
+# Doctor sits beside Pace; the team queue takes the old Doctor spot lower on the page.
+QUEUE_CARD = '<section class="card c7"><h2>Team queue</h2><div id="p-queue"></div></section>'
+
 PANEL_CARDS = """<section class="card c6"><h2>Pace</h2><div id="p-pace"></div></section>
-<section class="card c6"><h2>Team queue</h2><div id="p-queue"></div></section>
+__DOCTOR_CARD__
 <section class="card c7"><h2>Cost by model and effort</h2><div id="p-cost"></div></section>
 <section class="card c5"><h2>Redo work</h2><div id="p-rework"></div></section>
 <section class="card c7"><h2>Start-up size</h2><div id="p-startup"></div></section>
