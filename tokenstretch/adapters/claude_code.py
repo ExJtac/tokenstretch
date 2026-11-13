@@ -2094,11 +2094,12 @@ class ClaudeCodeAdapter(Adapter):
 
 
 def _helper_stats(path: Path) -> list[dict]:
-    """[{steps, sent, peak, output, effort}] for each subagent log of this main session (token counts only).
+    """[{steps, sent, peak, output, cache_read, cache_write, resaved, model, effort}] for each subagent log of this main session (token counts only).
 
     Subagent logs live at <project>/<session-id>/subagents/*.jsonl. `sent` is the history re-sent
     over the helper's steps, the same measure watch uses for the main conversation.
     """
+    from ..cost import resaved
     from ..logcache import memo_by_stat
     folder = path.with_suffix("") / "subagents"
     try:
@@ -2111,8 +2112,13 @@ def _helper_stats(path: Path) -> list[dict]:
         if turns:
             sizes = [t["history_tokens"] for t in turns]
             efforts = [t["effort"] for t in turns if t.get("effort")]
+            models = [t["model"] for t in turns if t.get("model")]
             out.append({"steps": len(turns), "sent": sum(sizes), "peak": max(sizes),
                         "output": sum(t["output_tokens"] for t in turns),
+                        "cache_read": sum(int(t.get("cache_read") or 0) for t in turns),
+                        "cache_write": sum(int(t.get("cache_write") or 0) for t in turns),
+                        "resaved": resaved(turns),
+                        "model": max(set(models), key=models.count) if models else "",
                         "effort": max(set(efforts), key=efforts.count) if efforts else ""})
     return out
 

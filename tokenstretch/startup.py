@@ -40,6 +40,18 @@ def measured_starts(ctx: Context, ad, limit: int = 5) -> list[int]:
     return [int(s["start_tokens"]) for s in sessions if s.get("start_tokens")][:limit]
 
 
+def newest_model(ctx: Context, ad) -> str:
+    """The model the newest session with a measured start ran on, or "" when the log does not say."""
+    try:
+        sessions = ad.watch_sessions(ctx, limit=12, max_age_s=None) or []
+    except Exception:  # noqa: BLE001 - a missing or odd log must not break the report
+        return ""
+    for s in sessions:
+        if s.get("start_tokens") and s.get("turns"):
+            return str(s["turns"][0].get("model") or "")
+    return ""
+
+
 def _history_file(home: Path) -> Path:
     return state_dir(home) / "startup-history.json"
 
@@ -113,13 +125,15 @@ def build(ctx: Context, adapters=None, remember: bool = False, now: float | None
                 keep = sorted(seen.items(), key=lambda kv: -(kv[1].get("ts") or 0))[:HISTORY_KEEP]
                 history[ad.id] = dict(keep)
                 changed = True
+        from .cost import startup_price
+        price = startup_price(start, newest_model(ctx, ad)) if start else None
         sized = sorted((p for p in parts if p.get("tokens")), key=lambda p: -p["tokens"])
         unsized = [p for p in parts if not p.get("tokens")]
         known = sum(p["tokens"] for p in sized)
         out.append({
             "adapter": ad.id, "name": ad.display_name, "measured_start": start, "recent_starts": starts, "known": known,
             "rest": max(0, start - known) if start else None, "parts": sized, "unsized": unsized,
-            "since_last": since_last,
+            "since_last": since_last, "price": price,
             "turned_off": [{"name": n, "tokens": t} for n, t in sorted(turned_off.items(), key=lambda kv: -kv[1])],
         })
     if changed:
@@ -137,6 +151,13 @@ def format_report(data: list[dict], top: int = 12) -> list[str]:
             out.append(f"  Measured: the newest session's first step was ~{_k(d['measured_start'])} tokens."
                        + (f" Recent sessions: {', '.join(_k(n) for n in d['recent_starts'])}."
                           if len(d["recent_starts"]) > 1 else ""))
+            pr = d.get("price")
+            if pr:
+                dearer = (f", {pr['weight']:g}x what the mid model pays for the same block"
+                          if pr["weight"] and pr["weight"] > 1 else "")
+                out.append(f"  Price: on {pr['model']}, {pr['steps']} steps re-read this block {pr['steps']} times. "
+                           f"That costs about as much as ~{_k(round(pr['units']))} new input tokens on the mid "
+                           f"model{dearer}. An estimate from published price ratios, not a bill.")
         else:
             out.append("  Measured: no recent session with a clean first step was found.")
         out.append(f"  Sized from local files: ~{_k(d['known'])} tokens (approx., bytes / 4).")

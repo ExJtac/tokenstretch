@@ -75,6 +75,18 @@ PRESETS: dict[str, dict] = {
             "The file named above is your only output. Do not write anywhere else.",
         ],
     },
+    "plan": {
+        "about": "plan a job on the top model once, so a smaller model can carry out the steps",
+        "defaults": {"reply_words": 80, "research": False, "no_build": True, "max_reads": 12},
+        "effort": "high",
+        "rules": [
+            "Write the plan to the file named above. Change nothing else: no code edits and no installs.",
+            "Number the steps. Each step names its files, the change in one or two sentences, and the check that proves it.",
+            "Keep each step small enough for a smaller model at a lower effort to carry out without this conversation.",
+            "Mark the hard steps (a design choice, a risky change), so only those get the top model or a high effort.",
+            "List open questions at the end. Do not guess an answer and plan around it.",
+        ],
+    },
     "design": {
         "about": "a visual or layout job where the result has to be looked at",
         "defaults": {"reply_words": 200, "max_fetches": 5},
@@ -199,6 +211,10 @@ def render(b: Brief) -> str:
         lines.append(f"Reply in under {b.reply_words} words: the direction you chose and why, what changed, file paths, "
                      "what you looked at, and what you could not check. No recap of the task.")
         return "\n".join(lines) + "\n"
+    if b.preset == "plan":
+        lines.append(f"Reply in under {b.reply_words} words: the plan file path, the number of steps, which steps are "
+                     "hard, and the open questions. No recap of the task.")
+        return "\n".join(lines) + "\n"
     who = "what you wrote" if b.helper else "what changed"
     lines.append(f"Reply in under {b.reply_words} words: {who}, file paths, and anything you needed and could not find. "
                  "No recap of the task.")
@@ -223,12 +239,16 @@ def build(b: Brief) -> dict:
     tier = suggest_tier(b.task)
     effort = tier.get("effort")
     want = PRESETS[b.preset]["effort"] if b.preset else ""
-    if want and b.preset == "design" and effort in _EFFORT_ORDER:
-        # a design job is never below its preset's effort; the task wording may still push it higher
+    if want and b.preset in ("design", "plan") and effort in _EFFORT_ORDER:
+        # a design or planning job is never below its preset's effort; the task wording may still push it higher
         effort = max(effort, want, key=_EFFORT_ORDER.index)
     elif want:
         effort = want
     tier["effort"] = effort
+    if b.preset == "plan":
+        # the plan is written once and steers every later step, so it is the one place the top model pays
+        tier["tier"] = "top"
+        tier["reasons"] = ["a plan is written once and steers every later step; carry the steps out on a smaller model"]
     return {
         "brief": text,
         "approx_tokens": approx_tokens(text),

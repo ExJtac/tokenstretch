@@ -129,7 +129,7 @@ def build_line(ctx: Context, payload: dict | None = None, cfg: WatchConfig | Non
     if not turns:
         return ""
     last = turns[-1]
-    size = f"{_k(last['history_tokens'])}/{_k(cfg.max_context)} history"
+    size = f"{_k(last['history_tokens'])}/{_k(cfg.limits(last.get('model') or '')['context'])} history"
     top = top_warning(session_warnings(ctx, ad, s, cfg, now=now()))
     if top is None:
         return f"{size} · {last['model']}" if last.get("model") else size

@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `model cost`: where your recent sessions' credits went, per model and reasoning effort, weighted by published list-price ratios. Four kinds per row (history re-read, history saved again, new content, output and thinking), the same tokens on the mid model for comparison, and the one change that removes the most. Main conversations and helpers apart. Units are relative, not dollars: an estimate, not a bill. Models with no published ratio show token counts only. Read-only; `--sessions`, `--json`.
+- `model cost --grid`: one line per model and effort with the average cost of a step, dearest first.
+- `brief --preset plan`: the top model writes a numbered plan to one file and changes nothing else; steps are sized for a smaller model at a lower effort, hard steps are marked, open questions are listed. Suggested tier top, effort high or above.
+- `watch` warns when the conversation itself ran 15 or more steps at `xhigh` or `max` effort and they wrote 60K or more output tokens.
+- `startup` adds a `Price` line: what re-reading the start-up block for 50 steps costs on the model the newest session ran on.
+
+### Changed
+- `watch`, `statusline` and the prompt nudge lower three limits on a dearer model, in step with what a re-read costs there: history size (150K on the mid model, 75K where a re-read costs 2x, never under 60K), fast growth and helper wake-ups. The warning says so. Cheaper and unpriced models keep the plain limits, and a limit you pass yourself stays as passed.
+
 ## [0.3.0] - 2026-11-12
 
 ### Added

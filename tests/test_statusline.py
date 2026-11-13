@@ -16,7 +16,7 @@ from tokenstretch.statusline import build_line, light_context, read_payload, run
 from tokenstretch.watch import Watcher, WatchConfig, cache_misses, run_watch
 
 T0 = datetime(2026, 1, 5, 17, 0, 0, tzinfo=timezone.utc)
-SONNET = "claude-sonnet-4-5"
+SONNET = "claude-sonnet-5-5"   # the mid model: limits are not price-scaled for it
 
 
 def _row(i: int, at_s: int, *, read: int, write: int = 0, model: str = SONNET, out: int = 900) -> dict:
