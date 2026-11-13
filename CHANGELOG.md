@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- `/credits` works when the app cannot find `tokenstretch` by name. An app started from the desktop often lacks `~/.local/bin` on its PATH, and the old fallback (`python3 -m tokenstretch`) fails when the package lives in the installer's own environment. The shortcut now carries the full command for this machine, and `setup` offers to refresh it when that path changes.
+
 ## [0.2.2] - 2026-11-12
 
 ### Added
