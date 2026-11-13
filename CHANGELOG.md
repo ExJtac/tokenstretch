@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `startup`: plugins and app-added skills are now sized. It reads plugins installed from the terminal (`enabledPlugins`), plugins the desktop app adds, and skills the desktop app adds, and lists each with its listing size and how many connectors it brings. It counts use from the last 14 days of Claude Code logs on this computer: `Skill` calls, typed `/commands`, helpers started from a plugin, and calls to a plugin's connector tools. A `No use found` line names the ones with no call. A plugin with hooks is never named there, because hooks run on their own. Other apps that share the skills, such as the desktop app's chat, are not counted. It changes nothing: a terminal plugin's fix is the `enabledPlugins` line to set to `false`, and app-added ones are switched off in the desktop app's settings. The dashboard panel does not read the logs, so it does not show these parts.
+
 ## [0.7.1] - 2026-11-13
 
 ### Changed

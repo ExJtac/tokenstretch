@@ -93,7 +93,8 @@ def size_by_difference(seen: dict, connectors: list[str], rest: int) -> tuple[di
     return on, off
 
 
-def build(ctx: Context, adapters=None, remember: bool = False, now: float | None = None) -> list[dict]:
+def build(ctx: Context, adapters=None, remember: bool = False, now: float | None = None,
+          plugins: bool = False) -> list[dict]:
     from .setup import detected_adapters
     out = []
     history = load_history(ctx.home)
@@ -102,6 +103,9 @@ def build(ctx: Context, adapters=None, remember: bool = False, now: float | None
         parts = ad.startup_parts(ctx)
         if parts is None:
             continue
+        if plugins and ad.id == "claude-code":   # reads the session logs, so only when asked (see startup_plugins.py)
+            from .startup_plugins import parts as plugin_parts
+            parts = parts + plugin_parts(ctx.home, now)
         starts = measured_starts(ctx, ad)
         start = starts[0] if starts else None
         turned_off: dict[str, int] = {}
@@ -130,7 +134,9 @@ def build(ctx: Context, adapters=None, remember: bool = False, now: float | None
         sized = sorted((p for p in parts if p.get("tokens")), key=lambda p: -p["tokens"])
         unsized = [p for p in parts if not p.get("tokens")]
         known = sum(p["tokens"] for p in sized)
+        idle = [p for p in parts if p.get("unused")]
         out.append({
+            "unused": {"names": [p["name"] for p in idle], "tokens": sum(p.get("tokens") or 0 for p in idle)},
             "adapter": ad.id, "name": ad.display_name, "measured_start": start, "recent_starts": starts, "known": known,
             "rest": max(0, start - known) if start else None, "parts": sized, "unsized": unsized,
             "since_last": since_last, "price": price,
@@ -168,9 +174,16 @@ def format_report(data: list[dict], top: int = 12) -> list[str]:
         if len(d["parts"]) > top:
             more = d["parts"][top:]
             out.append(f"    ~{_k(sum(p['tokens'] for p in more)):>6}  {len(more)} smaller parts (--all lists them)")
+        idle = d.get("unused") or {}
+        if idle.get("names"):
+            from .startup_plugins import USE_DAYS
+            out.append(f"  No use found in the last {USE_DAYS} days: {', '.join(idle['names'])}. Their listings are "
+                       f"~{_k(idle['tokens'])} tokens in every session, before the connectors they bring. "
+                       "This counts calls in Claude Code's session logs on this computer only. Other apps "
+                       "that share these skills, such as the desktop app's chat, are not counted.")
         if d["rest"] is not None:
             out.append(f"  The rest, ~{_k(d['rest'])} tokens, can't be sized from local files: the tool's own "
-                       "system prompt and built-in tools, connector tool lists, and plugin listings.")
+                       "system prompt and built-in tools, and connector tool lists.")
             out.append("  To size a connector: turn it off, start a new session, and run this again. "
                        "This command remembers the last run and shows the difference as that connector's size.")
         for t in d.get("turned_off") or []:
