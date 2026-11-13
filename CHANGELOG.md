@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `trim --to-skills`: moves workflow-style sections (numbered steps, command blocks, headings like "release" or "deploy") out of CLAUDE.md files into Claude Code skills and leaves a one-line pointer. Sections that read like standing rules stay put and are listed with the reason. Dry run by default; `--apply` backs up the files and `undo` also removes the skills it created. Doctor's W01 message now mentions it.
+
 ## [0.6.0] - 2026-11-13
 
 ### Added

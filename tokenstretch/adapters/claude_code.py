@@ -726,7 +726,7 @@ class ClaudeCodeAdapter(Adapter):
             findings.append(self.finding(
                 "W01", "claude-md-size", "high", "waste",
                 f"Your instruction files total {total} bytes (over 25 KB) and are re-read on every message.",
-                "Trim standing instructions and split workflow into skills. Run `tokenstretch trim` to see what to cut.",
+                "Trim standing instructions and split workflow into skills. Run `tokenstretch trim` to see what to cut, or `tokenstretch trim --to-skills` to move workflow sections into skills.",
                 "CC-MEM, CC-COST",
                 file=",".join(str(p) for p, _, _ in files), key="bytes", value=total,
             ))
