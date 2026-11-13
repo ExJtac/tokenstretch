@@ -26,6 +26,8 @@ tokenstretch start
 
 It checks your computer, lists every change in plain words, and asks once. Nothing changes until you answer `y`.
 
+`start` is in versions newer than 0.5.1. If you see `invalid choice: 'start'`, run `tokenstretch --version`: 0.5.1 or older does not have it yet, and `tokenstretch setup` applies the fixes that version has.
+
 **3. Undo.** `tokenstretch undo` puts back every file that step changed. `tokenstretch pace auto --off` switches off the automatic plan readings, which are not a file change.
 
 More: [what it does](#what-you-get), [install options](#install), [what `start` does](#what-tokenstretch-start-does), [what setup changes](#what-setup-changes-and-how-to-undo-it).
@@ -39,7 +41,7 @@ Install and set up tokenstretch for me. Do these steps in order.
 
 1. Check that Python 3.11 or newer is installed (`python3 --version`). If it is missing or older, tell me in plain words how to get it (https://www.python.org/downloads/) and stop until I say it is installed. Do not install it yourself.
 2. Open https://github.com/ExJtac/tokenstretch and read the README. Find the install command in the Install section and run it exactly as written. Do not change the link.
-3. Run `tokenstretch --version` and tell me what it prints. If the command is not found, the installer printed a line about PATH: tell me what it says, and run `~/.local/bin/tokenstretch` by its full path for the next steps. Do not edit my shell startup files; tell me the line to add instead.
+3. Run `tokenstretch --version` and tell me what it prints. If it prints 0.5.1 or older, that version has no `start` command: tell me so, and use `tokenstretch setup` in steps 4 and 7 (with `--yes` in step 7). If the command is not found, the installer printed a line about PATH: tell me what it says, and run `~/.local/bin/tokenstretch` by its full path for the next steps. Do not edit my shell startup files; tell me the line to add instead.
 4. In the folder of my main project (ask me which one if you do not know), run `tokenstretch start` with no flags. This changes nothing. It lists what it would change.
 5. Explain each listed change to me in plain words: what it is, which file, and why. Tell me that `tokenstretch undo` and `tokenstretch pace auto --off` reverse the changes.
 6. Ask me yes or no, and wait for my answer.

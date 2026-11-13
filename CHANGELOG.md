@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - README: a Quick start at the top and a "Let your AI install it" prompt to paste into a coding assistant that can run commands.
 
 ### Changed
+- First-run wording, from a test with a new user's eyes: `start` no longer prints a setup count that differed from the list below it; `undo` says when automatic plan readings are still on and how to switch them off; the `pace set` example shows `YYYY-MM-DDTHH:MM:SS` instead of a past date; the README says `start` needs a version newer than 0.5.1.
 - README: `pace auto` needs a session where the status line runs (Claude Code in a terminal). Sessions inside the desktop app stored no reading in our check.
 
 ## [0.5.1] - 2026-11-13

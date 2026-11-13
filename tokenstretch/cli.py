@@ -93,6 +93,12 @@ def cmd_undo(args) -> int:
     else:
         print(f"Restored {len(result['restored'])} file(s), deleted {len(result['deleted'])} created file(s).")
         print(f"Manifest: {result['manifest']}")
+        try:
+            from . import pace as _pc, paceauto as _pa
+            if _pa.is_on(_pc.load_state(ctx.home)):
+                print(f"Automatic plan readings are still on (not a file change). To switch them off: {CLI_NAME} pace auto --off")
+        except Exception:  # noqa: BLE001 - a note only
+            pass
         for p in result["restored"]:
             print(f"  restored {p}")
         for p in result["deleted"]:
