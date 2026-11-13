@@ -1910,6 +1910,36 @@ class ClaudeCodeAdapter(Adapter):
             })
         return out
 
+    def window_sessions(self, ctx: Context, limit: int = 500, max_age_s: float | None = None) -> list[dict] | None:
+        """Every step of each main log and of its helpers, for sums over a plan window (logs only).
+
+        `watch_sessions` reads only the end of a long log, which is right for "how big is it now" and
+        wrong for "how much was used since Monday". Each helper carries its own timed steps here.
+        Steps already read are kept in a local cache (token counts and times only), so the next call
+        reads only what the logs gained.
+        """
+        from ..identity import STATE_DIRNAME
+        from ..stepcache import StepCache
+        cache = StepCache(ctx.home / STATE_DIRNAME / "cache" / "window-steps.json")
+        out = []
+        for mtime, path in _newest(_transcript_paths(ctx, subagents=False), limit, max_age_s):
+            turns = cache.steps(path, _feed_usage_steps)
+            helpers = []
+            try:
+                files = sorted((path.with_suffix("") / "subagents").glob("*.jsonl"))
+            except OSError:
+                files = []
+            for sp in files:
+                steps = cache.steps(sp, _feed_usage_steps)
+                if steps:
+                    helpers.append({"turns": steps})
+            if not turns and not helpers:
+                continue
+            out.append({"adapter": self.id, "session": path.stem[:8], "project": path.parent.name,
+                        "path": str(path), "last_write": mtime, "turns": turns, "helpers": helpers})
+        cache.save()
+        return out
+
     def watch_session_at(self, ctx: Context, path: Path) -> dict | None:
         """One session by log path. Only a .jsonl file inside ~/.claude/projects is ever opened."""
         from ..logcache import memo_by_stat
@@ -2093,6 +2123,38 @@ class ClaudeCodeAdapter(Adapter):
         )]
 
 
+def _feed_usage_steps(lines: list, seen: set) -> list:
+    """[(message id, [ts, model, effort, sent, output, cache read, cache write])] for assistant
+    messages first seen in these lines. Token counts and time only."""
+    out = []
+    for raw in lines:
+        if b'"assistant"' not in raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if not isinstance(obj, dict) or obj.get("type") != "assistant":
+            continue
+        msg = obj.get("message")
+        if not isinstance(msg, dict):
+            continue
+        model = str(msg.get("model") or "")
+        if not model or model.startswith("<"):
+            continue
+        key = str(msg.get("id") or "")
+        if key:
+            if key in seen:
+                continue
+            seen.add(key)
+        usage = msg.get("usage") if isinstance(msg.get("usage"), dict) else {}
+        read, write = int(usage.get("cache_read_input_tokens") or 0), int(usage.get("cache_creation_input_tokens") or 0)
+        out.append((key, [obj.get("timestamp"), model, _logged_effort(obj),
+                          int(usage.get("input_tokens") or 0) + read + write,
+                          int(usage.get("output_tokens") or 0), read, write]))
+    return out
+
+
 def _helper_stats(path: Path) -> list[dict]:
     """[{steps, sent, peak, output, cache_read, cache_write, resaved, model, effort}] for each subagent log of this main session (token counts only).
 
@@ -2238,6 +2300,7 @@ def _session_turns(path: Path, tail_bytes: int = 4_000_000) -> list[dict]:
 
     Claude Code writes one line per content block, each repeating message.id and usage, so lines
     are merged on message.id. Only file paths are kept from Read calls; contents are never kept.
+    Only the last `tail_bytes` of the log are read.
     """
     try:
         with path.open("rb") as fh:

@@ -14,13 +14,14 @@ left out of the units and reported. Nothing here opens a network connection; sta
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .cost import BUCKETS, cost_view
+from .cost import BUCKETS, RESAVE_MIN, cost_view
 from .identity import CLI_NAME, state_dir
 
 STATE_FILE = "pace.json"
@@ -132,13 +133,16 @@ def set_reading(state: dict, name: str, used: float, resets: float, now: float, 
 
 # ---- units from sessions -----------------------------------------------------------------------
 
-def _epoch(ts) -> float | None:
-    if not ts:
-        return None
+@functools.lru_cache(maxsize=200_000)
+def _epoch_of(text: str) -> float | None:
     try:
-        return parse_time(str(ts))
+        return parse_time(text)
     except ValueError:
         return None
+
+
+def _epoch(ts) -> float | None:
+    return _epoch_of(str(ts)) if ts else None
 
 
 def _matches(pattern: re.Pattern | None, model: str) -> bool:
@@ -146,24 +150,52 @@ def _matches(pattern: re.Pattern | None, model: str) -> bool:
 
 
 def _slice(sessions: list[dict], lo: float, hi: float, pattern: re.Pattern | None) -> list[dict]:
-    """Sessions cut to the steps logged in [lo, hi] on models that match. A session's helpers have no
-    time of their own, so they count in the same share as the main steps that fell in range."""
+    """Sessions cut to the steps logged in [lo, hi] on models that match. A helper that carries its
+    own timed steps is cut the same way; one without counts in the same share as the main steps
+    that fell in range."""
     out = []
     for s in sessions:
         turns = s.get("turns") or []
         keep = [t for t in turns if (e := _epoch(t.get("ts"))) is not None and lo <= e <= hi
                 and _matches(pattern, t.get("model") or "")]
-        if not keep:
-            continue
-        share = len([t for t in turns if (e := _epoch(t.get("ts"))) is not None and lo <= e <= hi]) / len(turns)
+        share = (len([t for t in turns if (e := _epoch(t.get("ts"))) is not None and lo <= e <= hi]) / len(turns)
+                 if turns else 0.0)
         helpers = []
         for h in s.get("helpers") or []:
-            if not _matches(pattern, h.get("model") or ""):
-                continue
-            helpers.append({**h, **{k: (h.get(k) or 0) * share for k in
-                                    ("steps", "sent", "cache_read", "cache_write", "resaved", "output")}})
-        out.append({"turns": keep, "helpers": helpers})
+            if h.get("turns") is not None:
+                helpers += _helper_rows(h["turns"], lo, hi, pattern)
+            elif share and _matches(pattern, h.get("model") or ""):
+                helpers.append({**h, **{k: (h.get(k) or 0) * share for k in
+                                        ("steps", "sent", "cache_read", "cache_write", "resaved", "output")}})
+        if keep or helpers:
+            out.append({"turns": keep, "helpers": helpers})
     return out
+
+
+def _helper_rows(turns: list[dict], lo: float, hi: float, pattern: re.Pattern | None) -> list[dict]:
+    """A helper's own timed steps cut to [lo, hi], summed per (model, effort) in the shape cost_view reads."""
+    rows: dict[tuple, dict] = {}
+    for i, t in enumerate(turns):
+        e = _epoch(t.get("ts"))
+        model = t.get("model") or ""
+        if e is None or not lo <= e <= hi or not _matches(pattern, model):
+            continue
+        read, write = int(t.get("cache_read") or 0), int(t.get("cache_write") or 0)
+        r = rows.setdefault((model, t.get("effort") or ""), {
+            "model": model, "effort": t.get("effort") or "", "steps": 0, "sent": 0, "cache_read": 0,
+            "cache_write": 0, "resaved": 0, "output": 0})
+        r["steps"] += 1
+        r["sent"] += int(t.get("history_tokens") or 0)
+        r["cache_read"] += read
+        r["cache_write"] += write
+        r["resaved"] += write if (i and write >= RESAVE_MIN and write > read) else 0
+        r["output"] += int(t.get("output_tokens") or 0)
+    return list(rows.values())
+
+
+def cut(sessions: list[dict], lo: float, hi: float) -> list[dict]:
+    """The sessions with only the steps logged in [lo, hi], all models."""
+    return _slice(sessions, lo, hi, None)
 
 
 def slice_view(sessions: list[dict], lo: float, hi: float, pattern: re.Pattern | None = None) -> dict:
@@ -212,7 +244,8 @@ def evaluate_window(name: str, w: dict, sessions: list[dict], now: float, reserv
     if len(readings) >= 2 and last["used"] > first["used"] and u_last > u_first:
         upp, out["method"] = (u_last - u_first) / (last["used"] - first["used"]), "slope between readings"
     elif last["used"] > 0 and u_last > 0:
-        upp, out["method"] = u_last / last["used"], "units since window start / percent used"
+        upp, out["method"] = u_last / last["used"], ("units since window start / percent used; store a second "
+                                                     "reading later for a closer fit")
     if not upp:
         out["method"] = None
         return out
@@ -498,8 +531,14 @@ def format_team(t: dict) -> list[str]:
     for w in t["windows"]:
         lines.append(f"    {w['window']}: {_f(w['agents_at_once'])} agents at once on the line, "
                      f"{_f(min(24.0, w['hours_per_day']))} h a day for {t['agents']} agents")
-    lines.append(f"    so: {_f(t['agents_at_once'])} agents can run at once on the line; {t['agents']} agents can run "
-                 f"about {_f(t['hours_per_day'])} hours a day (tightest window: {t['tightest']}).")
+    h = t["hours_per_day"]
+    each = f"{_f(h)} hours" if h >= 1 else f"{max(1, round(h * 60))} minutes"
+    if t["agents_at_once"] < 1:
+        lines.append(f"    so: the line has room for less than one agent working without a stop. {t['agents']} agents "
+                     f"can each work about {each} a day (tightest window: {t['tightest']}).")
+    else:
+        lines.append(f"    so: {_f(t['agents_at_once'])} agents can run at once on the line; {t['agents']} agents can "
+                     f"each work about {each} a day (tightest window: {t['tightest']}).")
     return lines
 
 

@@ -416,17 +416,18 @@ def cmd_pace(args) -> int:
 
     from .setup import detected_adapters
     starts = [pc.parse_time(w["resets"]) - w["length_s"] for w in state["windows"].values()]
-    age = (_time.time() - min(starts) + 86400) if (starts and not getattr(args, "now", None)) else None
+    age = max(0.0, _time.time() - min(starts)) + 86400 if starts else None   # logs older than every window are not opened
     sessions = []
     for ad in detected_adapters(ctx):
-        sessions += ad.watch_sessions(ctx, limit=max(1, min(int(args.sessions), 1000)), max_age_s=age) or []
+        sessions += ad.window_sessions(ctx, limit=max(1, min(int(args.sessions), 1000)), max_age_s=age) or []
     wins = pc.evaluate(state, sessions, now, reserve, args.window)
 
     if args.gate:
         g = pc.run_gate(state, sessions, now, reserve, args.window)
         out({k: g[k] for k in ("ok", "wait_seconds", "window", "used", "line")}, pc.format_gate(g))
         return 0 if g["ok"] else 3
-    stats = pc.step_stats(sessions)
+    # measure a step on what ran inside the stored windows, not on older steps in the same log files
+    stats = pc.step_stats(pc.cut(sessions, min(starts), now) if starts else sessions)
     result: dict = {"windows": wins, "tightest": (pc.tightest(wins) or {}).get("window"), "estimate": True,
                     "note": pc.NOT_A_BILL}
     lines: list[str] = []
