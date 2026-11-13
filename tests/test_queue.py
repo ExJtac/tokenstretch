@@ -97,7 +97,7 @@ def test_cli_gate_closed_exit_3_and_empty_exit_4(tmp_path, monkeypatch, capsys):
     q.add_task(tmp_path, "work")
     monkeypatch.setattr(q, "pace_gate", lambda home=None: {"open": False, "wait_seconds": 120, "note": ""})
     rc = cli.main(["queue", "next", "--root", str(tmp_path), "--home", str(tmp_path)])
-    assert rc == 3 and "120 seconds" in capsys.readouterr().out
+    assert rc == 3 and "wait about 2m" in capsys.readouterr().out
     assert q.list_view(tmp_path)[0]["status"] == "open"          # nothing was claimed
     monkeypatch.setattr(q, "pace_gate", lambda home=None: {"open": True, "wait_seconds": 0, "note": ""})
     assert cli.main(["queue", "next", "--root", str(tmp_path)]) == 0
