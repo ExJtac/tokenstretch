@@ -306,7 +306,7 @@ def release_stale(root, minutes: float, now: float | None = None) -> list[str]:
         info = _claim_info(qd, t["id"])
         if info is None:
             continue
-        if t.get("status") != "open" or now - info["mtime"] >= minutes * 60:
+        if t.get("status") != "open" or max(0.0, now - info["mtime"]) >= minutes * 60:   # a file time can run a few ms ahead of the clock
             with contextlib.suppress(OSError):
                 _claim_path(qd, t["id"]).unlink()
             if t.get("status") == "open":
