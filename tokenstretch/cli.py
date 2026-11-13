@@ -394,8 +394,7 @@ def cmd_pace(args) -> int:
             return 0
         if args.pace_cmd == "auto":
             from . import paceauto
-            state[paceauto.AUTO_KEY] = not args.off
-            path = pc.save_state(ctx.home, state)
+            path = paceauto.switch(ctx.home, not args.off)
             out({"auto": not args.off, "file": str(path)},
                 [f"pace auto is off. The status line stores nothing. ({path})"] if args.off else
                 [f"pace auto is on. When the tool gives the status line its plan limits, the status line stores "
@@ -435,12 +434,8 @@ def cmd_pace(args) -> int:
         out({"windows": []}, pc.format_windows([], {}, None))
         return 0
 
-    from .setup import detected_adapters
     starts = [pc.parse_time(w["resets"]) - w["length_s"] for w in state["windows"].values()]
-    age = max(0.0, _time.time() - min(starts)) + 86400 if starts else None   # logs older than every window are not opened
-    sessions = []
-    for ad in detected_adapters(ctx):
-        sessions += ad.window_sessions(ctx, limit=max(1, min(int(args.sessions), 1000)), max_age_s=age) or []
+    sessions = pc.window_sessions(ctx, state, args.sessions)
     wins = pc.evaluate(state, sessions, now, reserve, args.window)
 
     if args.gate:
@@ -471,6 +466,22 @@ def cmd_pace(args) -> int:
     out(result, lines)
     return 0
 # ---- end pace ----
+
+
+def cmd_start(args) -> int:
+    from .start import run_start
+
+    ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    flags: list[str] = []
+    for name in ("home", "root", "sys_snapshot", "plan"):
+        value = getattr(args, name, None)
+        if value:
+            flags += [f"--{name.replace('_', '-')}", Path(value).as_posix() if name != "plan" else str(value)]
+    now = None
+    if getattr(args, "now", None):
+        from . import pace as pc
+        now = pc.parse_time(args.now)
+    return run_start(ctx, yes=bool(args.yes), as_json=bool(args.json), detail=bool(args.detail), flags=flags, now=now)
 
 
 def cmd_brief(args) -> int:
@@ -692,6 +703,14 @@ def main(argv=None) -> int:
     st.add_argument("--skip", action="append", metavar="ID",
                     help="leave this step out of the plan (repeat, or separate ids with commas)")
     st.add_argument("--json", action="store_true", help="with --list, print the steps as JSON")
+
+    sp = sub.add_parser("start", help="the one command to set up: checks this computer, lists the changes, asks once, "
+                                      "applies with backups, says how the plan's week is going")
+    _add_context_args(sp)
+    sp.add_argument("--yes", "-y", action="store_true", help="apply without asking")
+    sp.add_argument("--detail", action="store_true", help="also print the full `pace` output")
+    sp.add_argument("--json", action="store_true", help="machine-readable result; never asks, changes nothing without --yes")
+    sp.add_argument("--now", help=argparse.SUPPRESS)
 
     stt = sub.add_parser("status", help="what setup applied, current models, and newest sessions (read-only)")
     _add_context_args(stt)
@@ -929,6 +948,8 @@ def main(argv=None) -> int:
         return cmd_bench(a)
     if a.cmd == "setup":
         return cmd_setup(a)
+    if a.cmd == "start":
+        return cmd_start(a)
     if a.cmd == "status":
         return cmd_status(a)
     if a.cmd == "report":
