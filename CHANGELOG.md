@@ -4,8 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-13
+
 ### Added
 - `trim --to-skills`: moves workflow-style sections (numbered steps, command blocks, headings like "release" or "deploy") out of CLAUDE.md files into Claude Code skills and leaves a one-line pointer. Sections that read like standing rules stay put and are listed with the reason. Dry run by default; `--apply` backs up the files and `undo` also removes the skills it created. Doctor's W01 message now mentions it.
+
+### Changed
+- Dashboard: the Doctor card now sits beside Pace, and the Team queue card takes Doctor's old place lower on the page.
+- README: a short "Support tokenstretch" note sits under the tagline; the full note stays at the end as "Say thanks".
 
 ### Fixed
 - Instruction files deeper in the project (a CLAUDE.md or AGENTS.md in a subfolder) are no longer counted as read on every message, so sample files in a repository cannot raise a false size warning.
