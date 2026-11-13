@@ -1484,6 +1484,15 @@ class ClaudeCodeAdapter(Adapter):
         pkg_parent = Path(__file__).resolve().parents[2]
         return f"PYTHONPATH={shlex.quote(str(pkg_parent))} {shlex.quote(sys.executable)} -m {PACKAGE_NAME}"
 
+    def cli_absolute(self, ctx: Context) -> str:
+        """Like `cli_shell`, but never a bare name: an app started from the desktop may not have the
+        folder of the installed command on its PATH, so text an agent reads later needs the full path."""
+        found = ctx.which(CLI_NAME)
+        if found:
+            return shlex.quote(str(found))
+        pkg_parent = Path(__file__).resolve().parents[2]
+        return f"PYTHONPATH={shlex.quote(str(pkg_parent))} {shlex.quote(sys.executable)} -m {PACKAGE_NAME}"
+
     def _live_edits(self, ctx: Context, data: dict) -> list[str]:
         """Add the status line and the prompt hook to a settings dict. Returns what was added."""
         added: list[str] = []
@@ -1620,7 +1629,7 @@ class ClaudeCodeAdapter(Adapter):
         """`/credits` when that shortcut exists (stat only), else ""."""
         return "/credits" if any(p.is_file() for p in self._credits_paths(ctx)) else ""
 
-    def credits_skill(self) -> str:
+    def credits_skill(self, ctx: Context) -> str:
         return (
             "---\n"
             "name: credits\n"
@@ -1634,7 +1643,8 @@ class ClaudeCodeAdapter(Adapter):
             f"2. `{CLI_NAME} watch --once`\n"
             f"3. `{CLI_NAME} setup --list`\n"
             "\n"
-            f"If `{CLI_NAME}` is not found, use `python3 -m {PACKAGE_NAME}` in its place. All three make "
+            f"If `{CLI_NAME}` is not found, do not search for it and do not install anything. Use this in "
+            f"its place, exactly as written: `{self.cli_absolute(ctx)}`. All three make "
             "no network or model calls and change no files.\n"
             "\n"
             "Then reply in under 150 words, in plain words, with no code block:\n"
@@ -1667,16 +1677,17 @@ class ClaudeCodeAdapter(Adapter):
                 old = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 return None
-            if marker not in old or old == self.credits_skill():
+            if marker not in old or old == self.credits_skill(ctx):
                 return None  # yours (never overwrite it), or ours and already current
             return SetupItem(
                 id="claude-credits-skill", adapter_id=self.id,
                 title="Update the /credits shortcut in Claude Code",
-                why="The copy on this machine is from an older version. The new one can also apply one fix "
-                    "for you after you say yes, with a backup, so no terminal is needed.",
+                why="The copy on this machine is out of date: it is from an older version, or this tool has "
+                    "moved since. The new one names the full command, so it also works in an app that cannot "
+                    "find the command by its short name.",
                 changes=[{
                     "path": str(path), "kind": "modify",
-                    "content": self.credits_skill(), "key": "credits skill",
+                    "content": self.credits_skill(ctx), "key": "credits skill",
                     "reason": "replace the older text this tool wrote (about 1.5 KB; loaded only when you type /credits)",
                 }],
                 done="updated the /credits shortcut",
@@ -1689,7 +1700,7 @@ class ClaudeCodeAdapter(Adapter):
                 "what is wasting credits now.",
             changes=[{
                 "path": str(path), "kind": "create",
-                "content": self.credits_skill(), "key": "credits skill",
+                "content": self.credits_skill(ctx), "key": "credits skill",
                 "reason": "new manual-only skill (about 1.5 KB; loaded only when you type /credits)",
             }],
             done="added the /credits shortcut",

@@ -395,7 +395,8 @@ def test_setup_adds_a_manual_only_credits_skill_and_never_replaces_yours(tmp_pat
     text = skill.read_text(encoding="utf-8")
     fm = frontmatter(text)
     assert fm.get("name") == "credits" and fm.get("disable-model-invocation") == "true"
-    assert "`tokenstretch startup`" in text and "`tokenstretch watch --once`" in text and len(text) < 1800
+    assert "`tokenstretch startup`" in text and "`tokenstretch watch --once`" in text
+    assert len(text) < 1900 + len(str(tmp_path))
     assert "`tokenstretch setup --list`" in text and "setup --only <id> --yes" in text
     assert "wait for a yes" in text and "Never pass `--with-installs`" in text
     assert "Do not change any file or setting yet." in text and "Do not tell the user to open a terminal." in text
@@ -427,6 +428,35 @@ def test_setup_updates_its_own_older_credits_skill_but_not_yours(tmp_path):
     assert skill.read_text(encoding="utf-8").endswith("old text\n")      # undo brings the old copy back
     skill.write_text("my own credits skill\n", encoding="utf-8")         # no marker: it is yours
     assert "claude-credits-skill" not in {i.id for i in build_plan(_ctx(w))[0]}
+
+
+def test_credits_skill_names_a_full_command_for_apps_without_the_path(tmp_path):
+    """A desktop app may not have the installed command's folder on its PATH: the skill gives the full one."""
+    import dataclasses
+    import shlex
+    import sys
+    from tokenstretch.adapters.claude_code import ClaudeCodeAdapter
+    w = _world(tmp_path)
+    ad, ctx = ClaudeCodeAdapter(), _ctx(w)
+    bare = dataclasses.replace(ctx, path_dirs=[])                      # not installed as a command
+    text = ad.credits_skill(bare)
+    assert f"{shlex.quote(sys.executable)} -m tokenstretch`" in text and "PYTHONPATH=" in text
+    assert "python3 -m tokenstretch" not in text.replace(sys.executable, "")
+    assert "do not search for it and do not install anything" in text
+    bindir = tmp_path / "bin dir"
+    bindir.mkdir()
+    shim = bindir / "tokenstretch"
+    shim.write_text("#!/bin/sh\n", encoding="utf-8")
+    shim.chmod(0o755)
+    found = dataclasses.replace(ctx, path_dirs=[bindir])
+    text = ad.credits_skill(found)
+    assert f"`{shlex.quote(str(shim))}`" in text and "PYTHONPATH=" not in text
+    # the path moved (a reinstall): setup offers to refresh the copy it wrote
+    skill = w / "home" / ".claude" / "skills" / "credits" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(ad.credits_skill(bare), encoding="utf-8")
+    assert ad._setup_credits(bare) is None
+    assert ad._setup_credits(found).changes[0]["kind"] == "modify"
 
 
 # ---- pick one step: --list, --only, --skip -------------------------------------------------------
