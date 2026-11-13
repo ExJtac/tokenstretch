@@ -310,6 +310,15 @@ def cmd_model(args) -> int:
         else:
             print("\n".join(format_suggestion(res, picks)))
         return 0
+    if args.model_cmd == "effort":
+        from .models import effort_mix, format_effort_mix
+        from .setup import detected_adapters
+        sessions = []
+        for ad in detected_adapters(ctx):
+            sessions += ad.watch_sessions(ctx, limit=max(1, min(int(args.sessions), 50))) or []
+        mix = effort_mix(sessions)
+        print(json.dumps(mix, indent=2) if args.json else "\n".join(format_effort_mix(mix)))
+        return 0
     return run_default(ctx, args.tier, tool=args.tool, apply=bool(args.apply) and not args.dry_run)
 
 
@@ -579,6 +588,10 @@ def main(argv=None) -> int:
     ms.add_argument("task", nargs="*", help="the task description")
     ms.add_argument("--file", type=Path, help="read the task description from this file")
     ms.add_argument("--json", action="store_true")
+    me = msub.add_parser("effort", help="the reasoning effort your recent sessions ran at (read from local logs)")
+    _add_context_args(me)
+    me.add_argument("--sessions", type=int, default=10, help="newest conversations to read per tool (default 10)")
+    me.add_argument("--json", action="store_true")
     md = msub.add_parser("default", help="set a tool's default model by tier (dry-run unless --apply)")
     _add_context_args(md)
     md.add_argument("--tier", choices=("light", "mid", "top"), required=True)

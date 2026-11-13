@@ -26,6 +26,7 @@ TOP_RULES = [
     (r"\broot cause\b|\bintermittent\w*|\bflaky\b|\bnon-?deterministic|\bwhy does\b|\bonly in prod", "hard debugging"),
     (r"\bperformance\b|\boptimi[sz]\w+|\bprofil\w+|\bbottleneck", "performance"),
     (r"\bdistributed\b|\bconsensus\b|\bscal(e|ing|ability)\b", "distributed/scale"),
+    (r"\bredesign\w*\b|\b(visual|ui|ux|page|web|site) design\b|\bdesign system\b|\blook and feel\b", "visual design"),
 ]
 LIGHT_RULES = [
     (r"\brenam\w*\b", "rename"),
@@ -96,6 +97,76 @@ _EFFORT_PLAIN = {
     "high": "one hard signal; worth more thinking for this task",
     "xhigh": "several hard signals at once; for this task only, then step back down",
 }
+
+
+LOGGED_EFFORTS = EFFORTS + ("max",)
+
+
+def effort_mix(sessions: list[dict]) -> dict:
+    """Steps and output tokens per logged effort, main conversations and helpers apart.
+
+    Reads only what a tool's own log records. A helper counts at the effort most of its steps used.
+    """
+    main: dict[str, dict] = {}
+    helpers: dict[str, dict] = {}
+    used = 0
+    for s in sessions:
+        seen = False
+        for t in s.get("turns") or []:
+            if t.get("effort") in LOGGED_EFFORTS:
+                row = main.setdefault(t["effort"], {"steps": 0, "output": 0})
+                row["steps"] += 1
+                row["output"] += int(t.get("output_tokens") or 0)
+                seen = True
+        for h in s.get("helpers") or []:
+            if h.get("effort") in LOGGED_EFFORTS:
+                row = helpers.setdefault(h["effort"], {"steps": 0, "output": 0, "helpers": 0})
+                row["steps"] += int(h.get("steps") or 0)
+                row["output"] += int(h.get("output") or 0)
+                row["helpers"] += 1
+                seen = True
+        used += 1 if seen else 0
+    return {"sessions": used, "read": len(sessions), "main": main, "helpers": helpers,
+            "advice": _effort_advice(main, helpers)}
+
+
+def _effort_advice(main: dict, helpers: dict) -> list[str]:
+    out = []
+    steps = sum(r["steps"] for r in helpers.values())
+    hot = sum(r["steps"] for e, r in helpers.items() if e in ("high", "xhigh", "max"))
+    if steps and hot * 2 >= steps:
+        out.append(f"{hot} of {steps} helper steps ran at high effort or above. Helpers that search, read or "
+                   "write routine text rarely need it: give them a lower effort and keep the high one for the "
+                   "hard step.")
+    if "max" in main or "max" in helpers:
+        out.append("Some steps ran at max. It is the dearest setting: use it for one hard task, then step back down.")
+    both = set(main) | set(helpers)
+    total = steps + sum(r["steps"] for r in main.values())
+    if len(both) == 1 and total >= 20:
+        only = next(iter(both))
+        out.append(f"Every step ran at {only}, whatever the task. `{CLI_NAME} model suggest \"<task>\"` suggests "
+                   "an effort per task: lower for mechanical work, higher for the hard part.")
+    return out
+
+
+def format_effort_mix(mix: dict) -> list[str]:
+    if not mix["main"] and not mix["helpers"]:
+        return [f"No reasoning effort is recorded in the {mix['read']} newest conversations.",
+                "Claude Code writes it to its logs; older logs and other tools may not."]
+
+    def line(label: str, rows: dict) -> str:
+        total = sum(r["steps"] for r in rows.values()) or 1
+        parts = [f"{e.upper()} {rows[e]['steps']} steps ({round(100 * rows[e]['steps'] / total)}%), "
+                 f"{rows[e]['output']:,} output tokens" for e in LOGGED_EFFORTS if e in rows]
+        return f"  {label}: " + ("; ".join(parts) if parts else "none recorded")
+
+    n = mix["sessions"]
+    lines = [f"Reasoning effort recorded in {n} recent conversation{'s' if n != 1 else ''} (local logs, read-only):",
+             line("main conversations", mix["main"]), line("helpers", mix["helpers"])]
+    if mix["advice"]:
+        lines += [""] + mix["advice"]
+    lines += ["", "Output tokens include thinking. The advice is a rule of thumb, not a measured saving."]
+    return lines
 
 
 _PLAIN = {

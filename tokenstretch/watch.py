@@ -55,6 +55,8 @@ class WatchConfig:
     helper_ratio: float = 1.0       #     ... and at least this many times the main conversation
     wake_min: int = 3               # (h) finished helpers woke the conversation at least this often ...
     wake_min_sent: int = 300_000    #     ... and those extra steps re-sent at least this much
+    effort_helpers: int = 2         # (i) at least this many helpers ran at a top effort ...
+    effort_min_sent: int = 500_000  #     ... and together re-sent at least this much
     active_s: int = 2 * 3600        # only sessions written within this window
 
 
@@ -274,6 +276,22 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
                                "one final report, not one per helper.",
                            short=f"helpers woke this chat {len(wakes)}x (~{_m(wake_sent)} re-sent): start them early, "
                                  "together"))
+
+    # (i) helpers at a top reasoning effort (only where the log records the effort)
+    hot = [h for h in helpers if h.get("effort") in ("xhigh", "max")]
+    hot_sent = sum(h["sent"] for h in hot)
+    if len(hot) >= cfg.effort_helpers and hot_sent >= cfg.effort_min_sent:
+        level = "max" if any(h["effort"] == "max" for h in hot) else "xhigh"
+        out.append(WatchWarning(base + ("effort",), **tag,
+                           what=f"{len(hot)} helpers in this session ran at {level} effort and re-sent "
+                                f"~{_m(hot_sent)} tokens ({sum(h['steps'] for h in hot)} steps).",
+                           why="a higher effort lets the model think longer on every step, and thinking is billed "
+                               "as output, the dearest kind of token. A helper that searches, reads or writes "
+                               "routine text rarely needs it.",
+                           fix="give routine helpers a lower effort (in the helper's definition file, or when "
+                               f"you start one) and keep {level} for the one hard step. "
+                               f"`{CLI_NAME} model suggest \"<task>\"` suggests an effort for a task.",
+                           short=f"{len(hot)} helpers at {level} effort (~{_m(hot_sent)}): lower it for routine work"))
 
     # (f) heavy start: what the session carried on its first step, before any work
     start = s.get("start_tokens")
