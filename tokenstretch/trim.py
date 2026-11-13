@@ -282,12 +282,12 @@ def _display(path: Path, ctx: Context) -> str:
     for base, prefix in ((ctx.root, ""), (ctx.home, "~/")):
         try:
             rel = path.relative_to(base)
-            return prefix + str(rel) if prefix or str(rel) != "." else str(path)
+            return prefix + rel.as_posix() if prefix or str(rel) != "." else str(path)
         except ValueError:
             pass
         try:
             rel = path.resolve().relative_to(base.resolve())
-            return prefix + str(rel)
+            return prefix + rel.as_posix()
         except (ValueError, OSError):
             pass
     return str(path)

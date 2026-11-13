@@ -398,7 +398,7 @@ def test_startup_sizes_local_parts_largest_first(tmp_path):
         data = build(_ctx(w))
     claude = next(d for d in data if d["adapter"] == "claude-code")
     names = [(p["kind"], p["name"], p["tokens"]) for p in claude["parts"]]
-    assert names[0][0] == "instruction file" and names[0][1].endswith("root/CLAUDE.md") and names[0][2] == 2_000
+    assert names[0][0] == "instruction file" and Path(names[0][1]).as_posix().endswith("root/CLAUDE.md") and names[0][2] == 2_000
     assert ("skill listing (user)", "listed", 100) in names
     assert not any(n == "manual" for _, n, _ in names)             # manual-only skills cost nothing per session
     assert not any("pkg" in n for _, n, _ in names)

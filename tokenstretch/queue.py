@@ -17,6 +17,7 @@ import io
 import json
 import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -64,18 +65,31 @@ def pace_gate(home: Path | str | None = None) -> dict:
 
 # ---------------------------------------------------------------- storage
 
+def _retry_busy(fn, tries: int = 50):
+    """Run fn(); on Windows a file another thread has open (or is replacing) raises PermissionError for a
+    few milliseconds. Retry briefly, then raise. POSIX never raises it for these calls, so nothing changes there."""
+    for i in range(tries):
+        try:
+            return fn()
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(0.005)
+
+
 def _read(path: Path) -> dict | None:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(_retry_busy(lambda: path.read_text(encoding="utf-8")))
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
 
 
 def _write_atomic(path: Path, data: dict) -> None:
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    # Per-thread temp name: two threads in one process must not share a temp file.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
-    os.replace(tmp, path)
+    _retry_busy(lambda: os.replace(tmp, path))
 
 
 def _claim_path(qd: Path, tid: str) -> Path:
@@ -185,7 +199,8 @@ def add_from_plan(root: Path | str, plan_text: str, preset: str = "") -> list[di
 # ---------------------------------------------------------------- claim / finish
 
 def _norm(p: str) -> str:
-    return os.path.normpath(p.strip()).rstrip("/")
+    n = os.path.normpath(p.strip())
+    return (n.replace(os.sep, "/") if os.sep != "/" else n).rstrip("/")
 
 
 def files_overlap(a, b) -> bool:
@@ -215,7 +230,7 @@ def claim_next(root: Path | str, agent: str = "") -> tuple[dict | None, str]:
             continue
         try:
             fd = os.open(_claim_path(qd, t["id"]), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
+        except (FileExistsError, PermissionError):      # Windows reports a just-deleted claim as PermissionError
             continue
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump({"agent": agent, "claimed": time.time()}, fh)

@@ -221,7 +221,7 @@ def test_cli_report_prints_path(tmp_path):
     buf = io.StringIO()
     with credential_guard(), redirect_stdout(buf):
         main(["report", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
-    m = re.search(r"(/\S+\.html)", buf.getvalue())
+    m = re.search(r"(?:^|\s)(\S+\.html)", buf.getvalue())
     assert m and Path(m.group(1)).is_file()
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
+import sys
 import re
 from pathlib import Path
 
@@ -1214,7 +1215,8 @@ class HostAdapter(Adapter):
         """Stat only: mode and permissions of credential files. Never open()."""
         findings = []
         darwin = ctx.os_name().startswith("darwin") or ctx.os_name() in {"macos", "osx"}
-        windows = ctx.os_name().startswith("win")
+        # POSIX mode bits are not real on Windows (stat reports 0666 for everything), so never judge them there.
+        windows = ctx.os_name().startswith("win") or sys.platform == "win32"
         for path in self._credential_paths(ctx):
             st = ctx.file_stat(path)
             if st is None:
@@ -1239,7 +1241,7 @@ class HostAdapter(Adapter):
                 f"{path} exists: " + "; ".join(issues) + ". Mode and permissions were collected with stat only; the file was not opened.",
                 "On macOS, follow Anthropic's Keychain recovery steps so the login is not stored as a plaintext file. On any OS, chmod 600 the file (owner read/write only).",
                 "credential-locations.md (P06; Claude Keychain fallback is 0600; Linux store is normally ~/.claude/.credentials.json)",
-                file=str(path), key="mode", value=f"{mode:04o}",
+                file=str(path), key="mode", value="not meaningful on Windows" if windows else f"{mode:04o}",
             ))
         return findings
 

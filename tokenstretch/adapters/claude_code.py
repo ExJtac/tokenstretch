@@ -2266,7 +2266,7 @@ def _last_assistant_usage(path: Path, tail_bytes: int = 2_000_000) -> tuple[str,
 
 def _home_short(path, ctx: Context) -> str:
     try:
-        return "~/" + str(Path(path).relative_to(ctx.home))
+        return "~/" + (Path(path).relative_to(ctx.home)).as_posix()
     except ValueError:
         return str(path)
 

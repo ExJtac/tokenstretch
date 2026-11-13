@@ -121,7 +121,7 @@ def _epoch(ts) -> float | None:
 
 def _short(path: str, home: Path) -> str:
     try:
-        return "~/" + str(Path(path).relative_to(home))
+        return "~/" + (Path(path).relative_to(home)).as_posix()
     except ValueError:
         return path
 

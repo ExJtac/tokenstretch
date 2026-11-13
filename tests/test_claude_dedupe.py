@@ -6,6 +6,7 @@ Totals were cross-checked against `claude -p --output-format json` modelUsage fo
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def _plant(home: Path, bench: Path) -> dict[str, Path]:
     out = {}
     for side in ("before", "after"):
         cwd = str(bench / side / "repo")
-        proj = home / ".claude" / "projects" / cwd.replace("/", "-")
+        proj = home / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", cwd)
         sid = f"sess-{side}"
         main = proj / f"{sid}.jsonl"
         sub = proj / sid / "subagents" / f"agent-{side}1.jsonl"
