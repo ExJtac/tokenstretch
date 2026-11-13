@@ -64,6 +64,8 @@ class WatchConfig:
     min_growth: int = 30_000
     min_wake_sent: int = 100_000
     active_s: int = 2 * 3600        # only sessions written within this window
+    pace_points: float = 10.0       # (pace) a stored plan window this many points over its even-pace line
+    pace_every_s: int = 60          #     ... checked at most this often
 
     def limits(self, model: str) -> dict:
         """The size limits for one model: {context, growth, wake_sent, weight}.
@@ -424,6 +426,7 @@ class Watcher:
         self.now = now
         self.notifier = notifier
         self.seen: set[tuple] = set()
+        self._pace_at = 0.0
 
     def coverage(self) -> tuple[list[str], list[str]]:
         """(watched tool names, detected but not supported yet)."""
@@ -452,7 +455,40 @@ class Watcher:
                     new.append(w)
                     if self.notifier:
                         self.notifier(f"{PRODUCT_NAME}: {w.adapter} {w.session}", f"{w.what} Fix: {w.fix}")
+        for w in self.pace_scan():
+            if w.key not in self.seen:
+                self.seen.add(w.key)
+                new.append(w)
+                if self.notifier:
+                    self.notifier(f"{PRODUCT_NAME}: pace", f"{w.what} Fix: {w.fix}")
         return new
+
+    def pace_scan(self) -> list[WatchWarning]:
+        """Check `pace` (a stored plan window over its line). Silent with no reading or a finished window."""
+        from . import pace as pc
+        now = self.now()
+        if now - self._pace_at < self.cfg.pace_every_s or not pc.state_path(self.ctx.home).exists():
+            return []
+        self._pace_at = now
+        state = pc.load_state(self.ctx.home)
+        if not state["windows"]:
+            return []
+        starts = [pc.parse_time(w["resets"]) - w["length_s"] for w in state["windows"].values()]
+        sessions = []
+        for ad in self.adapters:
+            sessions += ad.watch_sessions(self.ctx, limit=500, max_age_s=max(0.0, now - min(starts)) + 86400) or []
+        out = []
+        for w in pc.watch_over(state, sessions, now, self.cfg.pace_points):
+            out.append(WatchWarning(
+                ("pace", w["window"], w["resets"]), adapter="pace", session=w["window"], project="",
+                what=f"plan window {w['window']} is ~{w['est_used']:.0f}% used (estimate) with "
+                     f"{round(100 * w['time_share'])}% of it gone: {w['est_used'] - w['time_share'] * 100:.0f} points over "
+                     "the even-pace line.",
+                why="at this pace the window runs out before it resets, and agents stall or the plan limit hits.",
+                fix=f"run `{CLI_NAME} pace --gate` before starting an agent, and `{CLI_NAME} pace --team N` to see how "
+                    "many can run at once. Estimates from local logs and your last reading, not a bill.",
+                short=f"{w['window']} {w['est_used'] - w['time_share'] * 100:.0f} points over pace: `{CLI_NAME} pace`"))
+        return out
 
 
 def run_watch(ctx: Context, cfg: WatchConfig | None = None, *, interval: float = 10.0, once: bool = False,

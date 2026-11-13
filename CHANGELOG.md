@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+<!-- pace: budget governor -->
+### Added
+- `pace`: a budget governor for plan windows. `pace set --window NAME --used PCT --resets ISO [--length 7d|5h] [--models REGEX]` stores a reading of the percent your plan shows (several windows: 5 hours, weekly, weekly top-model family); `pace clear --window NAME` forgets one. `pace` calibrates price-weighted units per 1% from the logs (the slope between two or more readings, else units since the window began over percent used) and prints, per window, the estimated percent used now, the share of the window gone, the pace ratio, units left, the allowance per remaining day and about how many steps are left today on a model and effort, and names the tightest window. Estimates, not a bill; models with no price ratio are left out and listed. Readings live in `pace.json` under the tokenstretch home.
+- `pace --gate [--window NAME] [--reserve PCT]`: exit 0 at or under the even-pace line (time share minus a reserve, default 3 points), exit 3 over it, with the wait until the line catches up. Exit 0 with a note when no reading is stored. `--json` prints `{ok, wait_seconds, window, used, line}`.
+- `pace --team N [--model ID] [--effort E]`: how many agents can run at once on the line and how many hours a day N agents can run, from measured units per step and steps per hour. Uses the nearest measured effort, labelled, when the logs hold none at the one asked for.
+- `pace --what-if`: the same week with no re-saved history and re-reads halved, and the agent-hours that buys at the same effort.
+- `watch` check `pace`: warns once per window when a stored window is 10 or more points over its line; silent with no reading or after the window has reset.
+<!-- end pace -->
+
 ## [0.4.0] - 2026-11-12
 
 ### Added

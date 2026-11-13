@@ -414,6 +414,70 @@ A dearer row is not waste by itself: compare rows that did the same kind of work
 
 `tokenstretch model default --tier mid` shows the change to your default model (Claude Code: `model` in `settings.json`). Add `--apply` to make it. The file is backed up first and `tokenstretch undo` restores it. `--tool claude` limits it to one tool. Gemini CLI uses its documented aliases (`flash-lite` / `flash` / `pro`, key `model.name` in `~/.gemini/settings.json`). Codex uses the model ids from its models page (`gpt-6-luna` / `gpt-6.1-sol` / `gpt-6-astra`, the top-level `model` key in `~/.codex/config.toml`; tables such as `[profiles.*]` are left alone). Which models you can use depends on your plan. Codex also lists `gpt-6.1-terra` as a fast light-tier alternative. Copilot CLI uses a recommended mapping (`claude-haiku-5.5` / `claude-sonnet-5.5` / `claude-opus-5.5`, with GPT-6 alternatives), which isn't a list GitHub publishes. If your Copilot model is `auto`, `model default` sets `autoTier` instead (`efficiency` / `balance` / `intelligence`).
 
+## Make a week last at full effort
+
+Lowering the reasoning effort is one way to stretch a plan, and it can cost you in redone work. This is the other way: cut what is re-sent and re-saved (long history, lapsed caches, heavy start-up), and let a governor decide how many agents run at once, so the plan's weekly limit arrives at the reset, not before.
+
+A subscription plan shows percent used per window (5 hours, the week, the week for the top model family) and a reset time. Local logs do not record that percent, so you type it in once in a while. `pace` then calibrates how many price-weighted units one percent is, from the logs since the window began, and tracks the percent from there.
+
+```bash
+tokenstretch pace set --window weekly-top --used 80 --resets 2026-03-09T09:00:00 --length 7d --models 'fable|opus'
+tokenstretch pace set --window weekly --used 60 --resets 2026-03-09T09:00:00
+tokenstretch pace                 # where each window stands against an even burn
+tokenstretch pace --gate          # exit 0 on or under the line, 3 over it (for a script or a lead agent)
+tokenstretch pace --team 8 --effort max
+tokenstretch pace --what-if
+```
+
+Sample output (a temporary home with synthetic logs, three days into a week):
+
+```text
+$ tokenstretch pace
+Pace (estimates): is the plan on an even burn through each window?
+Units are price-weighted, 1 unit = one new input token on the mid model. Estimates from local logs and list-price ratios, not a bill.
+
+weekly  (length 7d 0h, resets 2026-03-09T09:00:00Z)
+    reading: 60% used at 2026-03-05T09:00:00Z  (1 stored)
+    estimated used now: ~60%   share of window gone: 43%   pace ratio: 1.40  (over the line by 20 points; line = time share minus 3 reserve)
+    calibration: ~2.4M units per 1% (units since window start / percent used); ~97.5M units left, ~24.4M per remaining day (4.0 days left)
+    about 226 steps left today on claude-fable-5-2 at effort max (~108k units per step)
+
+weekly-top  (length 7d 0h, resets 2026-03-09T09:00:00Z, models /fable|opus/)
+    reading: 80% used at 2026-03-05T09:00:00Z  (1 stored)
+    estimated used now: ~80%   share of window gone: 43%   pace ratio: 1.87  (over the line by 40 points; line = time share minus 3 reserve)
+    calibration: ~1.7M units per 1% (units since window start / percent used); ~33.6M units left, ~8.4M per remaining day (4.0 days left)
+    about 78 steps left today on claude-fable-5-2 at effort max (~108k units per step)
+
+Tightest window: weekly-top (pace ratio 1.87, ~80% used with 43% of the window gone).
+```
+
+`pace --gate` prints one line and exits 3 while a window is over its line (the share of the window that has passed, minus a reserve of 3 points; change it with `--reserve`). It exits 0 when you are at or under the line, and also when no reading is stored: missing data never blocks work. `--json` prints `{ok, wait_seconds, window, used, line}`. A lead agent can run it before it starts another agent, and wait when it exits 3.
+
+```text
+$ tokenstretch pace --gate
+pace gate: over. weekly-top ~80% used (estimate), line 40%; wait about 2d 19h for the line to catch up.
+(exit code 3)
+```
+
+`pace --team N` measures units per step and steps per hour for the model and effort in your own logs, and says how many agents can run at once on the line and how many hours a day N agents can run. When the logs hold no steps at that effort it says so and uses the nearest measured effort, labelled. `--what-if` shows the same week with old history never saved again and re-reads halved, so you can see how many more agent-hours the cuts buy at the same effort:
+
+```text
+$ tokenstretch pace --team 8 --effort max --what-if
+Team of 8 on claude-fable-5-2 at effort max (estimates, not a bill):
+    measured: ~108k units per step, 86 steps per hour, ~9.2M units per agent-hour
+    weekly: 0.11 agents at once on the line, 0.33 h a day for 8 agents
+    weekly-top: 0.04 agents at once on the line, 0.11 h a day for 8 agents
+    so: 0.04 agents can run at once on the line; 8 agents can run about 0.11 hours a day (tightest window: weekly-top).
+What if old history was never saved again and re-reads were halved? (same models, same effort; estimates, not a bill)
+    weekly: history re-saved ~20.6M units, re-read ~76.8M units; the cuts remove ~40% of what was used. Estimated used would be ~36% instead of ~60%, 1.68x more agent-hours.
+    weekly-top: history re-saved ~20.1M units, re-read ~68.2M units; the cuts remove ~40% of what was used. Estimated used would be ~48% instead of ~80%, 1.68x more agent-hours.
+    8 agents: 0.11 h a day now, 0.19 h a day with the cuts (0.04 -> 0.06 agents at once; a day is capped at 24 h).
+```
+
+`watch` warns once per window when a stored window is 10 or more points over its line, and is silent with no reading or after the window has reset. Run `pace set` again after each reset.
+
+Limits to know: every number is an estimate from local logs, published price ratios and your own readings. Units are not dollars and this is not a bill; a plan counts usage its own way, so read your plan's percent now and then and add a reading (two readings calibrate better than one). Models with no price ratio are left out of the units and listed, never guessed. Helpers' steps carry no timestamps, so they count in the same share as the main steps inside the window. Only your readings are stored, in `pace.json` under the tokenstretch home. No network, no model calls.
+
 ## Honest results
 
 We only publish numbers from real bench runs.

@@ -341,6 +341,102 @@ def cmd_model(args) -> int:
     return run_default(ctx, args.tier, tool=args.tool, apply=bool(args.apply) and not args.dry_run)
 
 
+# ---- pace: budget governor (bounded block) ----
+def cmd_pace(args) -> int:
+    import time as _time
+    from datetime import datetime
+    from . import pace as pc
+
+    ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    state = pc.load_state(ctx.home)
+    now = pc.parse_time(args.now) if getattr(args, "now", None) else _time.time()
+    out = (lambda obj, lines: print(json.dumps(obj, indent=2) if args.json else "\n".join(lines)))
+    try:
+        if args.pace_cmd == "set":
+            if not args.window or args.used is None or not args.resets:
+                print("pace set needs --window NAME --used PCT --resets ISO_TIME", file=sys.stderr)
+                return 2
+            at = pc.parse_time(args.at) if args.at else now
+            length = pc.parse_length(args.length) if args.length else None
+            what = pc.set_reading(state, args.window, args.used, pc.parse_time(args.resets), at,
+                                  length_s=length, models=args.models)
+            path = pc.save_state(ctx.home, state)
+            w = state["windows"][args.window]
+            msg = {"new": "stored", "added": "added a reading to", "restarted": "started a new period for",
+                   "corrected": "replaced older readings of"}[what]
+            out({"window": args.window, "result": what, "file": str(path), **w},
+                [f"{msg} window {args.window}: {args.used:g}% used, resets {w['resets']}, length "
+                 f"{pc.dur(w['length_s'])}" + (f", models /{w['models']}/" if w["models"] else "") + f". ({path})"])
+            return 0
+        if args.pace_cmd == "clear":
+            if not args.window:
+                print("pace clear needs --window NAME", file=sys.stderr)
+                return 2
+            gone = state["windows"].pop(args.window, None) is not None
+            if gone:
+                pc.save_state(ctx.home, state)
+            out({"window": args.window, "cleared": gone},
+                [f"cleared window {args.window}." if gone else f"no window named {args.window}."])
+            return 0
+    except (ValueError, OSError) as exc:
+        print(f"pace: {exc}", file=sys.stderr)
+        return 2
+
+    reserve = pc.DEFAULT_RESERVE if args.reserve is None else float(args.reserve)
+    if args.window and args.window not in state["windows"]:
+        if args.gate:
+            note = f"no reading stored for window {args.window}: not blocking"
+            out({"ok": True, "wait_seconds": 0, "window": None, "used": None, "line": None},
+                [f"pace gate: ok. {note}."])
+            return 0
+        print(f"no window named {args.window}; stored: {', '.join(sorted(state['windows'])) or 'none'}", file=sys.stderr)
+        return 2
+    if args.gate and not state["windows"]:
+        note = "no reading stored: not blocking"
+        out({"ok": True, "wait_seconds": 0, "window": None, "used": None, "line": None},
+            [f"pace gate: ok. {note}."])
+        return 0
+    if not state["windows"] and not (args.team or args.what_if):
+        out({"windows": []}, pc.format_windows([], {}, None))
+        return 0
+
+    from .setup import detected_adapters
+    starts = [pc.parse_time(w["resets"]) - w["length_s"] for w in state["windows"].values()]
+    age = (_time.time() - min(starts) + 86400) if (starts and not getattr(args, "now", None)) else None
+    sessions = []
+    for ad in detected_adapters(ctx):
+        sessions += ad.watch_sessions(ctx, limit=max(1, min(int(args.sessions), 1000)), max_age_s=age) or []
+    wins = pc.evaluate(state, sessions, now, reserve, args.window)
+
+    if args.gate:
+        g = pc.run_gate(state, sessions, now, reserve, args.window)
+        out({k: g[k] for k in ("ok", "wait_seconds", "window", "used", "line")}, pc.format_gate(g))
+        return 0 if g["ok"] else 3
+    stats = pc.step_stats(sessions)
+    result: dict = {"windows": wins, "tightest": (pc.tightest(wins) or {}).get("window"), "estimate": True,
+                    "note": pc.NOT_A_BILL}
+    lines: list[str] = []
+    team = None
+    if args.team:
+        team = pc.team_view(wins, stats, max(1, int(args.team)), args.model, args.effort, now)
+        result["team"] = team
+    if args.what_if:
+        result["what_if"] = pc.what_if(state, sessions, wins, team, now)
+    if not args.team and not args.what_if:
+        model = pc.pick_model(stats, args.model)
+        today = {w["window"]: pc.steps_today(w, stats, model, args.effort) for w in wins}
+        result["steps_today"] = today
+        lines = pc.format_windows(wins, today, pc.tightest(wins))
+    else:
+        if args.team:
+            lines += pc.format_team(team)
+        if args.what_if:
+            lines += pc.format_what_if(result["what_if"])
+    out(result, lines)
+    return 0
+# ---- end pace ----
+
+
 def cmd_brief(args) -> int:
     from .brief import Brief, build, format_report, from_preset, split
 
@@ -638,6 +734,31 @@ def main(argv=None) -> int:
     md.add_argument("--apply", action="store_true", help="write the change (backed up; undo restores it)")
     md.add_argument("--dry-run", action="store_true", help="show the plan only (the default)")
 
+    # ---- pace parser (bounded block) ----
+    pa = sub.add_parser("pace", help="budget governor: keep a plan window on an even burn line "
+                                     "(estimates from local logs and your readings, not a bill)")
+    _add_context_args(pa)
+    pa.add_argument("pace_cmd", nargs="?", choices=("set", "clear"),
+                    help="set: store a reading of percent used; clear: forget a window; none: show the pace")
+    pa.add_argument("--window", help="window name, e.g. 5h, weekly, weekly-top")
+    pa.add_argument("--used", type=float, help="set: percent used, as your plan's usage page shows it")
+    pa.add_argument("--resets", help="set: when the window resets (ISO time)")
+    pa.add_argument("--length", help="set: window length, 7d or 5h (default 7d, 5h for a window named 5h)")
+    pa.add_argument("--models", help="set: regex of the model names that count in this window")
+    pa.add_argument("--at", help="set: time of the reading (ISO, default now)")
+    pa.add_argument("--gate", action="store_true",
+                    help="exit 0 at or under the even-pace line, 3 over it (0 when no reading is stored)")
+    pa.add_argument("--reserve", type=float, help="points kept below the line (default 3)")
+    pa.add_argument("--team", type=int, metavar="N", help="how many of N agents can run at once, and for how many hours a day")
+    pa.add_argument("--model", help="--team and steps left: model id (default the busiest)")
+    pa.add_argument("--effort", help="--team and steps left: effort (default the most used)")
+    pa.add_argument("--what-if", action="store_true",
+                    help="the same week with no re-saved history and re-reads halved")
+    pa.add_argument("--sessions", type=int, default=500, help="newest conversations to read per tool (default 500)")
+    pa.add_argument("--now", help=argparse.SUPPRESS)
+    pa.add_argument("--json", action="store_true")
+    # ---- end pace parser ----
+
     a = p.parse_args(argv)
     if a.cmd == "doctor":
         return doctor(a)
@@ -673,5 +794,7 @@ def main(argv=None) -> int:
         return cmd_brief(a)
     if a.cmd == "trim":
         return cmd_trim(a)
+    if a.cmd == "pace":
+        return cmd_pace(a)
     print(f"{a.cmd}: not implemented yet", file=sys.stderr)
     return 3
