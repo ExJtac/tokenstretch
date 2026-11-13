@@ -213,7 +213,7 @@ Already have a status line from another tool, such as Caveman's? A tool has one 
 
 The wrapped command gets the same input and prints as before, and tokenstretch adds its line to the end of the first line (`[CAVEMAN] · 22K/150K history · claude-sonnet-5-5`). If the wrapped command fails or takes over 3 seconds, you get the tokenstretch line alone; if tokenstretch has nothing to say, you get the other line unchanged.
 
-Claude Code pipes the session's log path to the command, and `statusline` reads that one file. It only opens a `.jsonl` file inside `~/.claude/projects`; any other path prints nothing. Run by hand, it uses your newest active session. It's read-only, runs no other program unless you pass `--wrap`, and takes about a tenth of a second. If anything goes wrong it prints nothing and exits 0, so it can't break your status bar. `--max-context` and `--max-reads` work as in `watch`.
+Claude Code pipes the session's log path to the command, and `statusline` reads that one file. It only opens a `.jsonl` file inside `~/.claude/projects`; any other path prints nothing. Run by hand, it uses your newest active session. It's read-only unless you have switched `pace auto` on (then it stores plan readings in tokenstretch's own `pace.json`), runs no other program unless you pass `--wrap`, and takes about a tenth of a second. If anything goes wrong it prints nothing and exits 0, so it can't break your status bar. `--max-context` and `--max-reads` work as in `watch`.
 
 ### In the session itself
 
@@ -447,6 +447,8 @@ Lowering the reasoning effort is one way to stretch a plan, and it can cost you 
 
 A subscription plan shows percent used per window (5 hours, the week, the week for the top model family) and a reset time. Local logs do not record that percent, so you type it in once in a while. `pace` then calibrates how many price-weighted units one percent is, from the logs since the window began, and tracks the percent from there. On the one account we checked this against (one reading stored, a week of logs), the estimate matched the plan's own card to the point at two later checks within half an hour: 83% then 84% for the top-model week, 61% then 62% for all models. That is one account over a short span, not a promise; add a reading now and then.
 
+To skip the typing on Claude Code, run `tokenstretch pace auto`. Claude Code hands its status line the plan's 5-hour and 7-day limits (percent used and reset time, on a subscription plan, after a session's first reply). With `pace auto` on, the tokenstretch status line stores them as windows `auto-5h` and `auto-week` each time the percent moves a point or half an hour passes. It is off until you switch it on, it stores only the percent and the reset time in `pace.json`, and `tokenstretch pace auto --off` stops it. Claude Code reports no per-model weekly limit there, so keep a top-model window current with `pace set`.
+
 ```bash
 tokenstretch pace set --window weekly-top --used 80 --resets 2026-03-09T09:00:00 --length 7d --models 'fable|opus'
 tokenstretch pace set --window weekly --used 60 --resets 2026-03-09T09:00:00
@@ -549,7 +551,7 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 
 **Will it slow my agent down or cut work?** No. The biggest win is choosing the right model for the job and not re-reading old history. The top model is one `/model` command away whenever you need it.
 
-**Does it change anything without asking?** No. Doctor, status, report, watch, statusline, dashboard, and model suggest are read-only. `nudge` (the prompt hook setup adds) changes none of your files; it only keeps its own small state file under `~/.tokenstretch/nudge/`. `doctor` keeps per-log totals in `~/.tokenstretch/cache/doctor-logs.json` (log paths and token counts, nothing else) so a second run takes seconds instead of re-reading every session log; `doctor --no-cache` writes nothing, and the file is safe to delete.
+**Does it change anything without asking?** No. Doctor, status, report, watch, statusline, dashboard, and model suggest are read-only. `nudge` (the prompt hook setup adds) changes none of your files; it only keeps its own small state file under `~/.tokenstretch/nudge/`. `doctor` keeps per-log totals in `~/.tokenstretch/cache/doctor-logs.json` (log paths and token counts, nothing else) so a second run takes seconds instead of re-reading every session log; `doctor --no-cache` writes nothing, and the file is safe to delete. The one exception you switch on yourself: with `pace auto` on, `statusline` stores plan readings in tokenstretch's own `pace.json`.
 
 **Do I have to run anything after setup?** No. For Claude Code, setup puts the warnings in the status line and in the session, sets the default model, and adds the `/handoff`, `/brief`, and `/credits` shortcuts. If you never open a terminal, type `/credits` in the chat to see what a new session carries and what is wasting credits now. `watch`, `dashboard`, and `report` are there if you want more detail. Other tools get the rules block and model default; live warnings for them are on the roadmap. `trim` and `model default` are dry runs unless you pass `--apply`. Setup asks once, and it's a dry run without a terminal unless you pass `--yes`.
 

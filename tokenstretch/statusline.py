@@ -5,7 +5,8 @@ important warning in short form. Sessions and per-turn records come from adapter
 (`watch_session_at`, `watch_sessions`); the checks are watch's own `session_warnings`.
 
 A status bar runs this on every update, so it builds a light context (no `ps`, no `crontab`) and
-reads one session log. It is read-only, opens no socket, and prints nothing rather than an error:
+reads one session log. It is read-only (with one exception the user switches on: `pace auto`
+stores the plan limits the tool hands it, in tokenstretch's own `pace.json`), opens no socket, and prints nothing rather than an error:
 a broken status line must never get in the way of the tool it sits in.
 
 A tool has one status-line slot. `--wrap COMMAND` shares it: the command you already use (another
@@ -142,10 +143,16 @@ def run_statusline(home: Path | None = None, root: Path | None = None, plan: str
     """Always exits 0. Any failure prints nothing (with `wrap`: the wrapped line alone)."""
     raw = read_raw(sys.stdin if stdin is None else stdin)
     theirs = run_wrapped(wrap, raw) if wrap else ""
+    payload = parse_payload(raw)
     try:
-        ours = build_line(light_context(home, root, plan), parse_payload(raw), cfg)
+        ours = build_line(light_context(home, root, plan), payload, cfg)
     except Exception:  # noqa: BLE001 - a status line must never break the tool that runs it
         ours = ""
+    try:  # writes only when the user has switched `pace auto` on
+        from . import paceauto
+        paceauto.record(Path(home or Path.home()).expanduser(), payload, time.time())
+    except Exception:  # noqa: BLE001
+        pass
     line = join_lines(theirs, ours)
     if line:
         out(line)
