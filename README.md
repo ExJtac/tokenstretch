@@ -127,7 +127,7 @@ Options: `--add-to-path`, `--python PATH`, `--data-dir DIR`, `--bin-dir DIR`, `-
 1. It checks the computer: the Python version, which supported coding tools it finds, whether the setup steps are already in place, and whether automatic plan readings are on.
 2. It lists the changes it would make, one plain line each: the steps `tokenstretch setup` applies by its safe defaults (see [What setup changes](#what-setup-changes-and-how-to-undo-it)), plus switching on [`pace auto`](#make-a-week-last-at-full-effort) when Claude Code is found. It never runs the optional pinned installs, and it downloads nothing.
 3. With a person at the terminal it asks `Apply these changes? [y/N]`. Without one (a pipe, CI, an AI assistant's shell) it prints the list and the exact command to apply, `tokenstretch start --yes`, and changes nothing.
-4. After applying, or when everything is already in place, it prints up to three plain lines: how much of the plan's week is used, whether that is on track, ahead of pace or behind pace, and one thing to do next. With no reading yet it says where one comes from.
+4. After applying, or when everything is already in place, it prints up to three plain lines: how much of the plan's week is used, whether that is on track, too fast or with room to spare, and one thing to do next. With no reading yet it says where one comes from.
 
 Running it twice is safe: the second run says it is already set up and changes nothing.
 

@@ -90,25 +90,33 @@ def pace_summary(ctx: Context, now: float | None = None) -> dict:
             "Next: use Claude Code as you normally do, then run this command again.",
         ]
         return out
-    name = next(iter(wins))
-    sub = {"windows": {name: wins[name]}}
-    w = pc.evaluate(sub, pc.window_sessions(ctx, sub), now)[0]
-    if w["finished"]:
-        out.update(window=name, status="stale")
+    sub = {"windows": wins}
+    rows = pc.evaluate(sub, pc.window_sessions(ctx, sub), now)
+    live = [r for r in rows if not r["finished"]]
+    if not live:
+        out.update(window=rows[0]["window"], status="stale")
         out["lines"] = [
             "The last plan reading is from a week that has already ended.",
             "A new one appears after the next reply in a Claude Code session in a terminal.",
             "Next: use Claude Code as you normally do, then run this command again.",
         ]
         return out
+    def _used(r):
+        return r["est_used"] if r["calibrated"] else r["reading_used"]
+
+    # Several weekly limits can be stored (all models, one model family). Report the tightest one.
+    w = max(live, key=lambda r: _used(r) - r["time_share"] * 100)
+    name = w["window"]
     share = w["time_share"] * 100
-    used = w["est_used"] if w["calibrated"] else w["reading_used"]
+    used = _used(w)
     out.update(has_reading=True, window=name, used_percent=round(used), week_passed_percent=round(share),
                estimated=w["calibrated"], resets_in=pc.dur(max(0.0, pc.parse_time(w["resets"]) - now)))
     lead = "About" if w["calibrated"] else "At the last reading, about"
-    first = (f"{lead} {round(used)}% of this week's plan is used, and {round(share)}% of the week has passed "
+    which = f"your tightest weekly limit (`{name}`)" if len(live) > 1 else "this week's plan"
+    first = (f"{lead} {round(used)}% of {which} is used, and {round(share)}% of the week has passed "
              f"(it resets in {out['resets_in']}).")
-    if not w["calibrated"]:
+    # An old reading is a floor: use only grows. So "too fast" can be said from it, "fine" cannot.
+    if not w["calibrated"] and used - share < AHEAD_POINTS:
         out["status"] = "unknown"
         out["lines"] = [first,
                         "Not enough usage is logged this week to say if that is on track.",
@@ -118,12 +126,12 @@ def pace_summary(ctx: Context, now: float | None = None) -> dict:
     if diff >= AHEAD_POINTS:
         out["status"] = "ahead"
         lines = [first,
-                 "Ahead of pace: you are using the plan faster than the week is passing, so it may run out before it resets.",
+                 "Too fast: you are using the plan faster than the week is passing, so it may run out before it resets.",
                  "Next: keep sessions short, and use a cheaper model for routine steps."]
     elif diff <= -BEHIND_POINTS:
         out["status"] = "behind"
         lines = [first,
-                 "Behind pace: you are using less than an even share of the week, so there is room to spare.",
+                 "Room to spare: you are using less than an even share of the week.",
                  "Next: nothing. You can work as you normally do."]
     else:
         out["status"] = "on-track"

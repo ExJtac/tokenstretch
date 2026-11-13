@@ -185,8 +185,8 @@ def _summary(w, monkeypatch, used, sessions, now=NOW, name="auto-week"):
     return st.pace_summary(_ctx(w), now)
 
 
-@pytest.mark.parametrize("used,status,words", [(50, "on-track", "On track"), (80, "ahead", "Ahead of pace"),
-                                               (20, "behind", "Behind pace")])
+@pytest.mark.parametrize("used,status,words", [(50, "on-track", "On track"), (80, "ahead", "Too fast"),
+                                               (20, "behind", "Room to spare")])
 def test_week_status_in_plain_words(tmp_path, monkeypatch, used, status, words):
     w = _world(tmp_path)
     sessions = [_sess(*[_turn(T0 + i * 60) for i in range(100)])]
@@ -220,3 +220,22 @@ def test_five_hour_window_alone_is_not_the_week(tmp_path, monkeypatch):
     pc.set_reading(state, "auto-5h", 30, NOW + 3600, NOW, length_s=5 * 3600)
     pc.save_state(w / "home", state)
     assert st.pace_summary(_ctx(w), NOW)["status"] == "no-reading"
+
+
+def test_summary_reports_the_tightest_weekly_limit(tmp_path):
+    """Two weekly limits stored: the plain lines speak about the one furthest over its even share."""
+    from tokenstretch import pace as pc
+    from tokenstretch import start as st
+    from tokenstretch.context import Context
+    home = tmp_path / "home"
+    (home / ".tokenstretch").mkdir(parents=True)
+    now = 1_800_000_000.0
+    resets = pc.iso(now + 3.5 * 86400)
+    at = pc.iso(now - 60)
+    (home / ".tokenstretch" / "pace.json").write_text(json.dumps({"windows": {
+        "all": {"models": None, "length_s": 604800, "resets": resets, "readings": [{"used": 40.0, "at": at}]},
+        "top": {"models": "fable", "length_s": 604800, "resets": resets, "readings": [{"used": 90.0, "at": at}]},
+    }}), encoding="utf-8")
+    out = st.pace_summary(Context(home=home, root=tmp_path), now)
+    assert out["window"] == "top" and out["status"] == "ahead"
+    assert "`top`" in out["lines"][0] and out["lines"][1].startswith("Too fast")
