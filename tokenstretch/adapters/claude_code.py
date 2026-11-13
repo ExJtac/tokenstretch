@@ -102,8 +102,11 @@ def _mcp_servers(ctx: Context) -> list[tuple[str, dict, str]]:
     return found
 
 
-def _collect_memory_files(ctx: Context) -> list[tuple[Path, int, int]]:
-    """(path, lines, bytes) for every instruction file this tool would load."""
+def _collect_memory_files(ctx: Context, nested: bool = True) -> list[tuple[Path, int, int]]:
+    """(path, lines, bytes) for every instruction file this tool would load.
+
+    `nested=False` leaves out CLAUDE.md files deeper in the project: those load only when the agent
+    works in that folder, not on every message."""
     seeds: list[Path] = [
         ctx.home / ".claude" / "CLAUDE.md",
         ctx.root / "CLAUDE.md",
@@ -117,7 +120,7 @@ def _collect_memory_files(ctx: Context) -> list[tuple[Path, int, int]]:
             break
         cur = cur.parent
     # Also walk a shallow tree under the project for nested copies.
-    for p in walk_glob_names(ctx.root, "CLAUDE.md", max_depth=4):
+    for p in walk_glob_names(ctx.root, "CLAUDE.md", max_depth=4) if nested else ():
         seeds.append(p)
     seen: set[Path] = set()
     out: list[tuple[Path, int, int]] = []
@@ -546,6 +549,7 @@ class ClaudeCodeAdapter(Adapter):
     def list_instruction_files(self, ctx: Context, cwd: str | None = None) -> list[InstructionFile]:
         out = []
         home_claude = ctx.home / ".claude"
+        every_turn = {p for p, _, _ in _collect_memory_files(ctx, nested=False)}
         for path, lines, size in _collect_memory_files(ctx):
             try:
                 resolved = path.resolve()
@@ -556,7 +560,7 @@ class ClaudeCodeAdapter(Adapter):
             else:
                 scope = "project"
             out.append(InstructionFile(
-                path=str(path), scope=scope, bytes=size, lines=lines, always_loaded=True,
+                path=str(path), scope=scope, bytes=size, lines=lines, always_loaded=path in every_turn,
             ))
         return out
 
@@ -700,7 +704,7 @@ class ClaudeCodeAdapter(Adapter):
         return self._p01_first_party(ctx) + self._p03(ctx)
 
     def _w01(self, ctx: Context) -> list[Finding]:
-        files = _collect_memory_files(ctx)
+        files = _collect_memory_files(ctx, nested=False)  # deeper files are not read on every message
         if not files:
             return []
         findings = []

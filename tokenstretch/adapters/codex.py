@@ -43,7 +43,9 @@ def _merged(ctx: Context) -> tuple[dict, dict[str, str]]:
     return merged, sources
 
 
-def _agents_chain(ctx: Context) -> list[Path]:
+def _agents_chain(ctx: Context, nested: bool = True) -> list[Path]:
+    """AGENTS.md files. `nested=False` leaves out copies deeper in the project, which load only
+    when the agent starts in that folder."""
     paths = [ctx.home / ".codex" / "AGENTS.md"]
     cur, root = ctx.root, ctx.root
     # Walk from cwd/root up, collecting AGENTS.md (repo root to cwd).
@@ -60,7 +62,7 @@ def _agents_chain(ctx: Context) -> list[Path]:
         if len(chain) > 12:
             break
     # Prefer closer files last (they'll already be included). Also catch nested copies under root.
-    for p in walk_glob_names(ctx.root, "AGENTS.md", max_depth=4):
+    for p in walk_glob_names(ctx.root, "AGENTS.md", max_depth=4) if nested else ():
         if p.resolve() not in seen:
             chain.append(p)
             seen.add(p.resolve())
@@ -147,6 +149,7 @@ class CodexAdapter(Adapter):
     def list_instruction_files(self, ctx: Context, cwd: str | None = None) -> list[InstructionFile]:
         out = []
         home_codex = ctx.home / ".codex"
+        every_turn = set(_agents_chain(ctx, nested=False))
         for path in _agents_chain(ctx):
             counted = count_lines_bytes(path)
             if not counted:
@@ -161,7 +164,7 @@ class CodexAdapter(Adapter):
             else:
                 scope = "project"
             out.append(InstructionFile(
-                path=str(path), scope=scope, bytes=size, lines=lines, always_loaded=True,
+                path=str(path), scope=scope, bytes=size, lines=lines, always_loaded=path in every_turn,
             ))
         return out
 
@@ -278,7 +281,7 @@ class CodexAdapter(Adapter):
         return []
 
     def _w02(self, ctx: Context) -> list[Finding]:
-        files = _agents_chain(ctx)
+        files = _agents_chain(ctx, nested=False)
         if not files:
             return []
         cfg, _ = _merged(ctx)
