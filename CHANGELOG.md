@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - `model suggest` and `brief` now suggest a reasoning effort (low, medium, high, xhigh) next to the model tier, from the same task score. `max` is never suggested. For Claude Code the output names the setting to change. `--json` gains `effort` and `effort_why`. A rule of thumb, not a measured result.
 - `model effort`: the reasoning effort your recent sessions ran at, read from local logs. Steps and output tokens per effort level, main conversations and helpers apart, with plain advice. Read-only; `--json` available. Claude Code logs record the effort; other tools are not read yet.
 - `model effort --by-session`: one line per conversation with the model and effort it was logged at, so you can check a session ran at the setting you chose.
+- `brief --preset build|research|design`: start a brief from a job shape. Each preset sets limits, adds a few rule lines and suggests an effort; what you pass yourself wins. Two new lint items: `build` with no example to follow, `research` with no question in the task. `--json` gains `preset`.
 - `watch` warns when two or more helpers in a session ran at `xhigh` or `max` effort and re-sent 500K tokens or more.
 - `model suggest` counts a visual redesign (redesign, visual, UI, UX, page or site design, design system) as hard work: top tier, high effort.
 

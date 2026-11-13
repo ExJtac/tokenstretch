@@ -337,6 +337,16 @@ For research tasks the brief also asks for the full URL and read date of every f
 
 For a review, add `--review`: the helper reads only the named files, changes nothing, and reports one line per problem as `path:line: problem. fix.`. A reviewer keeps every file it opens in its history, so a wide review is costly; `--split 8` prints one brief per group of 8 files, each for its own helper, and `--max-reads` caps file reads.
 
+`--preset` starts from a job shape, so you don't retype the same limits. Anything you pass yourself wins over the preset.
+
+| Preset | For | What it adds |
+|---|---|---|
+| `build` | building something new from one existing example | follow the one example in `--from` and read nothing else in bulk, at most one helper, run the project's check once, 60-word reply. Suggested effort: medium. |
+| `research` | a research helper | 8 searches and 6 page fetches at most, answer only the questions in the task, one output file, 60-word reply. Suggested effort: low. |
+| `design` | visual or layout work | look at the current result at phone and desktop width first, write the direction down before editing, up to 5 reference pages on the web, 200-word reply. Suggested effort: high or above. |
+
+The lint knows the shapes too: `build` with no `--from` example and `research` with no question in the task are both flagged. The shapes come from one live project: a build briefed this way re-sent 2.1M tokens where an earlier, wider brief for the same kind of job re-sent 5.2M, and a research helper given an output file and a list of questions ran 9 steps where an open one ran 24. Two runs each, different subjects, so an illustration and not a measurement. A design job is the opposite case: a tight no-web, 80-word brief is the wrong shape for it, which is why that preset loosens both. With a preset, the output also reminds you to check the session ran at the effort you chose (`tokenstretch model effort --by-session`).
+
 In Claude Code you can skip the terminal: after `tokenstretch setup`, type `/brief add a retry to the upload client`. The agent rewrites the task as a brief with the same parts and lists what is missing. It's a manual-only skill, so it adds nothing to each turn. Unlike the command, `/brief` uses the model, so it costs one short reply.
 
 ## Pick the right model
