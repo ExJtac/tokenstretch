@@ -185,3 +185,96 @@ def format_report(data: list[dict], top: int = 12) -> list[str]:
     out.append(f"This block is re-sent on every step. `{CLI_NAME} trim` shortens instruction files; "
                "the other fixes are listed with each part.")
     return out
+
+
+# --- worker agent profile ---------------------------------------------------------------------
+# A worker session does one narrow coding task from a brief. It needs the tool's built-ins and the
+# brief, not the lead's connectors, skill and helper listings, plugins or long instruction files.
+AGENT_BIG_INSTRUCTION = 1_000      # an instruction file this big (tokens) is worth leaving out of a worker
+AGENT_STEPS = 50
+
+
+def agent_profile(d: dict, steps: int = AGENT_STEPS) -> dict:
+    """What a worker session on this tool can switch off, from one `build()` entry. Nothing is written."""
+    from .cost import startup_price
+    items = []
+    for p in d["parts"]:
+        kind = p["kind"]
+        if kind.startswith("connector"):
+            action = "connector: leave it off for workers"
+        elif kind.startswith("skill listing"):
+            action = "skill: hide it from workers"
+        elif kind.startswith("helper listing"):
+            action = "helper: a worker does not delegate"
+        elif kind == "instruction file" and p["tokens"] >= AGENT_BIG_INSTRUCTION:
+            action = "large instruction file: the brief carries what a narrow task needs"
+        else:
+            continue
+        items.append({"kind": kind, "name": p["name"], "tokens": p["tokens"], "action": action})
+    for p in d["unsized"]:
+        if p["kind"].startswith("connector"):
+            items.append({"kind": p["kind"], "name": p["name"], "tokens": None,
+                          "action": "connector: leave it off for workers (size unknown; see the note below)"})
+    saved = sum(i["tokens"] for i in items if i["tokens"])
+    before = d.get("measured_start")
+    after = max(0, before - saved) if before else None
+    model = (d.get("price") or {}).get("model") or ""
+    pb = startup_price(before, model, steps) if before and model else None
+    pa = startup_price(after, model, steps) if after and model else None
+    return {
+        "adapter": d["adapter"], "name": d["name"], "items": items, "saved_tokens": saved, "before": before,
+        "after": after, "steps": steps, "model": model or None,
+        "units_before": pb["units"] if pb else None, "units_after": pa["units"] if pa else None,
+        "units_saved": (pb["units"] - pa["units"]) if pb and pa else None,
+        "unsized_rest": d.get("rest"), "settings": agent_settings(d["adapter"], items),
+    }
+
+
+def agent_settings(adapter: str, items: list[dict]) -> list[str]:
+    """Suggested settings for a worker. Only the Claude Code ones are exact; check them against your version."""
+    if adapter != "claude-code":
+        return ["Turn off connectors, plugins and unused skills for worker sessions in this tool's own settings."]
+    out = ["Start workers with no connectors (flags as in Claude Code's CLI help; check them against your version):",
+           "    claude --strict-mcp-config --mcp-config '{\"mcpServers\":{}}'",
+           "Switch plugins off for worker projects, in that project's .claude/settings.json:",
+           '    {"enabledPlugins": {"<plugin>@<marketplace>": false}}']
+    if any(i["kind"].startswith("skill listing") for i in items):
+        out += ["Hide skills a worker never runs, in each SKILL.md frontmatter:", "    disable-model-invocation: true"]
+    if any(i["kind"] == "instruction file" for i in items):
+        out.append("Keep large instruction files out of worker projects (a worker's brief carries the task), "
+                   f"or shorten them with `{CLI_NAME} trim`.")
+    return out
+
+
+def format_agent(profiles: list[dict]) -> list[str]:
+    if not profiles:
+        return ["No supported tool found, so there is nothing to size."]
+    out: list[str] = []
+    for a in profiles:
+        out.append(f"{a['name']}: lean profile for a worker agent session (a suggestion; nothing is written)")
+        if a["items"]:
+            out.append("  Switch off for a worker:")
+            for i in a["items"]:
+                size = f"~{_k(i['tokens']):>6}" if i["tokens"] else "  size ?"
+                out.append(f"    {size}  {i['kind']}: {i['name']}  ({i['action']})")
+        else:
+            out.append("  No sized part is worth switching off.")
+        if a["saved_tokens"]:
+            out.append(f"  Saves ~{_k(a['saved_tokens'])} tokens per step from the parts sized above.")
+        if a["before"]:
+            out.append(f"  Start-up size: ~{_k(a['before'])} tokens now, ~{_k(a['after'])} after.")
+        else:
+            out.append("  Start-up size: no recent session with a clean first step, so no before and after.")
+        if a["units_saved"]:
+            out.append(f"  Over {a['steps']} steps on {a['model']}: ~{_k(round(a['units_before']))} units now, "
+                       f"~{_k(round(a['units_after']))} after, so ~{_k(round(a['units_saved']))} units saved. "
+                       "Units = new input tokens on the mid model; an estimate, not a bill.")
+        elif a["before"] and not a["model"]:
+            out.append("  No price ratio for the newest session's model, so no unit saving is shown.")
+        if a["unsized_rest"]:
+            out.append(f"  ~{_k(a['unsized_rest'])} tokens can't be sized from local files (system prompt, built-ins, "
+                       "plugin listings, connector tool lists). The saving above is a floor: after you apply the "
+                       "settings, start a worker and run `startup` again to see the measured size.")
+        out += ["  Settings to use:"] + [f"    {line}" if not line.startswith("    ") else f"  {line}" for line in a["settings"]]
+        out.append("")
+    return out

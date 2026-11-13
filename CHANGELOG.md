@@ -11,6 +11,9 @@ All notable changes to this project are documented here. The format follows [Kee
 <!-- team: queue -->
 - `queue`: a file-based task queue for an autonomous team, in `.tokenstretch/queue/` of the project (one JSON file per task, each holding a ready brief). `queue add` (or `--from-plan FILE` to split a numbered plan into one task per step), `queue next` (checks the pace gate first: exit 3 over the line, exit 4 when empty; claims the oldest open task with an exclusive claim file, skips tasks whose files overlap a claimed task), `queue done`, `queue fail` (the note is appended to the brief; after 2 failures the task is marked `needs-lead`), `queue list`, `queue release --stale MINUTES`, `queue touch`, and `queue loop-prompt` (a short standing prompt for one-task-per-fresh-session workers).
 <!-- /team: queue -->
+<!-- team: agent profile -->
+- `startup --agent`: a lean profile for worker agent sessions. Lists what to switch off (connectors, skill and helper listings, large instruction files), the tokens each saves, the start-up size before and after, and the saving over 50 steps on the newest session's model in price units (an estimate, not a bill). Prints suggested settings only; writes nothing. `--json`.
+<!-- /team: agent profile -->
 
 ## [0.4.0] - 2026-11-12
 

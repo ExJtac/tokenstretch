@@ -21,6 +21,7 @@ python -m tokenstretch undo       # restore the latest manifest under --home
 python -m tokenstretch watch [--once] [--interval 10] [--max-context 150000] [--max-reads 3] [--notify]
 python -m tokenstretch statusline [--max-context 150000] [--max-reads 3] [--wrap COMMAND]   # reads the tool's JSON on stdin
 python -m tokenstretch startup [--all] [--json] [--no-save]   # what a session carries before the first prompt
+python -m tokenstretch startup --agent [--json] [--no-save]   # lean profile for a worker agent: what to switch off and what it saves; writes nothing
 python -m tokenstretch auto   # hook entry for PreCompact, PostCompact and SessionStart; reads the tool's JSON on stdin
 python -m tokenstretch nudge [--max-context 150000] [--max-reads 3]   # prompt-hook entry; reads the tool's JSON on stdin, prints hook JSON or nothing
 python -m tokenstretch brief "task" [--files P..] [--from P..] [--done TEXT] [--helper] [--review] [--max-reads N] [--split N] [--no-build] [--rule TEXT] [--preset NAME] [--max-searches N] [--max-fetches N] [--brief-only] [--check] [--json]

@@ -257,6 +257,11 @@ def cmd_startup(args) -> int:
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
     data = build(ctx, remember=not args.no_save)
+    if getattr(args, "agent", False):  # --- worker agent profile block ---
+        from .startup import agent_profile, format_agent
+        profiles = [agent_profile(d) for d in data]
+        print(json.dumps(profiles, indent=2) if args.json else "\n".join(format_agent(profiles)))
+        return 0
     if args.json:
         print(json.dumps(data, indent=2))
     else:
@@ -623,6 +628,8 @@ def main(argv=None) -> int:
     st.add_argument("--all", action="store_true", help="list every part, not just the largest 12")
     st.add_argument("--no-save", action="store_true",
                     help="don't remember this run (it is used to size a connector by difference next time)")
+    st.add_argument("--agent", action="store_true",  # --- worker agent profile block ---
+                    help="a lean profile for a worker agent: what to switch off, tokens saved, and the saving over 50 steps (prints settings; writes nothing)")
     st.add_argument("--json", action="store_true")
 
     sub.add_parser("auto", help="hook entry: resumable compaction summaries and note pickup in a new chat "
