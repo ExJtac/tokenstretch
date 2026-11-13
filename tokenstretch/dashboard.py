@@ -5,9 +5,10 @@ Security model (see docs/DETAILS.md):
   * every request needs the random per-run token in the URL path, else 403;
   * the Host header must be 127.0.0.1 or localhost (stops DNS rebinding), else 403;
   * no CORS headers, a strict Content-Security-Policy, and no external assets: one inline page.
-Read-only: the page and its API never write anything. The one file it leaves is the link file
-(`~/.tokenstretch/dashboard.json`, owner-only, removed on exit) that `dashboard --url` and the
-session-start reminder read (see dashlink.py). Data comes from adapters through the same code as
+Read-only for your files: the page and its API never change a project or tool file. It writes only
+under `~/.tokenstretch/`: the link file (`dashboard.json`, owner-only, removed on exit) that
+`dashboard --url` and the session-start reminder read (see dashlink.py), and the read caches under
+`cache/` that `pace` and `doctor` also keep. Data comes from adapters through the same code as
 status / watch / doctor / pace / queue / model cost / model rework / startup / report --weekly.
 Nothing here opens an outbound connection.
 """
@@ -634,6 +635,14 @@ def run_dashboard(ctx: Context, *, host: str = LOOPBACK, port: int = DEFAULT_POR
             webbrowser.open(url)
         except Exception:  # a missing browser is not an error
             pass
+    try:
+        import signal
+
+        def _stop(*_):
+            raise KeyboardInterrupt
+        signal.signal(signal.SIGTERM, _stop)   # `kill` cleans up the link file the same way Ctrl-C does
+    except (ValueError, OSError, AttributeError):  # not the main thread, or no SIGTERM on this platform
+        pass
     try:
         srv.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:

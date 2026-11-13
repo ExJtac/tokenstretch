@@ -85,7 +85,7 @@ The proposal only (1) removes exact duplicate blocks, keeping the first copy, an
 
 ### dashboard
 
-`tokenstretch/dashboard.py` serves one self-contained HTML page (inline CSS and JS, no fonts, images, or external URLs) and JSON from `http.server` in the standard library. The only file it writes is its own link file, `~/.tokenstretch/dashboard.json` (`tokenstretch/dashlink.py`), removed when it stops.
+`tokenstretch/dashboard.py` serves one self-contained HTML page (inline CSS and JS, no fonts, images, or external URLs) and JSON from `http.server` in the standard library. It writes only under `~/.tokenstretch/`: its link file, `dashboard.json` (`tokenstretch/dashlink.py`), removed when it stops (Ctrl-C or `kill`), and the read caches under `cache/`.
 
 Requests never compute anything. A background thread builds the state in three parts and publishes each as soon as it's done: live sessions and watch warnings (every pass, `--interval`, default 5 s; only sessions written in the last 2 hours), usage / setup / bench (at most every 30 s), and doctor (every 5 minutes, or when you press the button, which only sets a flag). The page is static HTML, and `api/state` returns the last published JSON, with `warming_up`, `pending`, and `updated_local` fields the page shows. GC is paused while a part builds (then the survivors are frozen) so a long collection can't stall the HTTP thread.
 
