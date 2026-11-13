@@ -11,6 +11,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 - Dashboard: the Doctor card now sits beside Pace, and the Team queue card takes Doctor's old place lower on the page.
+- README: a short "What tokenstretch does" list sits before Quick start.
 - README: a short "Support tokenstretch" note sits under the tagline; the full note stays at the end as "Say thanks".
 
 ### Fixed

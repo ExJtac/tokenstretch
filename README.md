@@ -6,6 +6,34 @@
 
 tokenstretch is free and stays free, with no paid tier and no tracking. If it saves you credits and you'd like to say thanks: [buy me a coffee on Ko-fi](https://ko-fi.com/exjtac), or send Bitcoin (on-chain) to `bc1qt892nv80l50grylqddnzf9u4203gm2gqmr22ku`. The QR code is [at the bottom](#say-thanks).
 
+## What tokenstretch does
+
+**Finds the waste**
+- Runs 40+ checks on your own computer and explains each problem in plain words.
+- Shows what every session re-reads on each step, and which files cost the most.
+
+**Fixes it, with your yes**
+- `tokenstretch start` lists every change, asks once, then applies the safe ones.
+- `tokenstretch undo` puts every changed file back.
+
+**Runs by itself after setup (Claude Code)**
+- Long sessions are summarized automatically at about 200K tokens.
+- The summary is saved as a note, and the work carries on from it without you typing anything.
+- A new chat picks the task up from the newest note.
+- Your plan's weekly use is read automatically (Claude Code in a terminal), so it can tell you if you are on track.
+
+**A dashboard in your browser**
+- `tokenstretch dashboard` opens one live page on your own machine: checkup results, live sessions, warnings, weekly pace, team queue and more. It refreshes every 5 seconds. See [Dashboard](#dashboard).
+
+**Turns long instructions into skills (Claude Code)**
+- `tokenstretch trim --to-skills` moves step-by-step sections out of your CLAUDE.md into skills, leaving a one-line pointer, so that text is no longer resent on every turn. It shows the plan first and changes nothing until you pass `--apply`. See [Trim instruction files](#trim-instruction-files).
+
+**Also included**
+- Live warnings while you work, a status-bar line, a model picker, a task brief writer, a team queue and weekly reports. Full list: [What you get](#what-you-get).
+
+**Private by design**
+- No account, no telemetry, nothing leaves your machine.
+
 ## Quick start
 
 tokenstretch finds wasted AI coding credits on your computer and fixes the safe causes. It runs only on your machine, has no account and no telemetry, and every change can be undone.
