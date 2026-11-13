@@ -113,4 +113,4 @@ def test_doctor_gives_the_same_answer_cold_warm_and_uncached(tmp_path):
     assert store.is_file()
     warm = _doctor(home, root, sys_dir)
     assert plain == cold == warm and "W14" in plain
-    assert str(home) in store.read_text() and "claude-opus" not in store.read_text()   # paths and totals only
+    assert json.dumps(str(home))[1:-1] in store.read_text() and "claude-opus" not in store.read_text()   # paths and totals only

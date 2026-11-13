@@ -1,6 +1,10 @@
 """Host/ecosystem adapter: missing check IDs, one fixture-backed test per ID."""
 from __future__ import annotations
 
+import sys
+
+import pytest
+
 from tokenstretch.adapters import implemented_check_ids
 from tests.conftest import finding_ids, findings_with, run_doctor
 
@@ -25,7 +29,8 @@ def test_ecosystem_fires_all_new_check_ids(tmp_path):
     """Sanity: the ecosystem fixture actually exercises every new ID."""
     code, findings, _, _ = run_doctor("ecosystem", tmp_path)
     ids = finding_ids(findings)
-    missing = [i for i in NEW_IDS if i not in ids]
+    # P06 is a POSIX mode-bit check; Windows has no such bits, so the check stays quiet there by design.
+    missing = [i for i in NEW_IDS if i not in ids and not (i == "P06" and sys.platform == "win32")]
     assert missing == [], f"ecosystem fixture missed {missing}; have {sorted(ids)}"
     assert code == 2  # ToS / privacy highs
 
@@ -165,6 +170,11 @@ def test_privacy_mode_lists_every_off_box_setting(tmp_path):
     assert code == 2
 
 
+_NO_POSIX_MODE = pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows files have no POSIX mode bits (stat reports 0666 for everything)")
+
+
+@_NO_POSIX_MODE
 def test_p06_linux_world_readable(tmp_path):
     """ecosystem credential files are 0644 in the fixture; Linux flags mode only, never contents."""
     code, findings, out, dest = run_doctor("ecosystem", tmp_path)
@@ -178,6 +188,7 @@ def test_p06_linux_world_readable(tmp_path):
         assert c not in blob
 
 
+@_NO_POSIX_MODE
 def test_p06_linux_0600_is_quiet(tmp_path):
     from tests.conftest import copy_fixture
     from tokenstretch.adapters.host import HostAdapter
@@ -201,6 +212,18 @@ def test_p06_linux_0600_is_quiet(tmp_path):
     assert hits == []
 
 
+def test_p06_windows_never_judges_mode(tmp_path):
+    from tests.conftest import copy_fixture, credential_guard
+    from tokenstretch.adapters.host import HostAdapter
+    from tokenstretch.context import build_context
+    dest = copy_fixture("ecosystem", tmp_path)  # credential files are 0644 here
+    (dest / "sys" / "platform.txt").write_text("win32\n")
+    ctx = build_context(dest / "home", dest / "root", dest / "sys")
+    assert ctx.os_name() == "win32"
+    with credential_guard():
+        assert HostAdapter()._p06(ctx) == []
+
+
 def test_p06_macos_credentials_fallback(tmp_path):
     from tests.conftest import copy_fixture, credential_guard, CANARIES
     from tokenstretch.adapters.host import HostAdapter
@@ -217,7 +240,10 @@ def test_p06_macos_credentials_fallback(tmp_path):
         hits = HostAdapter()._p06(ctx)
     assert hits and hits[0].id == "P06"
     assert "Keychain" in hits[0].message
-    assert hits[0].evidence.get("value") == "0600"
+    if sys.platform == "win32":  # stat mode bits are fake on Windows; the finding must not claim one
+        assert hits[0].evidence.get("value") == "not meaningful on Windows"
+    else:
+        assert hits[0].evidence.get("value") == "0600"
     blob = hits[0].message + str(hits[0].evidence)
     for c in CANARIES:
         assert c not in blob

@@ -74,7 +74,7 @@ def test_copy_skips_ignored_work_tree_and_env(tmp_path):
     root, _home = _make_project(tmp_path)
     dest = tmp_path / "copy"
     count = _copy_repo(root, dest)
-    rels = {str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file() or p.is_symlink()}
+    rels = {p.relative_to(dest).as_posix() for p in dest.rglob("*") if p.is_file() or p.is_symlink()}
     assert "CLAUDE.md" in rels
     assert "AGENTS.md" in rels
     assert "README.md" in rels

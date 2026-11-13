@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 from argparse import Namespace
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -87,9 +88,9 @@ def test_dry_run_default_writes_nothing_and_prints_plan(tmp_path):
     # Planned hook/support files are listed, but nothing is on disk yet.
     assert result.file_changes
     paths = {ch["path"] for ch in result.file_changes}
-    assert any(p.endswith("/.claude/settings.json") for p in paths)
+    assert any(Path(p).as_posix().endswith("/.claude/settings.json") for p in paths)
     assert any("permissions" in (ch.get("reason") or "").lower() or "deny" in (ch.get("reason") or "").lower()
-               or p.endswith("/.claude/settings.json") for p in paths for ch in result.file_changes)
+               or Path(p).as_posix().endswith("/.claude/settings.json") for p in paths for ch in result.file_changes)
     assert any("ccusage" in ch["path"] or "offline" in (ch.get("reason") or "").lower()
                for ch in result.file_changes)
 
@@ -563,7 +564,7 @@ def test_headroom_apply_uses_require_hashes_and_beacon_env(tmp_path):
     assert "uv pip install" in argv_blob or ("uv" in argv_blob and "pip" in argv_blob and "install" in argv_blob)
     assert "uv tool install" not in argv_blob
     assert "--python" in argv_blob and "3.13" in argv_blob
-    assert "tools/headroom" in argv_blob
+    assert "tools/headroom" in argv_blob.replace("\\", "/")
     assert "UV_NO_PROGRESS" in env_blob
     assert "require-hashes" in report or "--require-hashes" in argv_blob
     assert "--no-telemetry" in " ".join(dry.notices)
@@ -572,7 +573,7 @@ def test_headroom_apply_uses_require_hashes_and_beacon_env(tmp_path):
 
     from tokenstretch.api_proxy import HEADROOM_TELEMETRY_ENV, plan_proxy_file_changes
     planned = plan_proxy_file_changes(ctx, "headroom", "127.0.0.1")
-    settings = next(ch for ch in planned if ch["path"].endswith("/.claude/settings.json"))
+    settings = next(ch for ch in planned if Path(ch["path"]).as_posix().endswith("/.claude/settings.json"))
     env = json.loads(settings["content"]).get("env") or {}
     for key, val in HEADROOM_TELEMETRY_ENV.items():
         assert env.get(key) == val, key
@@ -580,7 +581,7 @@ def test_headroom_apply_uses_require_hashes_and_beacon_env(tmp_path):
     assert not str(env.get("ANTHROPIC_BASE_URL")).endswith("/v1")
     assert "HEADROOM_ALLOW_UNAUTHENTICATED_BIND" not in env
     assert "HEADROOM_PROXY_TOKEN" not in env
-    codex = next(ch for ch in planned if ch["path"].endswith("/.codex/config.toml"))
+    codex = next(ch for ch in planned if Path(ch["path"]).as_posix().endswith("/.codex/config.toml"))
     assert 'openai_base_url = "http://127.0.0.1:8787/v1"' in codex["content"]
 
 
@@ -845,6 +846,8 @@ def test_kompressor_apply_undo_round_trip_and_doctor(tmp_path, monkeypatch):
         assert "KOMPRESSOR__SERVER__LISTEN" not in after
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Kompressor ships pinned binaries for Linux x86_64 and macOS only, none for Windows")
 def test_kompressor_hash_mismatch_refused(tmp_path):
     from tokenstretch.catalog import (
         PinMismatchError,

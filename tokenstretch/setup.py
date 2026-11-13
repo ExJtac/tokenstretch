@@ -124,7 +124,7 @@ def install_offer(ctx: Context) -> list[dict]:
 
 def _short(path: str, home: Path) -> str:
     try:
-        return "~/" + str(Path(path).relative_to(home))
+        return "~/" + (Path(path).relative_to(home)).as_posix()
     except ValueError:
         return str(path)
 

@@ -602,7 +602,20 @@ def _add_context_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--plan", choices=["subscription", "api"])
 
 
+def _console_safe() -> None:
+    """A legacy console (Windows cp1252) cannot encode the check mark, arrow or warning sign in our output and
+    would crash on print. Replace what it cannot show; UTF-8 streams are left exactly as they are."""
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", None) or "").lower().replace("_", "-")
+        if enc and enc not in ("utf-8", "utf8") and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv=None) -> int:
+    _console_safe()
     p = argparse.ArgumentParser(prog=CLI_NAME)
     p.add_argument("--version", action="version", version=f"{PRODUCT_NAME} {VERSION}")
     sub = p.add_subparsers(dest="cmd", required=True)

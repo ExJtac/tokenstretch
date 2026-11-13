@@ -107,7 +107,7 @@ def session_start(payload: dict, now: float) -> dict | None:
         return None
     rel, age = found
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
-        f"{PRODUCT_NAME}: a handoff note from an earlier session in this project is at `{rel}` "
+        f"{PRODUCT_NAME}: a handoff note from an earlier session in this project is at `{rel.as_posix()}` "
         f"(saved {_age(age)} ago). If the user's first message continues that work, or is a greeting or an "
         "open question such as \"continue\" or \"what's happening?\", read the note once before anything else, "
         "say where things stand in at most three lines, and do its next step in the same turn. Do not ask the "

@@ -52,7 +52,7 @@ def test_gemini_cli_fixture(tmp_path):
     assert det.installed
     assert cfg["effective"]["model"]["value"] == "gemini-2.5-pro"
     assert cfg["effective"]["telemetry"]["value"] is True  # documented default
-    names = {f.path.split("/")[-1] for f in files}
+    names = {Path(f.path).name for f in files}
     assert "GEMINI.md" in names and "AGENTS.md" in names
     assert {s.name for s in servers} == {"docs", "remote"}
     remote = next(s for s in servers if s.name == "remote")
@@ -76,7 +76,7 @@ def test_copilot_cli_fixture(tmp_path):
         servers = ad.list_mcp_servers(ctx)
     assert det.installed
     assert cfg["effective"]["effort"]["value"] == "max"
-    names = {f.path.split("/")[-1] for f in files}
+    names = {Path(f.path).name for f in files}
     assert "copilot-instructions.md" in names
     assert "AGENTS.md" in names
     assert "python.instructions.md" in names
@@ -100,7 +100,7 @@ def test_cursor_fixture(tmp_path):
         ignored = ad.ignored_md_rules(ctx)
     assert det.installed
     assert cfg["effective"]["max_mode"]["value"] is True
-    listed = {f.path.split("/")[-1] for f in files}
+    listed = {Path(f.path).name for f in files}
     assert "big.mdc" in listed and "AGENTS.md" in listed
     assert "ignored.md" not in listed  # plain .md is silently ignored
     assert any(p.name == "ignored.md" for p in ignored)
