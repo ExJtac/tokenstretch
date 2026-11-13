@@ -98,9 +98,11 @@ def newest_note(root: Path, now: float, fresh_s: float = FRESH_S) -> tuple[Path,
 
 def session_start(payload: dict, now: float, home: Path | None = None) -> dict | None:
     reply = _session_start(payload, now)
-    if payload.get("source") in ("startup", "clear", "resume"):
+    source = payload.get("source")
+    if source in ("startup", "clear", "resume", "compact"):
         from .dashlink import reminder_text
-        extra = reminder_text(home if home is not None else Path.home(), payload, now)
+        # A compaction summarizes the first reminder away, so it is given again then.
+        extra = reminder_text(home if home is not None else Path.home(), payload, now, again=source == "compact")
         if extra:
             ctx = reply["hookSpecificOutput"]["additionalContext"] + "\n" if reply else ""
             reply = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx + extra}}
