@@ -5,8 +5,12 @@ Security model (see docs/DETAILS.md):
   * every request needs the random per-run token in the URL path, else 403;
   * the Host header must be 127.0.0.1 or localhost (stops DNS rebinding), else 403;
   * no CORS headers, a strict Content-Security-Policy, and no external assets: one inline page.
-Read-only: it never writes a file. Data comes from adapters through the same code as
-status / watch / doctor / report --weekly. Nothing here opens an outbound connection.
+Read-only for your files: the page and its API never change a project or tool file. It writes only
+under `~/.tokenstretch/`: the link file (`dashboard.json`, owner-only, removed on exit) that
+`dashboard --url` and the session-start reminder read (see dashlink.py), and the read caches under
+`cache/` that `pace` and `doctor` also keep. Data comes from adapters through the same code as
+status / watch / doctor / pace / queue / model cost / model rework / startup / report --weekly.
+Nothing here opens an outbound connection.
 """
 from __future__ import annotations
 
@@ -28,6 +32,8 @@ from .watch import long_history_tip
 LOOPBACK = "127.0.0.1"
 DEFAULT_PORT = 8765
 FOOTER = "Runs only on this machine. Nothing is sent anywhere."
+PANELS = ("pace", "queue", "cost", "rework", "startup", "watch")
+PANEL_TTL = {"pace": 60.0, "queue": 30.0, "cost": 300.0, "rework": 300.0, "startup": 300.0}
 
 
 def _local(epoch: float | None) -> str:
@@ -65,6 +71,8 @@ class DashboardState:
         self.usage: dict | None = None
         self._doctor: dict | None = None
         self.instructions: dict | None = None
+        self.panels: dict[str, dict | None] = {name: None for name in PANELS}   # not part of `pending`
+        self._panel_at: dict[str, float] = {}
         self._doctor_at = 0.0
         self._usage_at = 0.0
         self.errors: dict[str, str] = {}
@@ -169,6 +177,45 @@ class DashboardState:
         self._usage_at = t
         return self.usage
 
+    def _panel_due(self, name: str) -> bool:
+        return name not in self._panel_at or self.now() - self._panel_at[name] >= PANEL_TTL[name]
+
+    def build_panel(self, name: str, sessions: list[dict] | None = None) -> dict:
+        from . import dashboard_panels as dp
+        t = self.now()
+        if name == "pace":
+            data = dp.build_pace(self.ctx, self.adapters, t)
+        elif name == "queue":
+            data = dp.build_queue(self.ctx, self.adapters, t, self._scrub)
+        elif name == "cost":
+            data = dp.build_cost(self.ctx, sessions if sessions is not None else dp._sessions(self.ctx, self.adapters),
+                                 self._scrub)
+        elif name == "rework":
+            data = dp.build_rework(self.ctx, sessions if sessions is not None else dp._sessions(self.ctx, self.adapters),
+                                   self._scrub)
+        elif name == "startup":
+            data = dp.build_startup(self.ctx, self.adapters, self._scrub)
+        else:
+            data = dp.build_watch(self.feed, self.watcher.cfg, self._scrub)
+        data["at"] = t
+        self.panels = {**self.panels, name: data}
+        self._panel_at[name] = t
+        return data
+
+    def refresh_panels(self) -> None:
+        """Each panel on its own clock and in its own failure box; one bad panel hides one card."""
+        from . import dashboard_panels as dp
+        shared: list | None = None
+        for name in PANELS:
+            if name != "watch" and not self._panel_due(name):
+                continue
+            if name in ("cost", "rework") and shared is None:
+                shared = []
+                self._run("panel sessions", lambda: shared.extend(dp._sessions(self.ctx, self.adapters)))
+            self._run(f"panel {name}", lambda n=name: self.build_panel(n, shared))
+            self._panel_at[name] = self.now()     # a failing panel waits its turn too, never a retry every pass
+            self.publish()
+
     # ---- compose + publish -----------------------------------------------------
     def compose(self) -> dict:
         t = self.now()
@@ -185,7 +232,7 @@ class DashboardState:
             "product": PRODUCT_NAME, "version": VERSION, "generated_at": t, "generated_local": _local(t),
             "ready": not pending, "pending": pending, "warming_up": bool(pending),
             "updated_at": updated, "updated_local": _local(updated) if updated else "",
-            "doctor_refreshing": self._doctor_wanted, "errors": dict(self.errors),
+            "doctor_refreshing": self._doctor_wanted, "errors": {k: self._scrub(v) for k, v in self.errors.items()},
             "limit": LONG_HISTORY, "detected": [a.display_name for a in self.adapters if a.id != "host"],
             "overview": {
                 "tokens_today": agg["today"]["total_tokens"] if agg else None,
@@ -205,6 +252,7 @@ class DashboardState:
             "doctor": {k: doc[k] for k in ("refreshed_local", "counts", "findings")} if doc else None,
             "tools": ({"installed": doc["tools"], "telemetry_findings": doc["telemetry_findings"],
                        "install_offer": doc["install_offer"]} if doc else None),
+            "panels": dict(self.panels),
             "instructions": ({k: v for k, v in self.instructions.items() if k != "at"}
                              if self.instructions else None),
             "setup": usage["setup"] if usage else None,
@@ -250,6 +298,7 @@ class DashboardState:
             if self.usage is None or self.now() - self._usage_at >= self.usage_ttl:
                 self._run("usage logs", self.build_usage)
                 self.publish()
+            self.refresh_panels()
             want = force_doctor or self._doctor_wanted
             if want or self._doctor is None or self.now() - self._doctor_at >= self.doctor_ttl:
                 self._doctor_wanted = False
@@ -340,6 +389,7 @@ footer{grid-column:span 12;text-align:center;color:var(--mut);font-size:12px;pad
 <section class="card c4"><h2>Live warnings</h2><div class="feed" id="warnings"></div></section>
 <section class="card c6"><h2>Models this week</h2><div id="models"></div></section>
 <section class="card c6"><h2>Weekly trend (total tokens)</h2><div id="weekly"></div></section>
+__PANEL_CARDS__
 <section class="card c7"><h2>Doctor <button id="redoc" type="button" style="float:right;text-transform:none">Re-run doctor</button></h2><div class="sub" id="doc-when"></div><div id="doctor"></div></section>
 <section class="card c5"><h2>Token-saving tools &amp; telemetry</h2><div id="tools"></div></section>
 <section class="card c12"><h2>Instruction files</h2><div id="instructions"></div></section>
@@ -361,6 +411,7 @@ function bar(pct,over){var b=el("div","hbar"+(over?" over":""));var i=el("i");i.
 function table(head,rows){var t=el("table"),tr=el("tr");head.forEach(function(h){tr.appendChild(el("th",null,h))});t.appendChild(tr);rows.forEach(function(r){var tr=el("tr");r.forEach(function(c){var td=el("td");if(c instanceof Node)td.appendChild(c);else if(c&&c.num!=null){td.className="num";td.textContent=c.num}else td.textContent=c==null?"":String(c);tr.appendChild(td)});t.appendChild(tr)});return t}
 function empty(n,msg){n.appendChild(el("div","empty",msg))}
 function wait(n,msg){clear(n);n.appendChild(el("div","empty",msg||"Warming up: reading local logs..."));return n}
+__PANEL_JS__
 function render(s){
   $("ver").textContent="v"+s.version+(s.detected&&s.detected.length?" · "+s.detected.join(", "):"");
   var o=s.overview,n;
@@ -422,6 +473,7 @@ function render(s){
   if(s.bench==null){}
   else if(!s.bench.length)empty(n,"No measured bench on this machine (tokenstretch bench --prepare, then --measure).");
   else{n.appendChild(el("div","sub","Measured bench runs (real runs on this machine):"));n.appendChild(table(["Bench","Side","Input","Cache read","Output","Cost"],[].concat.apply([],s.bench.map(function(b){return["before","after"].map(function(k){var x=b[k]||{};return[b.id,k,{num:fmt(x.input_uncached)},{num:fmt(x.cache_read)},{num:fmt(x.output)},x.cost_usd==null?"not reported":"$"+Number(x.cost_usd).toFixed(4)]})}))))}
+  renderPanels(s);
   $("updated").textContent=s.updated_local?"Last updated "+s.updated_local+".":"Warming up.";
   var errs=Object.keys(s.errors||{});if(errs.length)$("updated").textContent+=" Could not read: "+errs.join(", ")+" (showing the last good data).";
 }
@@ -448,7 +500,8 @@ def render_page(state: dict | None = None, *, interval: float = 5.0, static: boo
     """The whole page: inline CSS and JS, no external resources. `static` embeds state and stops polling."""
     import html
     title = f"{PRODUCT_NAME} dashboard"
-    return (_PAGE.replace("__TITLE__", html.escape(title)).replace("__TITLE_TEXT__", html.escape(title))
+    from .dashboard_panels import PANEL_CARDS, PANEL_JS
+    return (_PAGE.replace("__PANEL_CARDS__", PANEL_CARDS).replace("__PANEL_JS__", PANEL_JS).replace("__TITLE__", html.escape(title)).replace("__TITLE_TEXT__", html.escape(title))
             .replace("__INTERVAL__", str(int(interval * 1000))).replace("__STATIC__", "true" if static else "false").replace("__FOOTER__", html.escape(FOOTER))
             .replace("__STATE__", _json_for_script(state) if state is not None else "null"))
 
@@ -574,12 +627,22 @@ def run_dashboard(ctx: Context, *, host: str = LOOPBACK, port: int = DEFAULT_POR
         out(f"Port {port} was busy, so it's using {bound}.")
     out(f"Open: {url}")
     out("The link has a one-time key; only this run accepts it. Ctrl-C to stop.")
+    from . import dashlink
+    dashlink.write_link(ctx.home, url, bound, state.now())   # for `dashboard --url` and the session-start reminder
     if open_browser:
         import webbrowser
         try:
             webbrowser.open(url)
         except Exception:  # a missing browser is not an error
             pass
+    try:
+        import signal
+
+        def _stop(*_):
+            raise KeyboardInterrupt
+        signal.signal(signal.SIGTERM, _stop)   # `kill` cleans up the link file the same way Ctrl-C does
+    except (ValueError, OSError, AttributeError):  # not the main thread, or no SIGTERM on this platform
+        pass
     try:
         srv.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
@@ -588,4 +651,5 @@ def run_dashboard(ctx: Context, *, host: str = LOOPBACK, port: int = DEFAULT_POR
     finally:
         state.stop()
         srv.server_close()
+        dashlink.clear_link(ctx.home, url)
     return 0

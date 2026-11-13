@@ -1461,10 +1461,27 @@ class ClaudeCodeAdapter(Adapter):
                 items.append(live)
             else:
                 self._fold_live(ctx, same)   # one step per file: add the live keys to that step
-        for item in (self._setup_handoff(ctx), self._setup_brief(ctx), self._setup_credits(ctx)):
+        for item in (self._setup_handoff(ctx), self._setup_brief(ctx), self._setup_credits(ctx),
+                     self._setup_dash_reminder(ctx)):
             if item:
                 items.append(item)
         return items
+
+    def _setup_dash_reminder(self, ctx: Context) -> SetupItem | None:
+        from .. import dashlink
+        if dashlink.remind_enabled(ctx.home):
+            return None
+        return SetupItem(
+            id="claude-dashboard-reminder", adapter_id=self.id,
+            title="Remind you of your dashboard link once per session",
+            why="`tokenstretch dashboard` shows usage, pace, cost and warnings, but only if you remember to "
+                "open it. This switch lets the session-start hook ask the assistant to end its last message "
+                "with the link, once per session.",
+            changes=[dashlink.setup_change(ctx.home)],
+            done="turned on the once-per-session dashboard link reminder",
+            notes=["The link is a loopback address (127.0.0.1) that only works on this machine while the dashboard runs. "
+                   "Turn it off any time with `tokenstretch dashboard --remind off`."],
+        )
 
     # ---- live warnings inside Claude Code: status line + prompt hook --------------------------
     AUTO_COMPACT_WINDOW = 200_000   # tokens; the tool's documented range is 100000 to 1000000

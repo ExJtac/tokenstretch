@@ -42,7 +42,7 @@ python -m tokenstretch pace --team N [--model ID] [--effort E] [--json]     # ag
 python -m tokenstretch pace auto [--off]                                    # status line stores the limits the tool reports (off by default)
 python -m tokenstretch pace --what-if [--team N] [--json]                   # no re-saved history, re-read halved
 python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
-python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8]
+python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8] [--url | --remind on|off]
 python -m tokenstretch model default --tier light|mid|top [--tool claude|codex|gemini] [--apply]
 python -m tokenstretch trim [--project DIR] [--max-tokens 2000] [--max-block-lines 30] [--move-blocks] [--apply [--yes]] [--no-diff] [--json]
 ```
@@ -85,9 +85,11 @@ The proposal only (1) removes exact duplicate blocks, keeping the first copy, an
 
 ### dashboard
 
-`tokenstretch/dashboard.py` serves one self-contained HTML page (inline CSS and JS, no fonts, images, or external URLs) and JSON from `http.server` in the standard library. It never writes a file.
+`tokenstretch/dashboard.py` serves one self-contained HTML page (inline CSS and JS, no fonts, images, or external URLs) and JSON from `http.server` in the standard library. It writes only under `~/.tokenstretch/`: its link file, `dashboard.json` (`tokenstretch/dashlink.py`), removed when it stops (Ctrl-C or `kill`), and the read caches under `cache/`.
 
 Requests never compute anything. A background thread builds the state in three parts and publishes each as soon as it's done: live sessions and watch warnings (every pass, `--interval`, default 5 s; only sessions written in the last 2 hours), usage / setup / bench (at most every 30 s), and doctor (every 5 minutes, or when you press the button, which only sets a flag). The page is static HTML, and `api/state` returns the last published JSON, with `warming_up`, `pending`, and `updated_local` fields the page shows. GC is paused while a part builds (then the survivors are frozen) so a long collection can't stall the HTTP thread.
+
+Extra panels (`tokenstretch/dashboard_panels.py`): pace, queue, cost, redo work, start-up and watch live under `panels` in the state, each built by calling the same function as its command inside its own guarded step with its own refresh interval (pace 60 s, queue 30 s, cost, redo work and start-up 300 s; watch every pass). A failing panel keeps its last result and waits its interval. The page builds them with `textContent` only. The reminder uses `dashlink.reminder_text`, called from the SessionStart branch of `auto`: it needs a safe `session_id`, the switch file `dashboard-remind.json`, and a loopback connect to the link file's port to decide the link is live; a marker per session under `~/.tokenstretch/dashremind/` keeps it to once, and markers older than 7 days are removed.
 
 Log reading is incremental (`tokenstretch/logcache.py`, core only). Each file is cached by (path, inode, size, mtime): unchanged files are skipped, files that only grew are parsed from the saved byte offset (a half-written last line waits for the next pass), and a file that shrank or was replaced is parsed again. Files whose mtime is older than the window (`--weeks`, default 8) are skipped before they're opened, which covers old Codex archived sessions. Lines are filtered with a substring check before `json.loads` (Claude: lines with `"usage"`; Codex: usage, session, model, and token-count markers), so prompts, code, and tool output are never parsed. Adapters opt in with `incremental_logs`, `usage_log_parser(path)`, and `finish_usage_records`. Session tails for watch/status and doctor's per-file log checks (W13–W15, Codex W14) are memoized by the same stat key, so a doctor re-run only reads changed files. `report --weekly` uses the same reader (fresh each run). The Codex fork-replay filter now groups sessions by their first two events and compares prefixes with hashes, instead of comparing every pair step by step.
 

@@ -93,7 +93,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     w = _world(tmp_path)
     before = _snapshot(w)
     res, out = _run(w, yes=True, installs=False)
-    assert res.mode == "applied" and len(res.manifests) == 6
+    assert res.mode == "applied" and len(res.manifests) == 7
     assert "✔ switched default model to sonnet and turned on live warnings, backed up ~/.claude/settings.json" in out
     assert "/model opus" in out
     s = json.loads((w / "home" / ".claude" / "settings.json").read_text())
@@ -117,7 +117,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     buf = io.StringIO()
     with credential_guard(), redirect_stdout(buf):
         code = main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
-    assert code == 0 and "Restored 3 file(s), deleted 3 created file(s)" in buf.getvalue()
+    assert code == 0 and "Restored 3 file(s), deleted 4 created file(s)" in buf.getvalue()
     assert _snapshot(w) == before
 
 

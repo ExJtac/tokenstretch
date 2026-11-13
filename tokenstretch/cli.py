@@ -288,6 +288,16 @@ def cmd_dashboard(args) -> int:
     from .dashboard import run_dashboard
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    if getattr(args, "url", False) or getattr(args, "remind", None):
+        from .dashlink import live_url, set_remind
+        if args.remind:
+            set_remind(ctx.home, args.remind == "on")
+            print(f"Dashboard link reminder is {args.remind}.")
+        if args.url:
+            url = live_url(ctx.home)
+            print(url if url else f"No dashboard is running. Start one with `{CLI_NAME} dashboard`.")
+            return 0 if url else 1
+        return 0
     return run_dashboard(ctx, host=args.host, port=args.port, open_browser=not args.no_open,
                          interval=max(2.0, float(args.interval)), weeks=max(1, min(int(args.weeks), 52)),
                          out=lambda line: print(line, flush=True))
@@ -790,6 +800,9 @@ def main(argv=None) -> int:
     dash.add_argument("--interval", type=float, default=5.0, help="seconds between page refreshes (default 5)")
     dash.add_argument("--weeks", type=int, default=8,
                       help="weeks of usage logs to read (default 8); older log files are skipped unopened")
+    dash.add_argument("--url", action="store_true", help="print the running dashboard's link and exit (1 if none is running)")
+    dash.add_argument("--remind", choices=["on", "off"],
+                      help="turn the once-per-session 'view your dashboard' reminder on or off, then exit")
 
     tr = sub.add_parser("trim", help="find waste in instruction files resent every turn; propose a safe trim (dry-run unless --apply)")
     _add_context_args(tr)
