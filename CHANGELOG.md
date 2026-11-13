@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- README: `pace auto` needs a session where the status line runs (Claude Code in a terminal). Sessions inside the desktop app stored no reading in our check.
+
 ## [0.5.1] - 2026-11-13
 
 ### Added
