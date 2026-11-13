@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
 ### Added
 - `model suggest` and `brief` now suggest a reasoning effort (low, medium, high, xhigh) next to the model tier, from the same task score. `max` is never suggested. For Claude Code the output names the setting to change. `--json` gains `effort` and `effort_why`. A rule of thumb, not a measured result.
 - `model effort`: the reasoning effort your recent sessions ran at, read from local logs. Steps and output tokens per effort level, main conversations and helpers apart, with plain advice. Read-only; `--json` available. Claude Code logs record the effort; other tools are not read yet.
