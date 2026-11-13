@@ -262,7 +262,7 @@ def cmd_startup(args) -> int:
     from .startup import build, format_report
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
-    data = build(ctx, remember=not args.no_save)
+    data = build(ctx, remember=not args.no_save, plugins=True)
     if getattr(args, "agent", False):  # --- worker agent profile block ---
         from .startup import agent_profile, format_agent
         profiles = [agent_profile(d) for d in data]
