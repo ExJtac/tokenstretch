@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `start`: one command to set up. With no flags it changes nothing: it checks the computer in plain words (Python version, tools found, setup state), lists what it would change (the steps `setup` applies by its safe defaults, plus switching on `pace auto` when Claude Code is found), and asks once `[y/N]` when a person is at the terminal. Without a terminal it prints the list and the command that applies, `tokenstretch start --yes`. After applying, or when already set up, it prints up to three plain lines on how much of the plan's week is used, whether that is on track, ahead of pace or behind pace, and what to do next. Setup steps are applied through the same backed-up path as `setup`, so `undo` restores them; the `pace auto` switch is turned off with `pace auto --off`. `--yes`, `--detail` (adds the full `pace` output), `--json`. Exit 0 when finished, 1 on a real failure. A second run changes nothing.
+- README: a Quick start at the top and a "Let your AI install it" prompt to paste into a coding assistant that can run commands.
+
 ### Changed
 - README: `pace auto` needs a session where the status line runs (Claude Code in a terminal). Sessions inside the desktop app stored no reading in our check.
 

@@ -2,6 +2,58 @@
 
 **Stop paying for wasted AI coding credits. One command finds the waste, explains it, and fixes it, with undo.**
 
+## Quick start
+
+tokenstretch finds wasted AI coding credits on your computer and fixes the safe causes. It runs only on your machine, has no account and no telemetry, and every change can be undone.
+
+**1. Install.** One line, for macOS or Linux with Python 3.11 or newer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ExJtac/tokenstretch/main/scripts/install.sh | sh
+```
+
+If it ends by saying `~/.local/bin` is not on your PATH, add the `export` line it prints to your shell startup file, then open a new terminal. Or install with the line below instead, and the installer adds it for you, with a backup:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ExJtac/tokenstretch/main/scripts/install.sh | sh -s -- --add-to-path
+```
+
+**2. Set up.** In a terminal, go to your project folder and run:
+
+```bash
+tokenstretch start
+```
+
+It checks your computer, lists every change in plain words, and asks once. Nothing changes until you answer `y`.
+
+**3. Undo.** `tokenstretch undo` puts back every file that step changed. `tokenstretch pace auto --off` switches off the automatic plan readings, which are not a file change.
+
+More: [what it does](#what-you-get), [install options](#install), [what `start` does](#what-tokenstretch-start-does), [what setup changes](#what-setup-changes-and-how-to-undo-it).
+
+## Let your AI install it
+
+In your coding assistant, say "Install tokenstretch from the GitHub repo", then paste this:
+
+```text
+Install and set up tokenstretch for me. Do these steps in order.
+
+1. Check that Python 3.11 or newer is installed (`python3 --version`). If it is missing or older, tell me in plain words how to get it (https://www.python.org/downloads/) and stop until I say it is installed. Do not install it yourself.
+2. Open https://github.com/ExJtac/tokenstretch and read the README. Find the install command in the Install section and run it exactly as written. Do not change the link.
+3. Run `tokenstretch --version` and tell me what it prints. If the command is not found, the installer printed a line about PATH: tell me what it says, and run `~/.local/bin/tokenstretch` by its full path for the next steps. Do not edit my shell startup files; tell me the line to add instead.
+4. In the folder of my main project (ask me which one if you do not know), run `tokenstretch start` with no flags. This changes nothing. It lists what it would change.
+5. Explain each listed change to me in plain words: what it is, which file, and why. Tell me that `tokenstretch undo` and `tokenstretch pace auto --off` reverse the changes.
+6. Ask me yes or no, and wait for my answer.
+7. Only if I say yes, run `tokenstretch start --yes`. If I say no, stop here and change nothing.
+8. Tell me what changed, what `tokenstretch start` said about my plan, and the undo commands.
+
+Rules: Never enter, ask for, or print a password, API key or token. Do not use sudo. If any step fails, stop, show me the error, and say which step failed. Do not try workarounds.
+```
+
+Limits, so nothing surprises you:
+- It needs a coding assistant that can run commands on your computer, such as Claude Code or Codex. A chat-only assistant cannot do this; it can only tell you the commands to type yourself.
+- The installer is for macOS and Linux. Windows has no installer yet.
+- Automatic plan readings (`pace auto`) arrive only from Claude Code in a terminal, not from the desktop app.
+
 tokenstretch is **free and open source (MIT)**. It runs **100% on your machine**. There's no account, no sign-up, no telemetry, and no server. It looks at how Claude Code, Codex, and other coding agents are set up on your computer, shows you in plain English where your credits are going, and applies a small set of safe fixes. It backs up every file first, and `tokenstretch undo` puts everything back.
 
 It doesn't replace your tools. It checks, configures, and measures them, including RTK and Caveman.
@@ -67,6 +119,28 @@ What the installer does:
 `sh install.sh --uninstall` removes exactly what it created: the folder, the launcher, and the PATH line. Your `~/.tokenstretch` backups stay, so run `tokenstretch undo` first if you want setup's changes reverted.
 
 Options: `--add-to-path`, `--python PATH`, `--data-dir DIR`, `--bin-dir DIR`, `--dry-run`, `--uninstall` (`sh install.sh --help` lists them). For an install link that can never change, use the commit link in the release notes instead of `main`. The installer doesn't use pipx, because pipx would download build tools from PyPI. To install from a clone instead, see the quickstart.
+
+## What `tokenstretch start` does
+
+`start` is the one command for someone who just wants it set up. Run with no flags it changes nothing.
+
+1. It checks the computer: the Python version, which supported coding tools it finds, whether the setup steps are already in place, and whether automatic plan readings are on.
+2. It lists the changes it would make, one plain line each: the steps `tokenstretch setup` applies by its safe defaults (see [What setup changes](#what-setup-changes-and-how-to-undo-it)), plus switching on [`pace auto`](#make-a-week-last-at-full-effort) when Claude Code is found. It never runs the optional pinned installs, and it downloads nothing.
+3. With a person at the terminal it asks `Apply these changes? [y/N]`. Without one (a pipe, CI, an AI assistant's shell) it prints the list and the exact command to apply, `tokenstretch start --yes`, and changes nothing.
+4. After applying, or when everything is already in place, it prints up to three plain lines: how much of the plan's week is used, whether that is on track, ahead of pace or behind pace, and one thing to do next. With no reading yet it says where one comes from.
+
+Running it twice is safe: the second run says it is already set up and changes nothing.
+
+`tokenstretch undo` restores every file the setup steps changed and deletes the files they created. The `pace auto` switch is not a file edit, so it has its own off switch: `tokenstretch pace auto --off`.
+
+| Flag | Effect |
+|---|---|
+| `--yes`, `-y` | Apply without asking. |
+| `--detail` | Also print the full `tokenstretch pace` output. |
+| `--json` | Print one JSON result (checks, planned changes, whether anything was applied, the plan summary). It never asks and changes nothing without `--yes`. |
+| `--home`, `--root`, `--plan` | Same meaning as in `setup`. |
+
+Exit codes: `0` when it finished, including when nothing was changed or you answered no. `1` on a real failure: Python older than 3.11, or a step failed while applying (the message says how to undo what was already done). `2` for a flag it does not know.
 
 ## 30-second quickstart
 

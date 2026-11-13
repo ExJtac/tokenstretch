@@ -14,6 +14,7 @@ python -m tokenstretch doctor --home PATH --root PATH --sys-snapshot DIR
 python -m tokenstretch doctor --privacy --json
 python -m tokenstretch bench --from-logs
 python -m tokenstretch bench --bench --prompt '…'
+python -m tokenstretch start [--yes] [--detail] [--json]   # one-command setup: lists changes, asks once; no flags and no terminal changes nothing; exit 0 fine, 1 failure
 python -m tokenstretch install    # dry-run (no writes); add --apply to write
 python -m tokenstretch install --apply
 python -m tokenstretch install --profile api-proxy --proxy headroom   # dry-run; never part of Clean
