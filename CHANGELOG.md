@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
 ### Added
 - `model cost`: where your recent sessions' credits went, per model and reasoning effort, weighted by published list-price ratios. Four kinds per row (history re-read, history saved again, new content, output and thinking), the same tokens on the mid model for comparison, and the one change that removes the most. Main conversations and helpers apart. Units are relative, not dollars: an estimate, not a bill. Models with no published ratio show token counts only. Read-only; `--sessions`, `--json`.
 - `model cost --grid`: one line per model and effort with the average cost of a step, dearest first.
