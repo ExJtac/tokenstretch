@@ -27,11 +27,12 @@ Stars, bug reports, and pull requests help just as much.
 - **Fixes it applies for you.** `setup` explains each change (what it is, why it costs you, which file and key it touches, and how to undo it), asks once, then applies it with live progress.
 - **A painless fresh start.** `/handoff` has the agent write a short note before you `/clear`, and `/handoff resume` picks the task up in the new session, so clearing a long session no longer costs you the context.
 - **A live view.** `status` shows what's applied, which model each tool defaults to, and how much history your newest sessions re-read on every step. It flags sessions over ~150K tokens with a "`/clear` at the next task break" tip.
-- **A live watch.** `watch` runs quietly in a terminal and warns you, once per problem, when a session's history gets too big, the top model is doing simple steps, the same file keeps getting re-read, history is growing fast, or a pause let the saved-context discount expire. Each warning says what's wrong, why it costs credits, and the one-line fix.
+- **A live watch.** `watch` runs quietly in a terminal and warns you, once per problem, when a session's history gets too big, the top model is doing simple steps, the same file keeps getting re-read, history is growing fast, a conversation or its helpers ran long at a top reasoning effort, or a pause let the saved-context discount expire. On a dearer model the size limits come down with the price. Each warning says what's wrong, why it costs credits, and the one-line fix.
 - **A status-bar line.** `statusline` shows the current session's history size and the most urgent warning inside your tool's own status bar, so you don't need a second terminal.
 - **An instruction-file trimmer.** `trim` lists every instruction file your agents resend on each turn (CLAUDE.md, AGENTS.md, GEMINI.md, copilot-instructions.md, and their imports) with approx. token counts, finds duplicated rules, oversized files, pasted logs and code, and stale paths, and proposes a trimmed version that only makes safe mechanical changes. It's a dry run unless you pass `--apply`, and `undo` restores it.
 - **A brief writer.** `brief "<task>"` turns a one-line task into a brief that names the files, the notes to work from, what not to do again, the stop condition, and the reply length, and lists what your task leaves open.
 - **A model and effort picker.** `model suggest "<task>"` recommends light, mid, or top for a task, a reasoning effort to go with it, and names the model for each tool you have. `model default --tier mid` changes your default model, with a backup and undo.
+- **A price view per model and effort.** `model cost` weighs your recent sessions' tokens by published price ratios and shows, for each model and effort, where the credits went (history re-read, history saved again, new content, output and thinking) and the one change that removes the most. `model cost --grid` puts the average cost of a step side by side.
 - **A shareable report.** `report` writes a single self-contained HTML file with the findings, the plan, what was applied, undo commands, and current status. It loads nothing from the internet.
 - **A weekly report.** `report --weekly` adds up your local usage logs per week: tokens by type and by model, your biggest session histories, waste spots, and a before/after view since setup. Cost appears only where your logs report it.
 - **A local dashboard.** `dashboard` opens one live page on your own machine with all of the above, updated every 5 seconds. See [Dashboard](#dashboard).
@@ -130,13 +131,14 @@ Shell rc files are never edited. If `ANTHROPIC_MODEL` is set in your shell, setu
 
 | Warning | Why it costs credits | Fix it suggests |
 |---|---|---|
-| History over 150K tokens (`--max-context`) | Every step re-sends the whole conversation. | `/clear` (fresh start) or `/compact` |
+| History over 150K tokens (`--max-context`); lower on a dearer model, see below | Every step re-sends the whole conversation. | `/clear` (fresh start) or `/compact` |
 | Top model on the last 3 simple steps (short replies, few tool calls) | The top model costs several times more per step. | `/model sonnet` for routine steps |
 | The same file read 3+ times (`--max-reads`) | Each re-read is added to history and re-sent. | Ask for line ranges or a note; start fresh |
 | History grew 60K+ tokens in 5 minutes | Big reads or noisy output pile up fast. | Read narrowly, trim output |
 | Helpers (subagents) re-sent 1M+ tokens and more than the main conversation | Each helper is its own conversation with its own start-up size, re-sending its history on every step. | One narrow task per helper, name the files to work from, ask for a short reply |
 | Finished helpers woke the conversation 3+ times (`--wake-min`) and those steps re-sent 300K+ tokens | Each background helper that finishes starts a new step, and that step re-sends the whole conversation. | Start helpers early and together; one final report, not one per helper |
 | 2+ helpers ran at `xhigh` or `max` effort and re-sent 500K+ tokens (Claude Code logs record the effort) | A higher effort lets the model think longer on every step, and thinking is billed as output. | Lower effort for routine helpers; keep the top effort for the hard step |
+| The conversation itself ran 15+ steps at `xhigh` or `max` effort and they wrote 60K+ output tokens | Thinking is billed as output, and the effort applies to every step, also the routine ones. | Keep the top effort for the hard step; lower it for routine steps |
 | The session started at 40K+ tokens before any work (`--max-start`) | Instruction files, tool and connector definitions, and skill listings are re-sent on every step of every session. `/clear` doesn't remove them. | `tokenstretch trim`; turn off unused connectors and skills (`doctor` W03, W25) |
 | The saved-context discount (prompt cache) expired during a pause | The next message re-pays for the whole conversation instead of the discounted re-read. | `/clear` before a break; start fresh instead of resuming a big idle session |
 
@@ -147,6 +149,8 @@ Shell rc files are never edited. If `ANTHROPIC_MODEL` is set in your shell, setu
 ```
 
 When the session's start-up size is known, the long-history warning also says about how many more steps it takes for a fresh start to pay for itself: roughly two steps at the current size, divided by what each later step saves (current size minus start-up size). It's a rule of thumb from token counts, not a price calculation.
+
+**Limits follow the price.** Re-reading the same history costs more on a dearer model, so three limits come down with it: history size, fast growth, and helper wake-ups. The yardstick is the mid model. On a model where a re-read costs 2x, the history limit is 75K, not 150K; the floor is 60K however dear the model. The warning names the reason. Cheaper models keep the plain limits, and so do models with no published price ratio in `tokenstretch/cost.py`. A limit you set yourself (`--max-context 200000`) stays as you set it. The status bar line shows the same limit.
 
 The cache warning comes in two forms. If the logs already show it (after a pause of 5+ minutes, the same model re-wrote most of the history to the cache and read almost none back), watch reports how often and how many tokens. If a session with 20K+ tokens of history is sitting idle past the cache lifetime right now (about an hour on a Claude subscription, about five minutes with an API key or a 5-minute cache setting), watch says the discount has probably expired, so you can `/clear` before your next message. That second form is a prediction from the clock, and it says so. Claude Code only for now.
 
@@ -252,6 +256,7 @@ Every session carries a block before you type anything: instruction files, skill
 ```text
 Claude Code: what every session carries before you type
   Measured: the newest session's first step was ~77K tokens. Recent sessions: 77K, 80K, 75K.
+  Price: on claude-fable-5-2, 50 steps re-read this block 50 times. That costs about as much as ~385K new input tokens on the mid model, 2x what the mid model pays for the same block. An estimate from published price ratios, not a bill.
   Sized from local files: ~2.5K tokens (approx., bytes / 4).
     ~  1.3K  instruction file: ~/work/CLAUDE.md
              `tokenstretch trim` removes duplicates and moves reference blocks out.
@@ -261,6 +266,8 @@ Claude Code: what every session carries before you type
 ```
 
 That output is from a real machine, with paths changed. The instruction files were under 4% of the start-up size, so trimming them would not have helped much there; the connectors and plugins were the place to look. The command exists to tell you which case you are in before you spend time on the wrong fix.
+
+The `Price` line puts the block in price terms for the model the newest session ran on: a re-read is cheap per token, but the block comes back on every step, and a dearer model multiplies it. It appears only for models with a published price ratio.
 
 Sizes are estimates (bytes / 4). Skills marked `disable-model-invocation` are left out because they aren't listed to the model. Instruction files deeper in the project are left out because they load only when the agent works in that folder. `--all` lists every part and `--json` prints the data. Claude Code only for now.
 
@@ -343,9 +350,10 @@ For a review, add `--review`: the helper reads only the named files, changes not
 |---|---|---|
 | `build` | building something new from one existing example | follow the one example in `--from` and read nothing else in bulk, at most one helper, run the project's check once, 60-word reply. Suggested effort: medium. |
 | `research` | a research helper | 8 searches and 6 page fetches at most, answer only the questions in the task, one output file, 60-word reply. Suggested effort: low. |
+| `plan` | planning a job before any edits | write the plan to one file and change nothing else, numbered steps that each name their files and their check, steps small enough for a smaller model at a lower effort, hard steps marked, open questions listed, no builds, 12 file reads at most. Suggested tier: top. Suggested effort: high or above. |
 | `design` | visual or layout work | look at the current result at phone and desktop width first, write the direction down before editing, up to 5 reference pages on the web, 200-word reply. Suggested effort: high or above. |
 
-The lint knows the shapes too: `build` with no `--from` example and `research` with no question in the task are both flagged. The shapes come from one live project: a build briefed this way re-sent 2.1M tokens where an earlier, wider brief for the same kind of job re-sent 5.2M, and a research helper given an output file and a list of questions ran 9 steps where an open one ran 24. Two runs each, different subjects, so an illustration and not a measurement. A design job is the opposite case: a tight no-web, 80-word brief is the wrong shape for it, which is why that preset loosens both. With a preset, the output also reminds you to check the session ran at the effort you chose (`tokenstretch model effort --by-session`).
+The lint knows the shapes too: `build` with no `--from` example and `research` with no question in the task are both flagged. The shapes come from one live project: a build briefed this way re-sent 2.1M tokens where an earlier, wider brief for the same kind of job re-sent 5.2M, and a research helper given an output file and a list of questions ran 9 steps where an open one ran 24. Two runs each, different subjects, so an illustration and not a measurement. `plan` is how the top model earns its price: it runs once, on the step where a wrong call costs the most, and the steps it writes go to a smaller model at a lower effort. A design job is the opposite case: a tight no-web, 80-word brief is the wrong shape for it, which is why that preset loosens both. With a preset, the output also reminds you to check the session ran at the effort you chose (`tokenstretch model effort --by-session`).
 
 In Claude Code you can skip the terminal: after `tokenstretch setup`, type `/brief add a retry to the upload client`. The agent rewrites the task as a brief with the same parts and lists what is missing. It's a manual-only skill, so it adds nothing to each turn. Unlike the command, `/brief` uses the model, so it costs one short reply.
 
@@ -367,6 +375,43 @@ Pick the effort when a session starts: a change in the middle of a session re-se
 
 `tokenstretch model effort` reads your newest session logs and shows the reasoning effort they ran at: steps and output tokens per effort level, main conversations and helpers apart. It says so when every step ran at one level whatever the task, when most helper steps ran at high or above, or when `max` was used. It reads only what the tool's own log records (Claude Code today), changes nothing, and `--json` prints the same numbers. `--by-session` adds one line per conversation with the model and effort it was logged at, so you can check that a session you set to a higher (or lower) effort ran at it.
 
+`tokenstretch model cost` answers a different question: where did the credits go, in price terms? Token counts alone hide the price. An output token costs about five times an input token, a re-read from the cache costs a small share of one, and the top model multiplies all of it. This command weighs each kind of token by published list-price ratios, per model and effort, main conversations and helpers apart.
+
+```text
+$ tokenstretch model cost
+Where the credits went in the 12 newest conversations (local logs, read-only).
+1 unit = one new input token on the mid model at list price. An estimate from published price ratios (read 2026-11), not a bill.
+
+claude-fable-5-2, MEDIUM, main conversation: 162 steps, ~7.9M units (53% of all)
+    history re-read      25%  (19.8M tokens)
+    history saved again  17%  (265k tokens)
+    new content          28%  (445k tokens)
+    output and thinking  30%  (117k tokens)
+    the same tokens on the mid model: ~2.5M units (3.2x less). A smaller model may need more steps, so try it on routine work first.
+    biggest lever: replies are the largest part: ask for shorter replies, and for changed lines, not whole files.
+
+claude-sonnet-5-5, HIGH, main conversation: 94 steps, ~1.3M units (9% of all)
+    history re-read      49%  (12.3M tokens)
+    history saved again   5%  (55k tokens)
+    new content          24%  (245k tokens)
+    output and thinking  22%  (55k tokens)
+    biggest lever: the conversation is long and every step re-reads it: start fresh at the next task break (`tokenstretch watch` says when).
+```
+
+That output is from a real machine, shortened. The four kinds: **history re-read** is the conversation coming back from the cache on each step; **history saved again** is old history written to the cache a second time, after a pause outlasted the cache or the model changed mid-conversation; **new content** is what arrived for the first time (files read, command output, your prompts); **output and thinking** is what the model wrote, with its thinking. Each row ends with one lever, picked from its largest kind.
+
+`--grid` prints one line per model and effort with the average cost of a step, dearest first, so a top-model, high-effort session sits next to a mid-model, low-effort one:
+
+```text
+model                       effort     steps  units/step  output/step  re-read/step  vs cheapest
+claude-fable-5-2            medium       184         47k          731          124k  3.5x
+claude-opus-5-5             medium        53         35k           1k          112k  2.6x
+claude-sonnet-5-5           medium       119         15k          775          118k  1.1x
+claude-sonnet-5-5           high          94         13k          586          131k  1.0x
+```
+
+A dearer row is not waste by itself: compare rows that did the same kind of work. Limits to know: units are relative list-price ratios, not dollars, and a subscription plan counts usage its own way. Logs don't say which cache lifetime a save used, so every save is priced at the short-lifetime rate (the one-hour kind costs more). "Saved again" is detected from the pattern (a later step that saves 20K+ tokens and more than it re-reads). Models with no ratio in `tokenstretch/cost.py` (other providers, older models) are listed with token counts only; nothing is guessed. `--sessions N` sets how many conversations are read per tool and `--json` prints the data. Read-only, no model calls.
+
 `tokenstretch model default --tier mid` shows the change to your default model (Claude Code: `model` in `settings.json`). Add `--apply` to make it. The file is backed up first and `tokenstretch undo` restores it. `--tool claude` limits it to one tool. Gemini CLI uses its documented aliases (`flash-lite` / `flash` / `pro`, key `model.name` in `~/.gemini/settings.json`). Codex uses the model ids from its models page (`gpt-6-luna` / `gpt-6.1-sol` / `gpt-6-astra`, the top-level `model` key in `~/.codex/config.toml`; tables such as `[profiles.*]` are left alone). Which models you can use depends on your plan. Codex also lists `gpt-6.1-terra` as a fast light-tier alternative. Copilot CLI uses a recommended mapping (`claude-haiku-5.5` / `claude-sonnet-5.5` / `claude-opus-5.5`, with GPT-6 alternatives), which isn't a list GitHub publishes. If your Copilot model is `auto`, `model default` sets `autoTier` instead (`efficiency` / `balance` / `intelligence`).
 
 ## Honest results
@@ -384,7 +429,7 @@ We only publish numbers from real bench runs.
 - **Quality trade-off:** all 3 "before" answers traced the right feature. 2 of the 3 cheaper answers were correct, with less depth. **1 of the 3 traced the wrong feature** and said it was unsure. So we recommend the mid-tier model for everyday work and the top model for hard tracing and design, which is exactly what setup's note tells you.
 - An earlier bench on a small repo, with no model switch, was a **tie**. The project files alone didn't measurably change the history re-read.
 
-Your mileage will differ. Run `tokenstretch bench` on your own repo (see `LIVE-BENCH.md`).
+Your mileage will differ. Run `tokenstretch bench` on your own repo (see `LIVE-BENCH.md`). `bench --from-logs` adds up what your existing logs already record, with no new runs.
 
 ## Privacy promises
 

@@ -23,8 +23,9 @@ python -m tokenstretch statusline [--max-context 150000] [--max-reads 3] [--wrap
 python -m tokenstretch startup [--all] [--json] [--no-save]   # what a session carries before the first prompt
 python -m tokenstretch auto   # hook entry for PreCompact, PostCompact and SessionStart; reads the tool's JSON on stdin
 python -m tokenstretch nudge [--max-context 150000] [--max-reads 3]   # prompt-hook entry; reads the tool's JSON on stdin, prints hook JSON or nothing
-python -m tokenstretch brief "task" [--files P..] [--from P..] [--done TEXT] [--helper] [--review] [--max-reads N] [--split N] [--no-build] [--rule TEXT] [--max-searches N] [--max-fetches N] [--brief-only] [--check] [--json]
+python -m tokenstretch brief "task" [--files P..] [--from P..] [--done TEXT] [--helper] [--review] [--max-reads N] [--split N] [--no-build] [--rule TEXT] [--preset NAME] [--max-searches N] [--max-fetches N] [--brief-only] [--check] [--json]
 python -m tokenstretch model suggest "task" [--file F] [--json]
+python -m tokenstretch model cost [--grid] [--sessions 12] [--json]   # where the credits went per model and effort, price-weighted; read-only
 python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
 python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8]
 python -m tokenstretch model default --tier light|mid|top [--tool claude|codex|gemini] [--apply]
@@ -34,6 +35,8 @@ python -m tokenstretch trim [--project DIR] [--max-tokens 2000] [--max-block-lin
 ### watch
 
 `tokenstretch/watch.py` is core only. Adapters supply `watch_sessions(ctx, limit)` (per-turn records: timestamp, model, history tokens, output tokens, tool-call count or `None`, and Read-call file paths), `is_top_model`, `model_tiers`, and `model_switch_hint`. Claude Code reads the tail (4 MB) of the newest `~/.claude/projects/*/*.jsonl` main sessions, merges lines on `message.id`, sums `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` as history, and keeps only `file_path` from `Read` tool calls. Codex uses the rollout parser (`token_count` last usage) and labels each session by its recorded working directory (`session_meta.cwd`, else the first `turn_context.cwd`; the date folder only when neither exists); rollouts give no read paths, so the re-read check doesn't apply. Gemini CLI uses its chat records (history = `tokens.input` + `tokens.tool`, which already include cached tokens; tool-call count from `toolCalls`; no read paths). Copilot CLI uses `chat` spans from the local OTel file export only (`gen_ai.conversation.id` groups a session); without it, watch says it is not supported. Only sessions written in the last 2 hours are checked. Each (session file, condition) pair is reported once per run. The growth check measures against the session's own newest timestamp, not the wall clock. `--notify` calls `osascript` (macOS) or `notify-send` (Linux) through `subprocess` with no shell, if present; no network. Defaults: context 150K, top model on the last 3 steps each under 400 output tokens and at most 1 tool call, a file read 3+ times, history growth of 60K in 5 minutes.
+
+Limits left at their defaults scale with price: `WatchConfig.limits(model)` divides the history, growth and helper wake-up limits by `cost.reread_weight(model)` (never below `min_context`, `min_growth`, `min_wake_sent`; never raised for a cheaper model). A limit passed on the command line is used as passed.
 
 ### model
 

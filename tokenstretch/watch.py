@@ -57,7 +57,30 @@ class WatchConfig:
     wake_min_sent: int = 300_000    #     ... and those extra steps re-sent at least this much
     effort_helpers: int = 2         # (i) at least this many helpers ran at a top effort ...
     effort_min_sent: int = 500_000  #     ... and together re-sent at least this much
+    effort_main_steps: int = 15     # (j) the conversation itself ran this many steps at a top effort ...
+    effort_main_output: int = 60_000  #   ... and they wrote at least this much output (thinking included)
+    price_scale: bool = True        # lower (a), (d) and (h) on models where re-reading history costs more
+    min_context: int = 60_000       #     ... but never below these
+    min_growth: int = 30_000
+    min_wake_sent: int = 100_000
     active_s: int = 2 * 3600        # only sessions written within this window
+
+    def limits(self, model: str) -> dict:
+        """The size limits for one model: {context, growth, wake_sent, weight}.
+
+        Only limits left at their default move with the price. A limit the user set stays as set.
+        """
+        from .cost import reread_weight
+        weight = reread_weight(model or "") if self.price_scale else None
+        plain = WatchConfig()
+
+        def scaled(name: str, floor: int) -> int:
+            value = getattr(self, name)
+            return price_scaled(value, weight, floor) if value == getattr(plain, name) else value
+
+        return {"context": scaled("max_context", self.min_context),
+                "growth": scaled("growth_tokens", self.min_growth),
+                "wake_sent": scaled("wake_min_sent", self.min_wake_sent), "weight": weight}
 
 
 @dataclass
@@ -137,6 +160,17 @@ def long_history_tip(history: int, limit: int, clear: str = "", auto: int | None
     return f"over {_k(limit)}: {clear or 'start fresh'} at the next task break" if history > limit else ""
 
 
+def price_scaled(limit: int, weight: float | None, floor: int) -> int:
+    """A history limit lowered in step with what re-reading history costs on the model in use.
+
+    `weight` is that cost relative to the mid model (cost.reread_weight). Unknown or cheaper
+    models keep the plain limit: a cheap model is no reason to let a conversation grow longer.
+    """
+    if not weight or weight <= 1:
+        return limit
+    return min(limit, max(floor, int(limit / weight)))
+
+
 def payback_steps(history: int, start: int | None) -> int | None:
     """About how many more steps until a fresh start has paid for itself, or None when unknown.
 
@@ -167,6 +201,12 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
     handoff = s.get("handoff_hint")     # a note-then-clear shortcut, when the tool has one installed
     fresh = f"{handoff} then {clear}" if handoff else clear
 
+    # Re-reading the same history costs more on a dearer model, so the size limits come down with it.
+    lim = cfg.limits(last.get("model") or "")
+    weight, max_context, growth_tokens, wake_min_sent = lim["weight"], lim["context"], lim["growth"], lim["wake_sent"]
+    priced = (f" On {last['model']} a re-read costs about {weight:g}x what it does on the mid model, so the "
+              "limit here is lower." if weight and weight > 1 else "")
+
     # (a) long history. When the tool summarizes by itself at a known size, say nothing below
     # that size (plus a margin): advice to clear by hand would contradict the automatic step.
     # Well past it, the session predates the setting or a compaction failed: one thing to type.
@@ -180,15 +220,15 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
                                    "every step still re-sends the whole conversation.",
                                fix=f"type {compact} once; sessions started from now on do this by themselves.",
                                short=f"{compact} once (automatic summary did not run)"))
-    elif last["history_tokens"] > cfg.max_context:
+    elif last["history_tokens"] > max_context:
         alt = f" or {compact} (keeps a short summary)" if compact else ""
         back = payback_steps(last["history_tokens"], s.get("start_tokens"))
         pays = (f" A fresh start pays for itself after about {back} more step{'s' if back != 1 else ''} "
                 f"(this session started at ~{_k(s['start_tokens'])}, and that part comes back)." if back else "")
         out.append(WatchWarning(base + ("context",), **tag,
-                           what=f"history is ~{_k(last['history_tokens'])} tokens (over {_k(cfg.max_context)}).",
+                           what=f"history is ~{_k(last['history_tokens'])} tokens (over {_k(max_context)}).",
                            why="every step re-sends the whole conversation, so each reply now costs at least that "
-                               "much input.",
+                               "much input." + (priced if max_context < cfg.max_context else ""),
                            fix=(f"finish this step, then type {handoff} (writes a short note) and {clear}; "
                                 f"`{handoff} resume` picks the task up in the fresh session."
                                 if handoff else f"finish this step, then type {clear} (fresh start){alt}.") + pays,
@@ -232,12 +272,13 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
         window = [t for t in turns if (e := _epoch(t.get("ts"))) is not None and end - e <= cfg.growth_window_s]
         if len(window) >= 2:
             grew = window[-1]["history_tokens"] - window[0]["history_tokens"]
-            if grew >= cfg.growth_tokens:
+            if grew >= growth_tokens:
                 mins = max(1, round((end - _epoch(window[0]["ts"])) / 60))
                 out.append(WatchWarning(base + ("growth",), **tag,
                                    what=f"history grew ~{_k(grew)} tokens in {mins} min ({len(window)} steps).",
                                    why="fast growth usually means whole-file reads or long command output, and "
-                                       "every added token is re-sent on each later step.",
+                                       "every added token is re-sent on each later step."
+                                       + (priced if grew < cfg.growth_tokens else ""),
                                    fix="search first and read line ranges, trim noisy output, and start fresh "
                                        "at the next task break.",
                                    short=f"history +{_k(grew)} in {mins} min: read narrower"))
@@ -263,13 +304,14 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
     # (h) each background helper that finishes starts a new step here, at the full history size
     wakes = [t for t in turns if t.get("woken")]
     wake_sent = sum(t["history_tokens"] for t in wakes)
-    if len(wakes) >= cfg.wake_min and wake_sent >= cfg.wake_min_sent:
+    if len(wakes) >= cfg.wake_min and wake_sent >= wake_min_sent:
         out.append(WatchWarning(base + ("wakeups",), **tag,
                            what=f"helpers finishing woke this conversation {len(wakes)} times, and those "
                                 f"{len(wakes)} extra steps re-sent ~{_m(wake_sent)} tokens "
                                 f"(the largest ~{_k(max(t['history_tokens'] for t in wakes))}).",
                            why="a helper that finishes in the background starts a new step here, and every step "
-                               "re-sends the whole conversation, even when the step only says it is still waiting.",
+                               "re-sends the whole conversation, even when the step only says it is still waiting."
+                               + (priced if wake_sent < cfg.wake_min_sent else ""),
                            fix="start helpers while this conversation is still short, start the ones that belong "
                                "together in one message, and run them in the foreground where the tool allows it, so "
                                "their results arrive in one step. If this conversation reports to another one, send "
@@ -292,6 +334,22 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
                                f"you start one) and keep {level} for the one hard step. "
                                f"`{CLI_NAME} model suggest \"<task>\"` suggests an effort for a task.",
                            short=f"{len(hot)} helpers at {level} effort (~{_m(hot_sent)}): lower it for routine work"))
+
+    # (j) the conversation itself at a top reasoning effort, on any model
+    top_steps = [t for t in turns if t.get("effort") in ("xhigh", "max")]
+    top_out = sum(t["output_tokens"] for t in top_steps)
+    if len(top_steps) >= cfg.effort_main_steps and top_out >= cfg.effort_main_output:
+        level = "max" if any(t["effort"] == "max" for t in top_steps) else "xhigh"
+        out.append(WatchWarning(base + ("effort-main",), **tag,
+                           what=f"this conversation ran {len(top_steps)} steps at {level} effort and they wrote "
+                                f"~{_k(top_out)} output tokens (thinking included).",
+                           why="thinking is billed as output, the dearest kind of token, and the effort applies "
+                               "to every step, also the ones that only read a file or run a command.",
+                           fix=f"keep {level} for the hard step (design, a stubborn bug) and lower the effort for "
+                               f"routine steps. `{CLI_NAME} model suggest \"<task>\"` suggests an effort, and "
+                               f"`{CLI_NAME} model cost` shows what the output share is.",
+                           short=f"{len(top_steps)} steps at {level} effort (~{_k(top_out)} output): lower it for "
+                                 "routine steps"))
 
     # (f) heavy start: what the session carried on its first step, before any work
     start = s.get("start_tokens")

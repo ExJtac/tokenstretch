@@ -324,6 +324,20 @@ def cmd_model(args) -> int:
             lines += format_effort_by_session(mix["by_session"])
         print(json.dumps(mix, indent=2) if args.json else "\n".join(lines))
         return 0
+    if args.model_cmd == "cost":
+        from .cost import cost_view, format_cost_view
+        from .setup import detected_adapters
+        sessions = []
+        for ad in detected_adapters(ctx):
+            sessions += ad.watch_sessions(ctx, limit=max(1, min(int(args.sessions), 50))) or []
+        view = cost_view(sessions)
+        if args.grid:
+            from .cost import format_grid, grid
+            rows = grid(view)
+            print(json.dumps(rows, indent=2) if args.json else "\n".join(format_grid(rows)))
+            return 0
+        print(json.dumps(view, indent=2) if args.json else "\n".join(format_cost_view(view)))
+        return 0
     return run_default(ctx, args.tier, tool=args.tool, apply=bool(args.apply) and not args.dry_run)
 
 
@@ -611,6 +625,12 @@ def main(argv=None) -> int:
     me.add_argument("--by-session", action="store_true",
                     help="also list each conversation with the model and effort it was logged at")
     me.add_argument("--json", action="store_true")
+    mc = msub.add_parser("cost", help="where recent sessions' credits went, per model and effort, weighted by price")
+    _add_context_args(mc)
+    mc.add_argument("--sessions", type=int, default=10, help="newest conversations to read per tool (default 10)")
+    mc.add_argument("--grid", action="store_true",
+                    help="one line per model and effort: what a step cost on average, dearest first")
+    mc.add_argument("--json", action="store_true")
     md = msub.add_parser("default", help="set a tool's default model by tier (dry-run unless --apply)")
     _add_context_args(md)
     md.add_argument("--tier", choices=("light", "mid", "top"), required=True)
