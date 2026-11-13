@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `model suggest` and `brief` now suggest a reasoning effort (low, medium, high, xhigh) next to the model tier, from the same task score. `max` is never suggested. For Claude Code the output names the setting to change. `--json` gains `effort` and `effort_why`. A rule of thumb, not a measured result.
+
 ### Fixed
 - `/credits` works when the app cannot find `tokenstretch` by name. An app started from the desktop often lacks `~/.local/bin` on its PATH, and the old fallback (`python3 -m tokenstretch`) fails when the package lives in the installer's own environment. The shortcut now carries the full command for this machine, and `setup` offers to refresh it when that path changes.
 

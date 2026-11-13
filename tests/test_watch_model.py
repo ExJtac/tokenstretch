@@ -164,6 +164,18 @@ def test_model_suggest_heuristics():
     assert suggest_tier("")["reasons"]
 
 
+def test_model_suggest_effort_follows_the_score():
+    from tokenstretch.models import EFFORTS, suggest_effort
+    assert [suggest_effort(n) for n in (-5, -2, -1, 0, 1, 2, 3, 4, 9)] == [
+        "low", "low", "medium", "medium", "medium", "high", "high", "xhigh", "xhigh"]
+    assert "max" not in EFFORTS                                   # a ceiling, never a suggestion
+    assert suggest_tier("rename getUser to fetchUser")["effort"] == "low"
+    assert suggest_tier("implement pagination on the orders endpoint")["effort"] == "medium"
+    assert suggest_tier("Debug the race condition in the websocket reconnect logic")["effort"] == "high"
+    hard = suggest_tier("Find the root cause of the intermittent deadlock, a security hole in the auth flow")
+    assert hard["effort"] == "xhigh" and hard["effort_why"]
+
+
 def test_model_suggest_cli(tmp_path):
     w = _world(tmp_path, [_row(0, "claude-sonnet-4-5", 1000)])
     prompt = tmp_path / "prompt.txt"
@@ -175,12 +187,15 @@ def test_model_suggest_cli(tmp_path):
     out = buf.getvalue()
     assert code == 0 and "Suggested tier: TOP" in out and "Claude Code: opus" in out
     assert "rule of thumb, not a measured result" in out
+    assert "Suggested effort: XHIGH" in out and 'effort: `"effortLevel": "xhigh"`' in out
+    assert "Pick the effort when a session starts" in out
     buf = io.StringIO()
     with credential_guard(), redirect_stdout(buf):
         main(["model", "suggest", "rename", "a", "variable", "--json", "--home", str(w / "home"),
               "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
     data = json.loads(buf.getvalue())
     assert data["tier"] == "light" and data["tools"][0]["model"] == "haiku"
+    assert data["effort"] == "low" and "low" in data["tools"][0]["effort_hint"]
 
 
 def _cli(w: Path, *args: str) -> str:

@@ -304,7 +304,7 @@ def cmd_model(args) -> int:
             print('describe the task: model suggest "fix the flaky login test"  (or --file prompt.txt)', file=sys.stderr)
             return 2
         res = suggest_tier(text)
-        picks = tool_picks(ctx, res["tier"])
+        picks = tool_picks(ctx, res["tier"], effort=res["effort"])
         if args.json:
             print(json.dumps({**res, "tools": picks}, indent=2))
         else:

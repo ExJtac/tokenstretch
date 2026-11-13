@@ -367,6 +367,10 @@ class Adapter:
         """How a user switches model inside the tool, e.g. `/model sonnet`."""
         return ""
 
+    def effort_hint(self, effort: str) -> str:
+        """Where a user sets reasoning effort in this tool. Empty when the tool has no such setting we know."""
+        return ""
+
     def plan_default_model(self, ctx: Context, tier: str) -> SetupItem | None:
         """Plan setting the tool's default model to `tier`. Plans only; the core writes with backups."""
         return None
