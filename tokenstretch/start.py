@@ -85,7 +85,7 @@ def pace_summary(ctx: Context, now: float | None = None) -> dict:
     if not wins:
         out["lines"] = [
             "No plan reading yet. One appears after the first reply in a Claude Code session in a terminal.",
-            f"Or type one: {CLI_NAME} pace set --window weekly --used 60 --resets 2026-01-12T09:00:00 --length 7d "
+            f"Or type one: {CLI_NAME} pace set --window weekly --used 60 --resets YYYY-MM-DDTHH:MM:SS --length 7d "
             "(your plan's usage page shows both numbers).",
             "Next: use Claude Code as you normally do, then run this command again.",
         ]
@@ -184,7 +184,7 @@ def run_start(ctx: Context, *, yes: bool = False, as_json: bool = False, detail:
     say("Checking this computer:")
     say(f"  Python {py['version']}: " + ("fine." if py["ok"] else "too old. tokenstretch needs Python 3.11 or newer."))
     say("  Coding tools found: " + (", ".join(tools) if tools else "none (Claude Code, Codex, Gemini CLI and more are supported)."))
-    say("  tokenstretch setup: " + (f"{len(items)} change(s) not applied yet." if items else "already in place."))
+    say("  tokenstretch setup: " + ("not applied yet (the changes are listed below)." if items else "already in place."))
     say("  Automatic plan readings: " + ("on." if paceauto.is_on(state) else
                                          "off." if has_reader else "not available (they come from Claude Code)."))
     say()

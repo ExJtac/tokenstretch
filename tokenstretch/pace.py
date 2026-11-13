@@ -484,7 +484,7 @@ def _f(x: float) -> str:
 def format_windows(wins: list[dict], today: dict[str, dict | None], tight: dict | None) -> list[str]:
     if not wins:
         return [f"No window readings stored. Read the percent used from your plan's usage page and run:",
-                f"  {CLI_NAME} pace set --window weekly --used 60 --resets 2026-01-12T09:00:00 --length 7d",
+                f"  {CLI_NAME} pace set --window weekly --used 60 --resets YYYY-MM-DDTHH:MM:SS --length 7d",
                 NOT_A_BILL]
     lines = ["Pace (estimates): is the plan on an even burn through each window?",
              f"Units are price-weighted, 1 unit = one new input token on the mid model. {NOT_A_BILL}"]
