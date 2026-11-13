@@ -299,5 +299,5 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 "$SHIM" --version >/dev/null || die "the launcher did not run"
 say "Installed $("$SHIM" --version) at $DATA_DIR."
-say "Nothing was set up yet. Next: \`tokenstretch doctor\` (read-only), then \`tokenstretch setup\` if you want its fixes."
+say "Nothing was set up yet. Next: \`tokenstretch start\` shows what it would change and asks before changing anything."
 say "Remove it any time: sh install.sh --uninstall"
