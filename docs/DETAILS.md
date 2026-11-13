@@ -27,6 +27,10 @@ python -m tokenstretch brief "task" [--files P..] [--from P..] [--done TEXT] [--
 python -m tokenstretch model suggest "task" [--file F] [--json]
 python -m tokenstretch model cost [--grid] [--sessions 12] [--json]   # where the credits went per model and effort, price-weighted; read-only
 python -m tokenstretch model rework [--sessions 12] [--json]   # redo-work estimate per model and effort (heuristic); read-only
+python -m tokenstretch queue add "task" [--files P..] [--done TEXT] [--preset NAME] [--hard] | --from-plan FILE   # one task, or one per plan step
+python -m tokenstretch queue next [--agent NAME]       # gate, then claim oldest open task and print its brief; exit 3 over the pace line, 4 empty
+python -m tokenstretch queue done ID [--note TEXT]  |  queue fail ID --note TEXT   # fail: back to open, needs-lead after 2
+python -m tokenstretch queue list [--json]  |  queue release --stale MINUTES  |  queue touch ID  |  queue loop-prompt
 python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
 python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8]
 python -m tokenstretch model default --tier light|mid|top [--tool claude|codex|gemini] [--apply]

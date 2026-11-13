@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows [Kee
 <!-- team: rework meter -->
 - `model rework`: estimates how much spend went to redo work per model and effort, from local Claude Code logs. Four named heuristic signals: a file edited again after a failing test or build, the same file edited 3 or more times, a prompt with a correction word, and the steps from a failing check to the next passing one. Reports redo share of units and units per session with and without redo, and compares efforts only with 3 or more sessions each. Heuristics, not measurements; units are an estimate, not a bill. Tools other than Claude Code are skipped (their logs do not expose edit paths or command results). Read-only; `--sessions`, `--json`.
 <!-- /team: rework meter -->
+<!-- team: queue -->
+- `queue`: a file-based task queue for an autonomous team, in `.tokenstretch/queue/` of the project (one JSON file per task, each holding a ready brief). `queue add` (or `--from-plan FILE` to split a numbered plan into one task per step), `queue next` (checks the pace gate first: exit 3 over the line, exit 4 when empty; claims the oldest open task with an exclusive claim file, skips tasks whose files overlap a claimed task), `queue done`, `queue fail` (the note is appended to the brief; after 2 failures the task is marked `needs-lead`), `queue list`, `queue release --stale MINUTES`, `queue touch`, and `queue loop-prompt` (a short standing prompt for one-task-per-fresh-session workers).
+<!-- /team: queue -->
 
 ## [0.4.0] - 2026-11-12
 
