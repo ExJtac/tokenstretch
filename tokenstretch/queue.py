@@ -142,6 +142,7 @@ _FILES = re.compile(r"\bfiles?\s*[:\-]\s*(.+)", re.I)
 _TICKED = re.compile(r"`([^`\s]+)`")
 _HARD = re.compile(r"(\(hard\)|\[hard\]|\*\*hard\*\*|\bhard step\b|^hard:)", re.I)
 _PATHISH = re.compile(r"[/\\]|\.\w{1,6}$")
+_BARE_PATH = re.compile(r"(?<![\w./:`\\-])((?:[\w.-]+/)+[\w-][\w.-]*\.\w{1,6})(?![\w/])")   # src/a.py with no backticks
 
 
 def parse_plan(text: str) -> list[dict]:
@@ -162,6 +163,7 @@ def parse_plan(text: str) -> list[dict]:
         for chunk in (m.group(1) for m in _FILES.finditer(body)):
             files += [f for f in _TICKED.findall(chunk)] or [f.strip(" `.,;") for f in re.split(r"[,;]| and ", chunk)]
         files += [f for f in _TICKED.findall(body) if _PATHISH.search(f)]
+        files += _BARE_PATH.findall(_CHECK.sub("", body))      # a path inside the check command is not a file to edit
         seen: list[str] = []
         for f in files:
             f = f.strip()
@@ -299,7 +301,7 @@ def list_view(root) -> list[dict]:
     for t in load_tasks(qd) if qd.is_dir() else []:
         claimed = t.get("status") == "open" and _claim_path(qd, t["id"]).exists()
         rows.append({"id": t["id"], "status": "claimed" if claimed else t["status"], "failures": t.get("failures", 0),
-                     "agent": t.get("agent") or "", "files": t.get("files") or [], "hard": bool(t.get("hard")),
+                     "agent": (t.get("agent") or "") if (claimed or t.get("status") != "open") else "", "files": t.get("files") or [], "hard": bool(t.get("hard")),
                      "task": t.get("task", "")})
     return rows
 

@@ -115,3 +115,20 @@ def test_cli_roundtrip_and_json(tmp_path, capsys):
     assert cli.main(["queue", "release", "--stale", "5", "--root", root]) == 0
     assert cli.main(["queue", "loop-prompt"]) == 0
     assert "queue next" in capsys.readouterr().out
+
+
+def test_from_plan_keeps_paths_written_without_backticks(tmp_path):
+    plan = ("1. Add retry in src/up.py and tests/test_up.py. Check: pytest passes.\n"
+            "2. Read https://example.com/docs/page.html and version 1.2 then fix lib/core/key.py.\n"
+            "3. Write the notes, no code.\n")
+    tasks = q.add_from_plan(tmp_path, plan)
+    assert [t["files"] for t in tasks] == [["src/up.py", "tests/test_up.py"], ["lib/core/key.py"], []]
+
+
+def test_list_drops_agent_name_once_claim_is_released(tmp_path):
+    q.add_task(tmp_path, "one")
+    task, _ = q.claim_next(tmp_path, agent="w4")
+    assert q.list_view(tmp_path)[0]["agent"] == "w4"
+    assert q.release_stale(tmp_path, 0) == [task["id"]]
+    row = q.list_view(tmp_path)[0]
+    assert row["status"] == "open" and row["agent"] == ""

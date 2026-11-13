@@ -33,7 +33,7 @@ Stars, bug reports, and pull requests help just as much.
 - **A brief writer.** `brief "<task>"` turns a one-line task into a brief that names the files, the notes to work from, what not to do again, the stop condition, and the reply length, and lists what your task leaves open.
 - **A model and effort picker.** `model suggest "<task>"` recommends light, mid, or top for a task, a reasoning effort to go with it, and names the model for each tool you have. `model default --tier mid` changes your default model, with a backup and undo.
 - **A price view per model and effort.** `model cost` weighs your recent sessions' tokens by published price ratios and shows, for each model and effort, where the credits went (history re-read, history saved again, new content, output and thinking) and the one change that removes the most. `model cost --grid` puts the average cost of a step side by side.
-- **A team that lasts at full effort.** `queue` hands agents one task per fresh session from a file-based queue, `startup --agent` shows what a worker session can switch off, `model rework` estimates what redo work cost per model and effort, and `pace` holds the team to an even burn of the plan's weekly limit and says how many agents can run at once. See [Run a team at full effort](#run-a-team-at-full-effort) and [Make a week last at full effort](#make-a-week-last-at-full-effort).
+- **A team paced through the week.** `queue` hands agents one task per fresh session from a file-based queue, `startup --agent` shows what a worker session can switch off, `model rework` estimates what redo work cost per model and effort, and `pace` holds the team to an even burn of the plan's weekly limit and says how many agents can run at once. See [Run a team at full effort](#run-a-team-at-full-effort) and [Make a week last at full effort](#make-a-week-last-at-full-effort).
 - **A shareable report.** `report` writes a single self-contained HTML file with the findings, the plan, what was applied, undo commands, and current status. It loads nothing from the internet.
 - **A weekly report.** `report --weekly` adds up your local usage logs per week: tokens by type and by model, your biggest session histories, waste spots, and a before/after view since setup. Cost appears only where your logs report it.
 - **A local dashboard.** `dashboard` opens one live page on your own machine with all of the above, updated every 5 seconds. See [Dashboard](#dashboard).
@@ -277,17 +277,15 @@ Connector tool lists aren't in any local file, so they are sized by difference. 
 <!-- team: full-effort section -->
 ## Run a team at full effort
 
-These commands are on `main` and ship in the next release after 0.4.0. Until then, run them from a checkout (`python -m tokenstretch ...`).
-
-Lowering the effort of a long-running team is not the only way to make a plan's weekly limit last. On logs from a team at a top effort, most of the spend was not thinking: about 60% was old history saved to the cache again (after a pause longer than the cache lifetime, or in a resumed session), about 27% was history re-read, and about 10% was output and thinking. Sessions also started at ~76K tokens before any work, and every step re-reads that. So the levers are the shape of the work, not the dial:
+Lowering the effort of a long-running team is not the only way to make a plan's weekly limit last, but be clear about how much the other way buys. On one week of logs from a team that worked mostly on a top model (about 2,100 top-model steps, every log read in full), about 33% of the spend was history re-read, 31% was output and thinking, 30% was new content, and 6% was old history saved to the cache a second time. With no second saves and re-reads halved, that week would have used about a quarter less, which is about 1.3x more work at the same effort (`pace --what-if` shows the same sum for your own logs). So shorter history and a lighter start-up help, and they do not by themselves make a week of top effort without a stop fit in a plan. What keeps the limit from arriving early is a governor on how many agents run at once. The parts:
 
 - One task per fresh session, with no pause. `tokenstretch queue` is a file-based queue in the project (`.tokenstretch/queue/`, one JSON file per task, each holding a ready `brief`), so agents pull work and the lead spends no steps on dispatch.
-- A light start-up for workers. `tokenstretch startup --agent` lists what a worker can switch off and what that saves over 50 steps in price units. It prints settings to use; it writes nothing.
+- A light start-up for workers. `tokenstretch startup --agent` sizes the parts of a session's start-up that it can see in local files (instruction files, skills, connected tool lists) and lists the ones worth switching off for a worker, with the saving over 50 steps in price units. The tool's own system prompt and built-in tools are not in local files, so it cannot size those; on a set-up that loads little of its own it says that no part is worth switching off. It prints settings to use; it writes nothing.
 - Proof of what redo work costs. `tokenstretch model rework` estimates, per model and effort, how much spend went to redo steps and what a finished task cost, with four named heuristic signals.
 
 ```text
 tokenstretch queue add "fix the retry" --files src/upload.py --done "tests pass"
-tokenstretch queue add --from-plan plan.md      # one task per numbered step; keeps each step's files and check
+tokenstretch queue add --from-plan plan.md      # one task per numbered step; keeps the file paths and the check each step names
 tokenstretch queue next --agent w1              # gate, then claim the oldest open task and print its brief
 tokenstretch queue done T0001 --note "ok"       # or: queue fail T0001 --note "what went wrong"
 tokenstretch queue list                         # open, claimed, done, needs-lead
@@ -295,7 +293,7 @@ tokenstretch queue release --stale 30           # free claims with no update for
 tokenstretch queue loop-prompt                  # the standing prompt for a worker session
 ```
 
-`queue next` checks the pace gate first (`tokenstretch pace --gate`, when the pace meter is installed; without it the gate is open). Over the even-pace line it prints the wait and exits 3; an empty queue exits 4. A claim is a file created with an exclusive open, so two agents never get the same task, and a task whose files overlap a claimed task's files is skipped. `queue fail` sends the task back to open with the note added to its brief, so the next agent does not repeat the mistake; after two failures it is marked `needs-lead` for the lead to look at. The worker's standing prompt ends the session after each task: a fresh short session per task keeps the history small and the cache hot.
+`queue next` checks the pace gate first (`tokenstretch pace --gate`; with no reading stored the gate is open). Over the even-pace line it prints the wait and exits 3; an empty queue exits 4. A claim is a file created with an exclusive open, so two agents never get the same task, and a task whose files overlap a claimed task's files is skipped. `queue fail` sends the task back to open with the note added to its brief, so the next agent does not repeat the mistake; after two failures it is marked `needs-lead` for the lead to look at. The worker's standing prompt ends the session after each task: a fresh short session per task keeps the history small and the cache hot.
 
 `model rework` reads local Claude Code logs, read-only. The signals are a file edited again after a failing test or build, the same file edited 3 or more times, a prompt with a correction word ("still", "again", "wrong", ...), and the steps from a failing check to the next passing one. These are heuristics: a file edited twice may be good work, and the counts are a floor (only the newest part of a long log is read, and edits made through shell commands are not seen). It compares efforts in one sentence only when both have 3 or more sessions, and otherwise says the sample is too small. Units are price-weighted estimates, not dollars and not a bill; models without a published ratio show steps only.
 <!-- /team: full-effort section -->
@@ -443,11 +441,11 @@ A dearer row is not waste by itself: compare rows that did the same kind of work
 
 ## Make a week last at full effort
 
-`pace` is on `main` and ships in the next release after 0.4.0. Until then, run it from a checkout (`python -m tokenstretch pace ...`). `queue next` runs the gate for you before it hands out a task.
+`queue next` runs the gate for you before it hands out a task.
 
 Lowering the reasoning effort is one way to stretch a plan, and it can cost you in redone work. This is the other way: cut what is re-sent and re-saved (long history, lapsed caches, heavy start-up), and let a governor decide how many agents run at once, so the plan's weekly limit arrives at the reset, not before.
 
-A subscription plan shows percent used per window (5 hours, the week, the week for the top model family) and a reset time. Local logs do not record that percent, so you type it in once in a while. `pace` then calibrates how many price-weighted units one percent is, from the logs since the window began, and tracks the percent from there.
+A subscription plan shows percent used per window (5 hours, the week, the week for the top model family) and a reset time. Local logs do not record that percent, so you type it in once in a while. `pace` then calibrates how many price-weighted units one percent is, from the logs since the window began, and tracks the percent from there. On the one account we checked this against (one reading stored, a week of logs), the estimate matched the plan's own card to the point at two later checks within half an hour: 83% then 84% for the top-model week, 61% then 62% for all models. That is one account over a short span, not a promise; add a reading now and then.
 
 ```bash
 tokenstretch pace set --window weekly-top --used 80 --resets 2026-03-09T09:00:00 --length 7d --models 'fable|opus'
@@ -458,7 +456,7 @@ tokenstretch pace --team 8 --effort max
 tokenstretch pace --what-if
 ```
 
-Sample output (a temporary home with synthetic logs, three days into a week):
+Sample output (a temporary home with synthetic logs, three days into a week). The shares in it come from the synthetic logs; the what-if cut on one real week of logs was about a quarter, not 40%:
 
 ```text
 $ tokenstretch pace
@@ -468,13 +466,13 @@ Units are price-weighted, 1 unit = one new input token on the mid model. Estimat
 weekly  (length 7d 0h, resets 2026-03-09T09:00:00Z)
     reading: 60% used at 2026-03-05T09:00:00Z  (1 stored)
     estimated used now: ~60%   share of window gone: 43%   pace ratio: 1.40  (over the line by 20 points; line = time share minus 3 reserve)
-    calibration: ~2.4M units per 1% (units since window start / percent used); ~97.5M units left, ~24.4M per remaining day (4.0 days left)
+    calibration: ~2.4M units per 1% (units since window start / percent used; store a second reading later for a closer fit); ~97.5M units left, ~24.4M per remaining day (4.0 days left)
     about 226 steps left today on claude-fable-5-2 at effort max (~108k units per step)
 
 weekly-top  (length 7d 0h, resets 2026-03-09T09:00:00Z, models /fable|opus/)
     reading: 80% used at 2026-03-05T09:00:00Z  (1 stored)
     estimated used now: ~80%   share of window gone: 43%   pace ratio: 1.87  (over the line by 40 points; line = time share minus 3 reserve)
-    calibration: ~1.7M units per 1% (units since window start / percent used); ~33.6M units left, ~8.4M per remaining day (4.0 days left)
+    calibration: ~1.7M units per 1% (units since window start / percent used; store a second reading later for a closer fit); ~33.6M units left, ~8.4M per remaining day (4.0 days left)
     about 78 steps left today on claude-fable-5-2 at effort max (~108k units per step)
 
 Tightest window: weekly-top (pace ratio 1.87, ~80% used with 43% of the window gone).
@@ -488,7 +486,7 @@ pace gate: over. weekly-top ~80% used (estimate), line 40%; wait about 2d 19h fo
 (exit code 3)
 ```
 
-`pace --team N` measures units per step and steps per hour for the model and effort in your own logs, and says how many agents can run at once on the line and how many hours a day N agents can run. When the logs hold no steps at that effort it says so and uses the nearest measured effort, labelled. `--what-if` shows the same week with old history never saved again and re-reads halved, so you can see how many more agent-hours the cuts buy at the same effort:
+`pace --team N` measures units per step and steps per hour for the model and effort in your own logs, and says how many agents can run at once on the line and how long each of N agents can work a day. The sample below is a week that is already far over its line, so the answer is small; early in a window, or on the line, it is much larger. When the logs hold no steps at that effort it says so and uses the nearest measured effort, labelled. `--what-if` shows the same week with old history never saved again and re-reads halved, so you can see how many more agent-hours the cuts buy at the same effort:
 
 ```text
 $ tokenstretch pace --team 8 --effort max --what-if
@@ -496,7 +494,7 @@ Team of 8 on claude-fable-5-2 at effort max (estimates, not a bill):
     measured: ~108k units per step, 86 steps per hour, ~9.2M units per agent-hour
     weekly: 0.11 agents at once on the line, 0.33 h a day for 8 agents
     weekly-top: 0.04 agents at once on the line, 0.11 h a day for 8 agents
-    so: 0.04 agents can run at once on the line; 8 agents can run about 0.11 hours a day (tightest window: weekly-top).
+    so: the line has room for less than one agent working without a stop. 8 agents can each work about 7 minutes a day (tightest window: weekly-top).
 What if old history was never saved again and re-reads were halved? (same models, same effort; estimates, not a bill)
     weekly: history re-saved ~20.6M units, re-read ~76.8M units; the cuts remove ~40% of what was used. Estimated used would be ~36% instead of ~60%, 1.68x more agent-hours.
     weekly-top: history re-saved ~20.1M units, re-read ~68.2M units; the cuts remove ~40% of what was used. Estimated used would be ~48% instead of ~80%, 1.68x more agent-hours.
@@ -505,7 +503,7 @@ What if old history was never saved again and re-reads were halved? (same models
 
 `watch` warns once per window when a stored window is 10 or more points over its line, and is silent with no reading or after the window has reset. Run `pace set` again after each reset.
 
-Limits to know: every number is an estimate from local logs, published price ratios and your own readings. Units are not dollars and this is not a bill; a plan counts usage its own way, so read your plan's percent now and then and add a reading (two readings calibrate better than one). Models with no price ratio are left out of the units and listed, never guessed. Helpers' steps carry no timestamps, so they count in the same share as the main steps inside the window. Only your readings are stored, in `pace.json` under the tokenstretch home. No network, no model calls.
+Limits to know: every number is an estimate from local logs, published price ratios and your own readings. Units are not dollars and this is not a bill; a plan counts usage its own way, so read your plan's percent now and then and add a reading (two readings calibrate better than one). Models with no price ratio are left out of the units and listed, never guessed. For Claude Code every log in the window is read in full, helpers included, each step at its own time; the steps already read are kept in `cache/window-steps.json` under the tokenstretch home (times, model names and token counts, no prompt or reply text), so the first run is slow and later runs read only what the logs gained. For tools whose helper logs carry no times, helpers count in the same share as the main steps inside the window. Usage that is not in this machine's logs (another computer, the web or phone app) is in your plan's percent and not in the units. Your readings are stored in `pace.json` under the tokenstretch home. No network, no model calls.
 
 ## Honest results
 

@@ -476,7 +476,7 @@ class Watcher:
         starts = [pc.parse_time(w["resets"]) - w["length_s"] for w in state["windows"].values()]
         sessions = []
         for ad in self.adapters:
-            sessions += ad.watch_sessions(self.ctx, limit=500, max_age_s=max(0.0, now - min(starts)) + 86400) or []
+            sessions += ad.window_sessions(self.ctx, limit=500, max_age_s=max(0.0, now - min(starts)) + 86400) or []
         out = []
         for w in pc.watch_over(state, sessions, now, self.cfg.pace_points):
             out.append(WatchWarning(

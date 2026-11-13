@@ -313,6 +313,11 @@ class Adapter:
         return []
 
     # ---- watch / model picker ------------------------------------------------------------
+    def window_sessions(self, ctx: Context, limit: int = 500, max_age_s: float | None = None) -> list[dict] | None:
+        """The sessions `pace` sums over a plan window: every step of each log, not only its end.
+        A helper may carry `turns` (its own timed steps). Default: the same read as watch_sessions."""
+        return self.watch_sessions(ctx, limit=limit, max_age_s=max_age_s)
+
     def watch_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict] | None:
         """Per-turn records for `tokenstretch watch`, read-only. None => not supported yet.
         With max_age_s, files not written within that many seconds are skipped before opening.

@@ -213,6 +213,7 @@ def test_watch_warns_ten_points_over_the_line_and_stays_silent_otherwise(tmp_pat
         id, display_name = "claude", "Claude"
         def watch_sessions(self, ctx, limit=5, max_age_s=None):
             return sessions
+        window_sessions = watch_sessions
 
     ctx = _ctx(_world(tmp_path, [_row(0, TOP, 1000)]))
     clock = [now]
@@ -264,3 +265,65 @@ def test_length_and_time_parsing():
         pc.parse_length("soon")
     assert pc.default_length("5h") == 18000 and pc.default_length("weekly") == 7 * DAY
     assert pc.parse_time("2026-01-05T00:00:00Z") == T0 and pc.parse_time("2026-01-05T01:00:00+01:00") == T0
+
+
+def test_helper_with_its_own_timed_steps_is_cut_by_time_not_by_share():
+    now = T0 + 3 * DAY
+    main_steps = [_turn(T0 + 60), _turn(now + 600)]
+    helper = {"turns": [_turn(T0 + 120), _turn(T0 + 180), _turn(now + 900)]}
+    view = pc.slice_view([_sess(*main_steps, helpers=[helper])], T0, now)
+    assert view["total"] == pytest.approx(3 * 2000)                  # 1 main step + 2 helper steps before `now`
+    only_helper = pc.slice_view([_sess(helpers=[helper])], T0, now)  # a main log with no step in range still counts its helper
+    assert only_helper["total"] == pytest.approx(2 * 2000)
+    mid_only = pc.slice_view([_sess(*main_steps, helpers=[helper])], T0, now, pc.re.compile("sonnet"))
+    assert mid_only["total"] == 0
+
+
+def _log_line(i: int, at: float, out: int = 100, mid: str | None = None) -> str:
+    return json.dumps({"type": "assistant", "timestamp": pc.iso(at), "message": {
+        "id": mid or f"msg{i}", "model": TOP, "content": [{"type": "text", "text": "x" * 2000}],
+        "usage": {"input_tokens": 1, "cache_read_input_tokens": 10, "cache_creation_input_tokens": 5,
+                  "output_tokens": out}}}) + "\n"
+
+
+def test_step_cache_reads_only_what_a_log_gained_and_never_counts_a_step_twice(tmp_path):
+    from tokenstretch.adapters.claude_code import _feed_usage_steps
+    from tokenstretch.stepcache import StepCache
+    log, store = tmp_path / "s.jsonl", tmp_path / "cache" / "steps.json"
+    log.write_text(_log_line(0, T0) + _log_line(1, T0 + 60))
+    c = StepCache(store)
+    assert [s["output_tokens"] for s in c.steps(log, _feed_usage_steps)] == [100, 100]
+    assert c.steps(log, _feed_usage_steps)[0]["history_tokens"] == 16 and c.save()
+    offset = json.loads(store.read_text())["files"][str(log)]["offset"]
+    with log.open("a") as fh:                                         # a second block of step 1, then a new step, then half a line
+        fh.write(_log_line(1, T0 + 61) + _log_line(2, T0 + 120, out=7) + '{"type": "assistant", "mess')
+    calls = []
+    def feed(lines, seen):
+        calls.append(len(lines))
+        return _feed_usage_steps(lines, seen)
+    c2 = StepCache(store)
+    assert [s["output_tokens"] for s in c2.steps(log, feed)] == [100, 100, 7]
+    assert calls == [2] and c2.save()                                # only the two new whole lines were parsed
+    assert json.loads(store.read_text())["files"][str(log)]["offset"] > offset
+    log.write_text(_log_line(9, T0, out=3))                           # replaced by a shorter file: read again from the start
+    assert [s["output_tokens"] for s in StepCache(store).steps(log, _feed_usage_steps)] == [3]
+    store.write_text("{not json")
+    assert [s["output_tokens"] for s in StepCache(store).steps(log, _feed_usage_steps)] == [3]
+
+
+def test_window_sessions_counts_steps_beyond_the_tail_of_a_long_log(tmp_path):
+    from tokenstretch.adapters.claude_code import ClaudeCodeAdapter, _session_turns
+    ctx = _ctx(_world(tmp_path, [_row(0, TOP, 1000)]))
+    proj = ctx.home / ".claude" / "projects" / "p"
+    proj.mkdir(parents=True, exist_ok=True)
+    log = proj / "long.jsonl"
+    log.write_text("".join(_log_line(i, T0 + i) for i in range(300)))
+    sub = proj / "long" / "subagents"
+    sub.mkdir(parents=True)
+    (sub / "agent-1.jsonl").write_text(_log_line(0, T0 + 5, mid="h0") + _log_line(1, T0 + 6, mid="h1"))
+    assert len(_session_turns(log, tail_bytes=50_000)) < 300          # the tail read misses the early steps
+    ad = ClaudeCodeAdapter()
+    mine = [s for s in ad.window_sessions(ctx) if s["path"] == str(log)]
+    assert len(mine) == 1 and len(mine[0]["turns"]) == 300 and len(mine[0]["helpers"][0]["turns"]) == 2
+    assert (ctx.home / ".tokenstretch" / "cache" / "window-steps.json").is_file()
+    assert len([s for s in ad.window_sessions(ctx) if s["path"] == str(log)][0]["turns"]) == 300
