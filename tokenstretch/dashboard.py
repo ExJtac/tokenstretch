@@ -341,6 +341,8 @@ def build_state(ctx: Context, **kw) -> dict:
 
 # ---- HTML -----------------------------------------------------------------------------
 
+_DOCTOR_CARD = '<section class="card c6"><h2>Doctor <button id="redoc" type="button" style="float:right;text-transform:none">Re-run doctor</button></h2><div class="sub" id="doc-when"></div><div id="doctor"></div></section>'
+
 _PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
@@ -390,7 +392,7 @@ footer{grid-column:span 12;text-align:center;color:var(--mut);font-size:12px;pad
 <section class="card c6"><h2>Models this week</h2><div id="models"></div></section>
 <section class="card c6"><h2>Weekly trend (total tokens)</h2><div id="weekly"></div></section>
 __PANEL_CARDS__
-<section class="card c7"><h2>Doctor <button id="redoc" type="button" style="float:right;text-transform:none">Re-run doctor</button></h2><div class="sub" id="doc-when"></div><div id="doctor"></div></section>
+__QUEUE_CARD__
 <section class="card c5"><h2>Token-saving tools &amp; telemetry</h2><div id="tools"></div></section>
 <section class="card c12"><h2>Instruction files</h2><div id="instructions"></div></section>
 <section class="card c6"><h2>Setup status</h2><div id="setup"></div></section>
@@ -500,8 +502,8 @@ def render_page(state: dict | None = None, *, interval: float = 5.0, static: boo
     """The whole page: inline CSS and JS, no external resources. `static` embeds state and stops polling."""
     import html
     title = f"{PRODUCT_NAME} dashboard"
-    from .dashboard_panels import PANEL_CARDS, PANEL_JS
-    return (_PAGE.replace("__PANEL_CARDS__", PANEL_CARDS).replace("__PANEL_JS__", PANEL_JS).replace("__TITLE__", html.escape(title)).replace("__TITLE_TEXT__", html.escape(title))
+    from .dashboard_panels import PANEL_CARDS, PANEL_JS, QUEUE_CARD
+    return (_PAGE.replace("__PANEL_CARDS__", PANEL_CARDS).replace("__DOCTOR_CARD__", _DOCTOR_CARD).replace("__QUEUE_CARD__", QUEUE_CARD).replace("__PANEL_JS__", PANEL_JS).replace("__TITLE__", html.escape(title)).replace("__TITLE_TEXT__", html.escape(title))
             .replace("__INTERVAL__", str(int(interval * 1000))).replace("__STATIC__", "true" if static else "false").replace("__FOOTER__", html.escape(FOOTER))
             .replace("__STATE__", _json_for_script(state) if state is not None else "null"))
 

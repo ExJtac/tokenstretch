@@ -2,6 +2,10 @@
 
 **Stop paying for wasted AI coding credits. One command finds the waste, explains it, and fixes it, with undo.**
 
+## Support tokenstretch
+
+tokenstretch is free and stays free, with no paid tier and no tracking. If it saves you credits and you'd like to say thanks: [buy me a coffee on Ko-fi](https://ko-fi.com/exjtac), or send Bitcoin (on-chain) to `bc1qt892nv80l50grylqddnzf9u4203gm2gqmr22ku`. The QR code is [at the bottom](#say-thanks).
+
 ## Quick start
 
 tokenstretch finds wasted AI coding credits on your computer and fixes the safe causes. It runs only on your machine, has no account and no telemetry, and every change can be undone.
@@ -59,17 +63,6 @@ Limits, so nothing surprises you:
 tokenstretch is **free and open source (MIT)**. It runs **100% on your machine**. There's no account, no sign-up, no telemetry, and no server. It looks at how Claude Code, Codex, and other coding agents are set up on your computer, shows you in plain English where your credits are going, and applies a small set of safe fixes. It backs up every file first, and `tokenstretch undo` puts everything back.
 
 It doesn't replace your tools. It checks, configures, and measures them, including RTK and Caveman.
-
-### Support tokenstretch
-
-tokenstretch is free and stays free, with no paid tier and no tracking. If it saves you credits and you'd like to say thanks:
-
-- [Buy me a coffee on Ko-fi](https://ko-fi.com/exjtac)
-- Bitcoin (on-chain): `bc1qt892nv80l50grylqddnzf9u4203gm2gqmr22ku`
-
-<img src="docs/images/btc-donate.png" alt="Bitcoin donation QR code" width="140">
-
-Stars, bug reports, and pull requests help just as much.
 
 ![The tokenstretch dashboard: live sessions, warnings, model usage, and weekly trend](docs/images/dashboard.png)
 
@@ -647,5 +640,16 @@ Every tool-specific path lives in its adapter (`tokenstretch/adapters/`). To add
 - All commands: `tokenstretch --help`. The others are `doctor`, `install`, `bench`, `watch`, `statusline`, `startup`, `nudge`, `auto`, `brief`, `model`, `trim`, and `undo`.
 - Technical details and pins: `docs/DETAILS.md`, `ADAPTERS.md`, `tokenstretch/catalog.py`
 - Contributing: `CONTRIBUTING.md` · Roadmap: `ROADMAP.md` · Security: `SECURITY.md`
+
+## Say thanks
+
+tokenstretch is free and stays free, with no paid tier and no tracking. If it saves you credits and you'd like to say thanks:
+
+- [Buy me a coffee on Ko-fi](https://ko-fi.com/exjtac)
+- Bitcoin (on-chain): `bc1qt892nv80l50grylqddnzf9u4203gm2gqmr22ku`
+
+<img src="docs/images/btc-donate.png" alt="Bitcoin donation QR code" width="140">
+
+Stars, bug reports, and pull requests help just as much.
 
 MIT © 2026 Leverage Lab AI
