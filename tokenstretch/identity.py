@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Shown in --version, reports, and user-facing text.
 PRODUCT_NAME = "tokenstretch"
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 
 # argv0 / console-script name (pyproject [project.scripts]).
 CLI_NAME = "tokenstretch"
