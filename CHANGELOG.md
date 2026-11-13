@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-13
+
 ### Added
 - `pace auto` (and `pace auto --off`): when Claude Code gives the status line its plan limits (`rate_limits.five_hour` and `rate_limits.seven_day`, subscription plans, after a session's first reply), the tokenstretch status line stores the percent used and the reset time as windows `auto-5h` and `auto-week`, so the pace gate stays current with nobody typing a number. Off by default. A new reading is stored when the percent moved a point or 30 minutes passed. Only the percent and the reset time are stored. The tool reports no per-model weekly limit there, so a top-model window still needs `pace set`.
 
