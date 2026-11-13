@@ -382,6 +382,17 @@ def cmd_pace(args) -> int:
                 [f"{msg} window {args.window}: {args.used:g}% used, resets {w['resets']}, length "
                  f"{pc.dur(w['length_s'])}" + (f", models /{w['models']}/" if w["models"] else "") + f". ({path})"])
             return 0
+        if args.pace_cmd == "auto":
+            from . import paceauto
+            state[paceauto.AUTO_KEY] = not args.off
+            path = pc.save_state(ctx.home, state)
+            out({"auto": not args.off, "file": str(path)},
+                [f"pace auto is off. The status line stores nothing. ({path})"] if args.off else
+                [f"pace auto is on. When the tool gives the status line its plan limits, the status line stores "
+                 f"the percent used and the reset time as windows auto-5h and auto-week. ({path})",
+                 "A top-model weekly limit is not reported there: keep that one current with `pace set`.",
+                 f"Off again: {CLI_NAME} pace auto --off"])
+            return 0
         if args.pace_cmd == "clear":
             if not args.window:
                 print("pace clear needs --window NAME", file=sys.stderr)
@@ -869,8 +880,10 @@ def main(argv=None) -> int:
     pa = sub.add_parser("pace", help="budget governor: keep a plan window on an even burn line "
                                      "(estimates from local logs and your readings, not a bill)")
     _add_context_args(pa)
-    pa.add_argument("pace_cmd", nargs="?", choices=("set", "clear"),
-                    help="set: store a reading of percent used; clear: forget a window; none: show the pace")
+    pa.add_argument("pace_cmd", nargs="?", choices=("set", "clear", "auto"),
+                    help="set: store a reading of percent used; clear: forget a window; auto: let the status "
+                         "line store the limits the tool reports; none: show the pace")
+    pa.add_argument("--off", action="store_true", help="auto: switch it off")
     pa.add_argument("--window", help="window name, e.g. 5h, weekly, weekly-top")
     pa.add_argument("--used", type=float, help="set: percent used, as your plan's usage page shows it")
     pa.add_argument("--resets", help="set: when the window resets (ISO time)")

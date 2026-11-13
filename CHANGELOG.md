@@ -4,7 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- `pace auto` (and `pace auto --off`): when Claude Code gives the status line its plan limits (`rate_limits.five_hour` and `rate_limits.seven_day`, subscription plans, after a session's first reply), the tokenstretch status line stores the percent used and the reset time as windows `auto-5h` and `auto-week`, so the pace gate stays current with nobody typing a number. Off by default. A new reading is stored when the percent moved a point or 30 minutes passed. Only the percent and the reset time are stored. The tool reports no per-model weekly limit there, so a top-model window still needs `pace set`.
+
 ### Fixed
+- Two queue tests read the real home's `pace.json`; they now use a temporary home.
 - Windows: the test suite now passes on Windows. `queue` retries the brief moments a file is locked by another worker and compares task file paths with `/` on every OS, so overlapping tasks are skipped correctly. Paths shown to you (`~/...`, `.claude/handoff-auto.md`, instruction file lists in `trim`, `setup`, `watch`) always use `/`. The credential-file check (P06) no longer judges permission bits on Windows, where they do not exist, and reports no mode there. Output no longer crashes on a console that cannot show the check mark or arrow; those characters print as `?` there, and UTF-8 consoles print what they did before.
 
 ## [0.5.0] - 2026-11-13
