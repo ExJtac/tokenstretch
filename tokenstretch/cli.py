@@ -338,6 +338,15 @@ def cmd_model(args) -> int:
             return 0
         print(json.dumps(view, indent=2) if args.json else "\n".join(format_cost_view(view)))
         return 0
+    if args.model_cmd == "rework":  # --- rework meter block ---
+        from .rework import format_rework, rework_view
+        from .setup import detected_adapters
+        sessions = []
+        for ad in detected_adapters(ctx):
+            sessions += ad.watch_sessions(ctx, limit=max(1, min(int(args.sessions), 50))) or []
+        view = rework_view(sessions)
+        print(json.dumps(view, indent=2) if args.json else "\n".join(format_rework(view)))
+        return 0
     return run_default(ctx, args.tier, tool=args.tool, apply=bool(args.apply) and not args.dry_run)
 
 
@@ -631,6 +640,11 @@ def main(argv=None) -> int:
     mc.add_argument("--grid", action="store_true",
                     help="one line per model and effort: what a step cost on average, dearest first")
     mc.add_argument("--json", action="store_true")
+    # --- rework meter block ---
+    mr = msub.add_parser("rework", help="estimate how much spend went to redo work, per model and effort (heuristic)")
+    _add_context_args(mr)
+    mr.add_argument("--sessions", type=int, default=10, help="newest conversations to read per tool (default 10)")
+    mr.add_argument("--json", action="store_true")
     md = msub.add_parser("default", help="set a tool's default model by tier (dry-run unless --apply)")
     _add_context_args(md)
     md.add_argument("--tier", choices=("light", "mid", "top"), required=True)

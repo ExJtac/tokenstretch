@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+<!-- team: rework meter -->
+- `model rework`: estimates how much spend went to redo work per model and effort, from local Claude Code logs. Four named heuristic signals: a file edited again after a failing test or build, the same file edited 3 or more times, a prompt with a correction word, and the steps from a failing check to the next passing one. Reports redo share of units and units per session with and without redo, and compares efforts only with 3 or more sessions each. Heuristics, not measurements; units are an estimate, not a bill. Tools other than Claude Code are skipped (their logs do not expose edit paths or command results). Read-only; `--sessions`, `--json`.
+<!-- /team: rework meter -->
+
 ## [0.4.0] - 2026-11-12
 
 ### Added

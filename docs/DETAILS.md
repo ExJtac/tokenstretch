@@ -26,6 +26,7 @@ python -m tokenstretch nudge [--max-context 150000] [--max-reads 3]   # prompt-h
 python -m tokenstretch brief "task" [--files P..] [--from P..] [--done TEXT] [--helper] [--review] [--max-reads N] [--split N] [--no-build] [--rule TEXT] [--preset NAME] [--max-searches N] [--max-fetches N] [--brief-only] [--check] [--json]
 python -m tokenstretch model suggest "task" [--file F] [--json]
 python -m tokenstretch model cost [--grid] [--sessions 12] [--json]   # where the credits went per model and effort, price-weighted; read-only
+python -m tokenstretch model rework [--sessions 12] [--json]   # redo-work estimate per model and effort (heuristic); read-only
 python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
 python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8]
 python -m tokenstretch model default --tier light|mid|top [--tool claude|codex|gemini] [--apply]
