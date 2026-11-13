@@ -22,7 +22,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 # Windows: .venv\Scripts\activate
 pip install -e .
-tokenstretch --version    # should print: tokenstretch 0.7.1
+tokenstretch --version    # should print: tokenstretch 0.7.2
 ```
 
 Run the rest of the commands from inside the clone with the venv active. Defaults are: `--home` is your real home directory, `--root` is the current directory.
