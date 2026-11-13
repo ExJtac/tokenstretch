@@ -2094,7 +2094,7 @@ class ClaudeCodeAdapter(Adapter):
 
 
 def _helper_stats(path: Path) -> list[dict]:
-    """[{steps, sent, peak}] for each subagent log of this main session (token counts only).
+    """[{steps, sent, peak, output, effort}] for each subagent log of this main session (token counts only).
 
     Subagent logs live at <project>/<session-id>/subagents/*.jsonl. `sent` is the history re-sent
     over the helper's steps, the same measure watch uses for the main conversation.
@@ -2110,8 +2110,20 @@ def _helper_stats(path: Path) -> list[dict]:
         turns = memo_by_stat(sp, "claude-turns", lambda sp=sp: _session_turns(sp))
         if turns:
             sizes = [t["history_tokens"] for t in turns]
-            out.append({"steps": len(turns), "sent": sum(sizes), "peak": max(sizes)})
+            efforts = [t["effort"] for t in turns if t.get("effort")]
+            out.append({"steps": len(turns), "sent": sum(sizes), "peak": max(sizes),
+                        "output": sum(t["output_tokens"] for t in turns),
+                        "effort": max(set(efforts), key=efforts.count) if efforts else ""})
     return out
+
+
+_LOGGED_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def _logged_effort(obj: dict) -> str:
+    """The reasoning effort Claude Code wrote on this log row, or "" when the row has none."""
+    value = str(obj.get("effort") or "").lower()
+    return value if value in _LOGGED_EFFORTS else ""
 
 
 def _first_history_tokens(path: Path, head_bytes: int = 2_000_000) -> int | None:
@@ -2263,6 +2275,7 @@ def _session_turns(path: Path, tail_bytes: int = 4_000_000) -> list[dict]:
                 "cache_read": int(usage.get("cache_read_input_tokens") or 0),
                 "cache_write": int(usage.get("cache_creation_input_tokens") or 0),
                 "tool_calls": 0, "reads": [], "woken": woken,
+                "effort": _logged_effort(obj),
             }
             woken = False
         for block in msg.get("content") or []:

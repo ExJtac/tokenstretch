@@ -176,6 +176,57 @@ def test_model_suggest_effort_follows_the_score():
     assert hard["effort"] == "xhigh" and hard["effort_why"]
 
 
+def test_model_suggest_counts_visual_design_as_hard():
+    res = suggest_tier("Redesign the landing page so visitors send the form")
+    assert res["tier"] == "top" and res["effort"] == "high"
+    assert any("visual design" in r for r in res["reasons"])
+    assert suggest_tier("design the page footer text")["tier"] != "top"     # the bare word is not a signal
+
+
+def _effort_world(tmp_path: Path, lead: str, helper: str, helpers: int = 2) -> Path:
+    rows = [{**_row(i, "claude-sonnet-4-5", 30_000), "effort": lead} for i in range(12)]
+    w = _world(tmp_path, rows)
+    sub = w / "home" / ".claude" / "projects" / "-proj" / "abcd1234-0000" / "subagents"
+    sub.mkdir(parents=True)
+    for n in range(helpers):
+        hrows = [{**_row(i, "claude-sonnet-4-5", 60_000, out=900), "effort": helper} for i in range(6)]
+        (sub / f"agent-a{n}.jsonl").write_text("\n".join(json.dumps(r) for r in hrows) + "\n", encoding="utf-8")
+    return w
+
+
+def test_watch_warns_when_helpers_run_at_a_top_effort(tmp_path):
+    out = _watch_once(_effort_world(tmp_path / "hot", "medium", "xhigh"))
+    assert "2 helpers in this session ran at xhigh effort" in out and "12 steps" in out
+    assert "ran at xhigh effort" not in _watch_once(_effort_world(tmp_path / "ok", "xhigh", "medium"))
+    assert "ran at xhigh effort" not in _watch_once(_effort_world(tmp_path / "one", "medium", "xhigh", helpers=1))
+
+
+def test_model_effort_reports_the_logged_mix(tmp_path):
+    w = _effort_world(tmp_path, "medium", "high")
+    args = ["--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")]
+    buf = io.StringIO()
+    with redirect_stdout(buf), credential_guard():
+        assert main(["model", "effort", *args, "--json"]) == 0
+    mix = json.loads(buf.getvalue())
+    assert mix["main"] == {"medium": {"steps": 12, "output": 1440}}
+    assert mix["helpers"] == {"high": {"steps": 12, "output": 10800, "helpers": 2}}
+    assert any("12 of 12 helper steps" in a for a in mix["advice"])
+    buf = io.StringIO()
+    with redirect_stdout(buf), credential_guard():
+        assert main(["model", "effort", *args]) == 0
+    text = buf.getvalue()
+    assert "MEDIUM 12 steps (100%)" in text and "HIGH 12 steps (100%)" in text
+
+
+def test_model_effort_says_so_when_logs_record_none(tmp_path):
+    w = _world(tmp_path, [_row(0, "claude-sonnet-4-5", 1000)])
+    buf = io.StringIO()
+    with redirect_stdout(buf), credential_guard():
+        assert main(["model", "effort", "--home", str(w / "home"), "--root", str(w / "root"),
+                     "--sys-snapshot", str(w / "sys")]) == 0
+    assert "No reasoning effort is recorded" in buf.getvalue()
+
+
 def test_model_suggest_cli(tmp_path):
     w = _world(tmp_path, [_row(0, "claude-sonnet-4-5", 1000)])
     prompt = tmp_path / "prompt.txt"

@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 - `model suggest` and `brief` now suggest a reasoning effort (low, medium, high, xhigh) next to the model tier, from the same task score. `max` is never suggested. For Claude Code the output names the setting to change. `--json` gains `effort` and `effort_why`. A rule of thumb, not a measured result.
+- `model effort`: the reasoning effort your recent sessions ran at, read from local logs. Steps and output tokens per effort level, main conversations and helpers apart, with plain advice. Read-only; `--json` available. Claude Code logs record the effort; other tools are not read yet.
+- `watch` warns when two or more helpers in a session ran at `xhigh` or `max` effort and re-sent 500K tokens or more.
+- `model suggest` counts a visual redesign (redesign, visual, UI, UX, page or site design, design system) as hard work: top tier, high effort.
 
 ### Fixed
 - `/credits` works when the app cannot find `tokenstretch` by name. An app started from the desktop often lacks `~/.local/bin` on its PATH, and the old fallback (`python3 -m tokenstretch`) fails when the package lives in the installer's own environment. The shortcut now carries the full command for this machine, and `setup` offers to refresh it when that path changes.
