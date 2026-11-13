@@ -72,7 +72,7 @@ def _retry_busy(fn, tries: int = 50):
         try:
             return fn()
         except PermissionError:
-            if i == tries - 1:
+            if os.name != "nt" or i == tries - 1:
                 raise
             time.sleep(0.005)
 
@@ -230,7 +230,11 @@ def claim_next(root: Path | str, agent: str = "") -> tuple[dict | None, str]:
             continue
         try:
             fd = os.open(_claim_path(qd, t["id"]), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except (FileExistsError, PermissionError):      # Windows reports a just-deleted claim as PermissionError
+        except FileExistsError:
+            continue
+        except PermissionError:      # Windows reports a just-deleted claim this way; elsewhere it is a real error
+            if os.name != "nt":
+                raise
             continue
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump({"agent": agent, "claimed": time.time()}, fh)
