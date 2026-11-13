@@ -5,7 +5,7 @@ import io
 import json
 from contextlib import redirect_stdout
 
-from tokenstretch.brief import Brief, build, lint, render
+from tokenstretch.brief import Brief, build, format_report, lint, render
 from tokenstretch.cli import main
 
 
@@ -54,6 +54,7 @@ def test_build_reports_size_and_a_tier():
     data = build(Brief("fix a typo in README.md", done="spelling is right"))
     assert data["tier"] == "light" and data["approx_tokens"] == max(1, round(len(data["brief"]) / 4))
     assert data["lint"] == []
+    assert data["effort"] == "low" and "effort: low" in "\n".join(format_report(data))
 
 
 def _cli(*args: str) -> tuple[int, str]:

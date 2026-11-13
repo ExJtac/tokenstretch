@@ -164,12 +164,13 @@ def build(b: Brief) -> dict:
         "lint": [{"code": x.code, "what": x.what, "why": x.why, "fix": x.fix} for x in lint(b)],
         "tier": tier.get("tier"),
         "tier_why": "; ".join(tier.get("reasons") or []),
+        "effort": tier.get("effort"),
     }
 
 
 def format_report(data: dict) -> list[str]:
     out = [data["brief"].rstrip("\n"), "", f"(about {data['approx_tokens']} tokens, approx.; "
-           f"suggested model tier: {data['tier']}, a rule of thumb from `{CLI_NAME} model suggest`)"]
+           f"suggested model tier: {data['tier']}, effort: {data['effort']}, a rule of thumb from `{CLI_NAME} model suggest`)"]
     if data["lint"]:
         out += ["", f"Missing from this brief ({len(data['lint'])}):"]
         for x in data["lint"]:

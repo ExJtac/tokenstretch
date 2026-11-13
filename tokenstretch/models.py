@@ -13,6 +13,8 @@ from .context import Context
 from .identity import CLI_NAME
 
 TIERS = ("light", "mid", "top")
+# Reasoning effort, cheapest first. `max` is never suggested: it is a ceiling, not a default.
+EFFORTS = ("low", "medium", "high", "xhigh")
 
 # (pattern, label). Each hit moves the score by +2 (top) or -2 (light).
 TOP_RULES = [
@@ -72,7 +74,28 @@ def suggest_tier(text: str) -> dict:
     tier = "top" if score >= 2 else "light" if score <= -2 else "mid"
     if not reasons:
         reasons.append("no strong signals, so the everyday mid tier")
-    return {"tier": tier, "score": score, "reasons": reasons, "files": len(files), "words": words}
+    effort = suggest_effort(score)
+    return {"tier": tier, "score": score, "reasons": reasons, "files": len(files), "words": words,
+            "effort": effort, "effort_why": _EFFORT_PLAIN[effort]}
+
+
+def suggest_effort(score: int) -> str:
+    """Effort for a task score. <= -2 low, -1..1 medium, 2..3 high, >= 4 xhigh. Same score as the tier."""
+    if score <= -2:
+        return "low"
+    if score <= 1:
+        return "medium"
+    if score <= 3:
+        return "high"
+    return "xhigh"
+
+
+_EFFORT_PLAIN = {
+    "low": "a mechanical change; more thinking adds cost here, not quality",
+    "medium": "everyday work; enough thinking for most tasks",
+    "high": "one hard signal; worth more thinking for this task",
+    "xhigh": "several hard signals at once; for this task only, then step back down",
+}
 
 
 _PLAIN = {
@@ -82,7 +105,7 @@ _PLAIN = {
 }
 
 
-def tool_picks(ctx: Context, tier: str, adapters=None) -> list[dict]:
+def tool_picks(ctx: Context, tier: str, adapters=None, effort: str = "") -> list[dict]:
     """Concrete model per tool for this tier. Detected tools first; else tools with a tier map as examples."""
     from .adapters import REGISTRY
     from .setup import detected_adapters
@@ -96,13 +119,15 @@ def tool_picks(ctx: Context, tier: str, adapters=None) -> list[dict]:
                     "alternatives": list(ad.model_tier_alternatives().get(tier) or []) if model else [],
                     "note": ad.model_tier_note() if model else "",
                     "switch": ad.model_switch_hint(model) if model else ad.model_switch_hint(""),
+                    "effort_hint": ad.effort_hint(effort) if effort else "",
                     "supported": bool(tiers) or bool(ad.model_switch_hint(""))})
     return out
 
 
 def format_suggestion(res: dict, picks: list[dict]) -> list[str]:
     lines = [f"Suggested tier: {res['tier'].upper()}: {_PLAIN[res['tier']]}.",
-             "Why: " + "; ".join(res["reasons"]) + f" (score {res['score']:+d}).", ""]
+             "Why: " + "; ".join(res["reasons"]) + f" (score {res['score']:+d}).",
+             f"Suggested effort: {res['effort'].upper()}: {res['effort_why']}.", ""]
     for p in picks:
         label = p["tool"] + ("" if p["detected"] else " (not detected; example)")
         if p["model"]:
@@ -110,12 +135,16 @@ def format_suggestion(res: dict, picks: list[dict]) -> list[str]:
             lines.append(f"  {label}: {p['model']}{alt}  (switch now: `{p['switch']}`)")
             if p.get("note"):
                 lines.append(f"    ({p['note']})")
+            if p.get("effort_hint"):
+                lines.append(f"    effort: {p['effort_hint']}")
         elif p["switch"]:
             lines.append(f"  {label}: no tier names known yet; pick a {res['tier']} model with `{p['switch']}`")
         else:
             lines.append(f"  {label}: model picker not supported yet")
-    lines += ["", "This is a keyword-and-size rule of thumb, not a measured result. "
-              "Move up a tier if the answer comes back wrong."]
+    lines += ["", "Pick the effort when a session starts: a change in the middle of a session re-sends "
+              "the history at full price.",
+              "This is a keyword-and-size rule of thumb, not a measured result. "
+              "Move up a tier or an effort level if the answer comes back wrong."]
     return lines
 
 

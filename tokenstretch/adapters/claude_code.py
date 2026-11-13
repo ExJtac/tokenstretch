@@ -1887,6 +1887,10 @@ class ClaudeCodeAdapter(Adapter):
     def model_switch_hint(self, model: str) -> str:
         return f"/model {model}"
 
+    def effort_hint(self, effort: str) -> str:
+        return (f'`"effortLevel": "{effort}"` in settings.json, or start the session with '
+                f"`CLAUDE_CODE_EFFORT_LEVEL={effort}`")
+
     def watch_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict] | None:
         """Per-turn usage, tool-call counts, and Read paths from the newest main sessions (logs only)."""
         from ..logcache import memo_by_stat
