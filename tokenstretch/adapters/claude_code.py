@@ -143,9 +143,9 @@ def _collect_memory_files(ctx: Context, nested: bool = True) -> list[tuple[Path,
 
     for s in seeds:
         add(s)
-    mem = ctx.root / "MEMORY.md"
-    if not mem.is_file():
-        mem = ctx.home / ".claude" / "MEMORY.md"
+    # Auto memory lives under ~/.claude/projects/<project path with non-alphanumerics as "-">/memory/.
+    # A MEMORY.md in the project folder itself is an ordinary file that nothing loads by default.
+    mem = ctx.home / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(ctx.root)) / "memory" / "MEMORY.md"
     if mem.is_file():
         counted = count_lines_bytes(mem)
         if counted:
@@ -726,7 +726,7 @@ class ClaudeCodeAdapter(Adapter):
             findings.append(self.finding(
                 "W01", "claude-md-size", "high", "waste",
                 f"Your instruction files total {total} bytes (over 25 KB) and are re-read on every message.",
-                "Trim standing instructions and split workflow into skills. Run `tokenstretch trim` to see what to cut.",
+                "Trim standing instructions and split workflow into skills. Run `tokenstretch trim` to see what to cut, or `tokenstretch trim --to-skills` to move workflow sections into skills.",
                 "CC-MEM, CC-COST",
                 file=",".join(str(p) for p, _, _ in files), key="bytes", value=total,
             ))

@@ -616,6 +616,16 @@ def cmd_trim(args) -> int:
 
     root = args.project or args.root
     ctx = build_context(args.home, root, args.sys_snapshot, getattr(args, "plan", None))
+    if args.to_skills:
+        if args.move_blocks:
+            print("error: --to-skills cannot be combined with --move-blocks", file=sys.stderr)
+            return 2
+        from .trim_skills import run_trim_skills
+        return run_trim_skills(ctx, max(1, 150 if args.min_tokens is None else args.min_tokens), apply=bool(args.apply) and not args.dry_run,
+                               yes=bool(args.yes), as_json=bool(args.json), show_diff=not args.no_diff)
+    if args.min_tokens is not None:
+        print("error: --min-tokens only works with --to-skills", file=sys.stderr)
+        return 2
     opts = Options(max_tokens=max(1, args.max_tokens), max_block_lines=max(1, args.max_block_lines),
                    move_blocks=bool(args.move_blocks))
     return run_trim(ctx, opts, apply=bool(args.apply) and not args.dry_run, yes=bool(args.yes),
@@ -817,6 +827,10 @@ def main(argv=None) -> int:
     tr.add_argument("--max-block-lines", type=int, default=30, help="flag fenced code blocks over this many lines (default 30)")
     tr.add_argument("--move-blocks", action="store_true",
                     help="also move big code blocks and logs from project files to docs/agent-notes/ with a pointer")
+    tr.add_argument("--to-skills", action="store_true",
+                    help="move workflow sections out of CLAUDE.md files into Claude Code skills, leaving a one-line pointer")
+    tr.add_argument("--min-tokens", type=int, default=None,
+                    help="with --to-skills, only move sections of at least this many approx. tokens (default 150)")
     tr.add_argument("--apply", action="store_true", help="write the proposed edit (backed up; undo restores it)")
     tr.add_argument("--dry-run", action="store_true", help="show the analysis and diff only (the default)")
     tr.add_argument("--yes", "-y", action="store_true", help="with --apply, don't ask")
