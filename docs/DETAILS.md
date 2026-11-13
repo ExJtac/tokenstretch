@@ -32,6 +32,13 @@ python -m tokenstretch queue add "task" [--files P..] [--done TEXT] [--preset NA
 python -m tokenstretch queue next [--agent NAME]       # gate, then claim oldest open task and print its brief; exit 3 over the pace line, 4 empty
 python -m tokenstretch queue done ID [--note TEXT]  |  queue fail ID --note TEXT   # fail: back to open, needs-lead after 2
 python -m tokenstretch queue list [--json]  |  queue release --stale MINUTES  |  queue touch ID  |  queue loop-prompt
+# pace (budget governor)
+python -m tokenstretch pace set --window NAME --used PCT --resets ISO [--length 7d|5h] [--models REGEX] [--at ISO]
+python -m tokenstretch pace clear --window NAME
+python -m tokenstretch pace [--window NAME] [--model ID] [--effort E] [--sessions 500] [--json]   # estimates per window; read-only apart from pace.json
+python -m tokenstretch pace --gate [--window NAME] [--reserve 3] [--json]   # exit 0 at or under the line, 3 over; 0 when no reading
+python -m tokenstretch pace --team N [--model ID] [--effort E] [--json]     # agents at once and hours a day on the line
+python -m tokenstretch pace --what-if [--team N] [--json]                   # no re-saved history, re-read halved
 python -m tokenstretch report --weekly [--weeks 4] [--out FILE] [--json]
 python -m tokenstretch dashboard [--port 8765] [--no-open] [--interval 5] [--weeks 8]
 python -m tokenstretch model default --tier light|mid|top [--tool claude|codex|gemini] [--apply]
@@ -47,6 +54,10 @@ Limits left at their defaults scale with price: `WatchConfig.limits(model)` divi
 ### model
 
 `tokenstretch/models.py`: `suggest_tier` adds +2 per top rule hit (architecture/design, broad refactor, migration/rewrite, concurrency/leak, security, hard debugging, performance, distributed/scale), -2 per light rule hit (rename, typo, formatting/lint, docs/comments, version bump, lookup/summary), -1 per mid hint (tests, small fix), +1 for 5+ file names, +1 for 150+ words, and -1 for a short single-target ask. Score ≥ 2 is top, ≤ -2 is light, else mid. It's a heuristic, not a measured claim. `model default` asks each adapter's `plan_default_model(ctx, tier)` for a `SetupItem` and applies it with `setup.apply_plan` (backup + manifest), so `undo` restores it. Claude Code's tiers are haiku / sonnet / opus and it edits `model` in the last settings file that sets it (else `~/.claude/settings.json`). Gemini CLI's tiers are `flash-lite` / `flash` / `pro` (documented aliases) and it edits `model.name` in `~/.gemini/settings.json` (it skips files that aren't plain JSON). Codex and Copilot CLI have no tier map until model names are verified.
+
+### pace
+
+`tokenstretch/pace.py`. State is `pace.json` under the tokenstretch home: per window the length, reset time, optional model regex and up to 20 readings (percent used, time read). A reset time that moves by under an hour is the same period; a later one, a different length, or a lower percent starts the readings over. Units come from `cost.cost_view` over the steps logged inside the window and on matching models; helpers carry no timestamps, so their counts are scaled by the share of the main steps inside the range. Calibration: units per 1% is the slope between the first and newest readings when they differ in both percent and units, otherwise units since the window started over the newest percent; the estimate adds the units since the newest reading. The even-pace line is the share of the window gone times 100 minus the reserve. `--gate` exits 0 when every checked window is at or under its line (or none can be calibrated), 3 otherwise; the wait is the time until the share of the window gone, minus the reserve, reaches the estimate, capped at the reset. `--team` uses units per step (main plus helpers) and steps per hour (main steps that followed another within 10 minutes) of the chosen model and effort, and divides units left by the hours left; a window whose `--models` pattern does not match the model is skipped. `--what-if` removes the "saved again" bucket and halves the "re-read" bucket. `watch` runs the check at most once a minute and only when `pace.json` exists. Estimates from price ratios, not a bill; unpriced models are listed, never guessed.
 
 ### trim
 
