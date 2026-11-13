@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-13
+
 ### Added
 - Dashboard panels for pace, the team queue, cost, redo work, start-up size and watch warnings. Each reads the same code as its command, refreshes on its own schedule, and shows a one-line reason when it has no data. `tokenstretch dashboard --url` prints the link of the running dashboard. A link reminder, off by default, can be switched on by `setup` (undoable) or `dashboard --remind on`: the session-start hook then asks the assistant to end its last message with the loopback dashboard link, once per session. The running dashboard writes `~/.tokenstretch/dashboard.json` and removes it on exit.
 - `start`: one command to set up. With no flags it changes nothing: it checks the computer in plain words (Python version, tools found, setup state), lists what it would change (the steps `setup` applies by its safe defaults, plus switching on `pace auto` when Claude Code is found), and asks once `[y/N]` when a person is at the terminal. Without a terminal it prints the list and the command that applies, `tokenstretch start --yes`. After applying, or when already set up, it prints up to three plain lines on how much of the plan's week is used, whether that is on track, too fast or with room to spare, and what to do next. Setup steps are applied through the same backed-up path as `setup`, so `undo` restores them; the `pace auto` switch is turned off with `pace auto --off`. `--yes`, `--detail` (adds the full `pace` output), `--json`. Exit 0 when finished, 1 on a real failure. A second run changes nothing.
