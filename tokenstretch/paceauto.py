@@ -21,6 +21,13 @@ def is_on(state: dict) -> bool:
     return state.get(AUTO_KEY) is True
 
 
+def switch(home, on: bool):
+    """Turn auto on or off in the stored state. Returns the state file's path."""
+    state = pc.load_state(home)
+    state[AUTO_KEY] = bool(on)
+    return pc.save_state(home, state)
+
+
 def readings(payload: dict) -> list[tuple[str, int, float, float]]:
     """(window name, length, percent used, reset time) for each well-formed limit in the payload."""
     limits = payload.get("rate_limits") if isinstance(payload, dict) else None

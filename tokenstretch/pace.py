@@ -193,6 +193,19 @@ def _helper_rows(turns: list[dict], lo: float, hi: float, pattern: re.Pattern | 
     return list(rows.values())
 
 
+def window_sessions(ctx, state: dict, limit: int = 500) -> list[dict]:
+    """The sessions every detected tool logged, read for the stored windows. Logs older than every
+    window (plus a day) are not opened."""
+    import time
+    from .setup import detected_adapters
+    starts = [parse_time(w["resets"]) - w["length_s"] for w in state["windows"].values()]
+    age = max(0.0, time.time() - min(starts)) + 86400 if starts else None
+    sessions: list[dict] = []
+    for ad in detected_adapters(ctx):
+        sessions += ad.window_sessions(ctx, limit=max(1, min(int(limit), 1000)), max_age_s=age) or []
+    return sessions
+
+
 def cut(sessions: list[dict], lo: float, hi: float) -> list[dict]:
     """The sessions with only the steps logged in [lo, hi], all models."""
     return _slice(sessions, lo, hi, None)
