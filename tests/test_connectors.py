@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 
+import pytest
+
 from tokenstretch import cli
 from tokenstretch import connectors as cn
 from tokenstretch.auto import session_start
@@ -267,3 +269,16 @@ def test_a_made_up_reference_in_the_off_file_never_reads_outside_the_manifests(t
         (home / cn.PARK).write_text(json.dumps({"off": {"x": ref}}))
         res = cn.switch(home, ["x"], on=True, apply=True)
         assert res["moved"] == [] and "saved entry was not found" in res["skipped"]["x"]
+
+
+@pytest.mark.parametrize("offset", ["+0000", "-0600", "+0530", "+1300"])
+def test_on_finds_the_backup_in_every_time_zone(tmp_path, monkeypatch, offset):
+    # the manifest's name carries the clock's offset from UTC: "+" east of Greenwich, "-" west of it
+    from tokenstretch import installer
+    monkeypatch.setattr(installer, "_now_stamp", lambda: f"20260102T030405{offset}")
+    home, _root = _home(tmp_path)
+    before = json.loads((home / ".claude.json").read_text())
+    assert cn.switch(home, ["crm"], on=False, apply=True)["applied"]
+    assert json.loads((home / cn.PARK).read_text()) == {"off": {"crm": f"20260102T030405{offset}-connectors-01"}}
+    assert cn.switch(home, ["crm"], on=True, apply=True)["moved"] == ["crm"]
+    assert json.loads((home / ".claude.json").read_text())["mcpServers"] == before["mcpServers"]

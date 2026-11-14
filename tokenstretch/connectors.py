@@ -31,7 +31,7 @@ PARK = Path(".tokenstretch") / "connectors-off.json"
 _CALL_RE = re.compile(r'"name"\s*:\s*"mcp__([A-Za-z0-9_.-]+?)__[A-Za-z0-9_.-]+"')
 _TS_RE = re.compile(r'"timestamp"\s*:\s*"(\d{4}-\d{2}-\d{2})')
 _UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
-_REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")     # a manifest's name: never a path
+_REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]*")    # a manifest's name (its time has "+" or "-"): never a path
 
 
 def log_name(name: str) -> str:
