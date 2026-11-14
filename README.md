@@ -25,6 +25,10 @@ tokenstretch is free and stays free, with no paid tier and no tracking. If it sa
 **A dashboard in your browser**
 - `tokenstretch dashboard` opens one live page on your own machine: checkup results, live sessions, warnings, weekly pace, team queue and more. It refreshes every 5 seconds. See [Dashboard](#dashboard).
 
+**Shows which connectors you never call (Claude Code)**
+- `tokenstretch connectors` counts the calls to each connector over the last 30 days, from your own logs, and names the ones with none. It can switch off the ones in your own user file and bring them back, with a backup. Connectors added by the desktop app or a plugin are reported only. See [See which connectors you use](#see-which-connectors-you-use).
+- `tokenstretch outputs` shows which tools put the most text into your sessions. See [See which tool outputs fill your sessions](#see-which-tool-outputs-fill-your-sessions).
+
 **Turns long instructions into skills (Claude Code)**
 - `tokenstretch trim --to-skills` moves step-by-step sections out of your CLAUDE.md into skills, leaving a one-line pointer, so that text is no longer resent on every turn. It shows the plan first and changes nothing until you pass `--apply`. See [Trim instruction files](#trim-instruction-files).
 
@@ -377,6 +381,53 @@ Sizes are estimates (bytes / 4). Skills marked `disable-model-invocation` are le
 Plugins and skills added by the desktop app are listed too, each with its listing size and the number of connectors it brings. The command reads the last 14 days of Claude Code logs on this computer and counts calls to each one. A `No use found in the last 14 days` line names the ones with no call. Read that line with care: it counts Claude Code sessions only, so a skill you use in the desktop app's chat can still be named. A plugin with hooks is never named, because hooks run without a call. The command switches nothing off. For a plugin installed from the terminal it prints the `enabledPlugins` line to set to `false` in `~/.claude/settings.json`. Plugins and skills the desktop app adds are switched off in that app's settings. The listing sizes are small next to the connectors a plugin brings, which are not sized here.
 
 Connector tool lists aren't in any local file, so they are sized by difference. Each run remembers the unsized remainder for the current set of connectors in `~/.tokenstretch/startup-history.json` (connector names and token counts only). Turn one connector off, start a new session, and run `startup` again: it reports how much lighter sessions now start, and if you turn the connector back on it is listed with that size. The two numbers come from two different sessions, so a change under 2K tokens is ignored and the size is approximate. When the local files and connectors are the same as last time but the start moved by 2K or more, it says so: a plugin or an app connector changed. `--no-save` keeps the run read-only.
+
+## See which connectors you use
+
+A connector (an MCP server) puts its whole tool list into every session, whether you call it or not. `tokenstretch connectors` reads the last 30 days of Claude Code logs on this computer and counts the calls to each one, so you don't have to remember which you use.
+
+```text
+Connectors: calls in the last 30 days of Claude Code logs on this computer (212 session files).
+    calls  sessions  last call   connector
+      340        41  2026-11-12  mail: your user file
+       12         3  2026-10-30  browser: added by an app or a plugin, not in a local file
+        0         0  -           crm: your user file  <- no call found
+        0         0  -           tickets: the tracker plugin (app)  <- no call found
+  You can switch off here: crm. Run `tokenstretch connectors off --unused` to see the change, and add `--apply` to make it. `connectors on NAME --apply` brings one back.
+  No call found to any connector of: tracker. A plugin's connectors are switched with the plugin; `tokenstretch startup` shows how for each.
+```
+
+That is the layout of a real run, with made-up names.
+
+`tokenstretch connectors off NAME` switches a connector off, and `connectors off --unused` does it for every connector in your user file with no call in 30 days. Both only show the change until you add `--apply`. `connectors on NAME --apply` brings one back. A switch takes effect in the next session, because a running session keeps the connectors it started with. After setup, a new Claude Code session is told which connectors are off and the command that brings one back, so the assistant can ask you for it when a task needs one.
+
+What the switch covers, plainly:
+
+- It edits one place: the connectors in your own user file (`~/.claude.json`), the ones added with `claude mcp add --scope user`. The entry is moved, unchanged and unread, to `~/.tokenstretch/connectors-off.json` (readable by you only), and a copy of the settings file from before the change is kept in `~/.tokenstretch/backups/`. This was checked against Claude Code itself: after `off --apply`, `claude mcp list` no longer lists the connector, and after `on --apply` it does.
+- Connectors that a plugin, the desktop app or a project file adds are counted and reported, never edited. A plugin's connectors go off with the plugin. The desktop app's are switched in that app's settings.
+- A connector is called unused only when at least 5 sessions were found and all the logs could be read. An app's connector shows up only after its first call, since no local file names it. Other apps that share a connector are not counted.
+- If a Claude Code session is open while you switch, it can write the old settings back when it closes. Run `tokenstretch connectors` again to check.
+
+## See which tool outputs fill your sessions
+
+Every tool result is added to the conversation: a file read, a command's output, a search, a web page. `tokenstretch outputs` adds up that text for the last 7 days of Claude Code logs, per tool, and lists the largest single results.
+
+```text
+Tool outputs: text that tools put into your sessions in the last 7 days of Claude Code logs on this computer (38 session files).
+    share   ~tokens    calls  largest  tool
+      61%      912k     2140     7.5k  Bash
+      24%      359k      188      17k  Read
+       6%       90k       61      11k  WebFetch
+  Largest single outputs:
+        17k tokens  2026-11-12  Read ~/work/app/server/routes.ts
+        11k tokens  2026-11-11  WebFetch
+  Bash: ask for the end or a count of long output (for example `| tail -40`), not all of it.
+  Read: ask for the part you need (a line range) instead of the whole file.
+```
+
+That is the layout of a real run, with made-up names and numbers.
+
+It names the tool and, for a file tool, the file. For a shell command it names only the program, never the arguments or the output. Sizes are characters of logged text divided by 4, an estimate; images are not counted. It changes nothing and it cannot tell you whether a smaller result would still have held what the task needed: that part is your call. `--days N` changes the window, `--top N` the length of the list, and `--json` prints the data.
 
 <!-- team: full-effort section -->
 ## Run a team at full effort

@@ -88,12 +88,14 @@ def found(home: Path) -> list[dict]:
         root = Path(path) if isinstance(path, str) else None
         if root is None or not root.is_dir():
             continue
-        out.append({"kind": "plugin", "name": key.split("@")[0], "where": "terminal", "key": key, **_plugin(root)})
+        out.append({"kind": "plugin", "name": key.split("@")[0], "where": "terminal", "key": key, "root": str(root),
+                    **_plugin(root)})
     synced = claude / "plugins" / "synced"
     for account in sorted(synced.iterdir()) if synced.is_dir() else []:
         for root in sorted(account.iterdir()) if account.is_dir() else []:
             if root.is_dir() and not root.is_symlink() and (root / ".claude-plugin").is_dir():
-                out.append({"kind": "plugin", "name": root.name, "where": "app", "key": root.name, **_plugin(root)})
+                out.append({"kind": "plugin", "name": root.name, "where": "app", "key": root.name, "root": str(root),
+                            **_plugin(root)})
     synced = claude / "skills" / "synced"
     for account in sorted(synced.iterdir()) if synced.is_dir() else []:
         for sk in sorted(account.iterdir()) if account.is_dir() else []:

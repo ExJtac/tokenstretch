@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-13
+
+### Added
+- `connectors`: counts the calls to each connector (MCP server) in the last 30 days of Claude Code logs on this computer and marks the ones with no call. It lists connectors from your user file, project files and plugins, and any connector an app added that was called at least once. Nothing is called unused when fewer than 5 sessions were found or the logs were too large to read in full.
+- `connectors off NAME` / `connectors off --unused` / `connectors on NAME`: a switch for the connectors in your own user file (`~/.claude.json`). The entry is moved unchanged to `~/.tokenstretch/connectors-off.json` (owner-only) and back. Dry run unless `--apply`; a copy of the settings file is kept in `~/.tokenstretch/backups/`. Checked against Claude Code: `claude mcp list` drops the connector after `off` and lists it again after `on`. Connectors from a plugin, the desktop app or a project file are reported and never edited. A switch takes effect in the next session.
+- After setup, a new Claude Code session is told which connectors are switched off and the command that brings one back.
+- `outputs`: adds up the text tools put into your sessions over the last 7 days of Claude Code logs, per tool, and lists the largest single results. It names the tool and the file, and for a shell command only the program. Sizes are characters / 4, an estimate; images are not counted. Read-only.
+
 ## [0.7.2] - 2026-11-13
 
 ### Added
