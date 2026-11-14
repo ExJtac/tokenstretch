@@ -276,6 +276,54 @@ def cmd_startup(args) -> int:
     return 0
 
 
+def cmd_connectors(args) -> int:
+    from . import connectors as cn
+
+    ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    action = getattr(args, "action", None) or "list"
+    if action == "list":
+        data = cn.build(ctx.home, ctx.root)
+        print(json.dumps(data, indent=2) if args.json else "\n".join(cn.format_report(data)))
+        return 0
+    names = list(args.names)
+    if action == "off" and args.unused:
+        names += [n for n in cn.build(ctx.home, ctx.root)["can_switch_off"] if n not in names]
+    if not names:
+        print("Nothing to switch: no connector in your user file is without a call." if getattr(args, "unused", False)
+              else f"Name a connector, for example `{CLI_NAME} connectors {action} NAME`.")
+        return 0 if getattr(args, "unused", False) else 2
+    res = cn.switch(ctx.home, names, on=action == "on", apply=args.apply)
+    if args.json:
+        print(json.dumps(res, indent=2))
+        return 0 if res["moved"] or not res["skipped"] else 1
+    word = "on" if action == "on" else "off"
+    for n in res["moved"]:
+        print(f"{'Switched' if res['applied'] else 'Would switch'} {word}: {n}")
+    for n, why in res["skipped"].items():
+        print(f"Left alone: {n} ({why}).")
+    if res["applied"]:
+        back = "off" if action == "on" else "on"
+        print("It takes effect in the next session. A copy of the settings file from before the change is in "
+              f"~/.tokenstretch/backups/. Undo: `{CLI_NAME} connectors {back} {' '.join(res['moved'])} --apply`.")
+        print("If a session was open during the change it can write the old settings back: run "
+              f"`{CLI_NAME} connectors` to check.")
+    elif res["moved"]:
+        print("Nothing was changed. Add `--apply` to make the change.")
+    return 0 if res["moved"] or not res["skipped"] else 1
+
+
+def cmd_outputs(args) -> int:
+    from .outputs import format_report, scan
+
+    ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    data = scan(ctx.home, days=max(1, args.days), top=max(1, args.top))
+    if args.json:
+        print(json.dumps(data, indent=2))
+    else:
+        print("\n".join(format_report(data)))
+    return 0
+
+
 def cmd_auto(args) -> int:
     from .auto import run_auto
 
@@ -799,6 +847,29 @@ def main(argv=None) -> int:
                     help="a lean profile for a worker agent: what to switch off, tokens saved, and the saving over 50 steps (prints settings; writes nothing)")
     st.add_argument("--json", action="store_true")
 
+    cnp = sub.add_parser("connectors",
+                         help="how often each connector was called in your sessions, and a switch for the unused ones")
+    _add_context_args(cnp)
+    cnp.add_argument("--json", action="store_true")
+    cnsub = cnp.add_subparsers(dest="action")
+    for word, text in (("off", "switch connectors off (dry-run unless --apply)"),
+                       ("on", "switch connectors back on (dry-run unless --apply)")):
+        c = cnsub.add_parser(word, help=text)
+        _add_context_args(c)
+        c.add_argument("names", nargs="*", metavar="NAME")
+        if word == "off":
+            c.add_argument("--unused", action="store_true",
+                           help="every connector in your user file with no call in the last 30 days")
+        c.add_argument("--apply", action="store_true")
+        c.add_argument("--json", action="store_true")
+
+    op = sub.add_parser("outputs",
+                        help="which tools put the most text into your sessions, and the largest single outputs")
+    _add_context_args(op)
+    op.add_argument("--days", type=int, default=7, help="how far back to read (default 7)")
+    op.add_argument("--top", type=int, default=10, help="how many single outputs to list (default 10)")
+    op.add_argument("--json", action="store_true")
+
     sub.add_parser("auto", help="hook entry: resumable compaction summaries and note pickup in a new chat "
                                 "(reads the tool's JSON on stdin)")
 
@@ -996,5 +1067,9 @@ def main(argv=None) -> int:
         return cmd_queue(a)
     if a.cmd == "pace":
         return cmd_pace(a)
+    if a.cmd == "connectors":
+        return cmd_connectors(a)
+    if a.cmd == "outputs":
+        return cmd_outputs(a)
     print(f"{a.cmd}: not implemented yet", file=sys.stderr)
     return 3

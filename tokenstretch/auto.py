@@ -106,6 +106,12 @@ def session_start(payload: dict, now: float, home: Path | None = None) -> dict |
         if extra:
             ctx = reply["hookSpecificOutput"]["additionalContext"] + "\n" if reply else ""
             reply = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx + extra}}
+    if source in ("startup", "clear", "compact"):
+        from .connectors import off_note
+        note = off_note(home if home is not None else Path.home())
+        if note:
+            ctx = reply["hookSpecificOutput"]["additionalContext"] + "\n" if reply else ""
+            reply = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx + note}}
     return reply
 
 
