@@ -417,12 +417,22 @@ def apply_changes(ctx: Context, changes: list[dict[str, str]], stamp: str | None
             path.chmod(int(mode, 8) if isinstance(mode, str) else int(mode))
         after_hash = sha256_bytes(path.read_bytes())
         kind = "created" if not existed else "modified"
+        after_rel = None
+        if path.suffix == ".json" and len(data) <= AFTER_COPY_MAX:
+            # What setup wrote, kept so that undo can tell this tool's keys from later edits when
+            # the file has changed since. Same content as the file itself, readable by the user only.
+            after_rel = str(Path("after") / _rel_backup_path(path, ctx.home, ctx.root))
+            apath = backup_dir / after_rel
+            apath.parent.mkdir(parents=True, exist_ok=True)
+            apath.write_bytes(data)
+            apath.chmod(0o600)
         records.append({
             "path": str(path),
             "action": kind,
             "sha256_before": before_hash,
             "sha256_after": after_hash,
             "backup": backup_rel,
+            "after": after_rel,
             "reason": ch.get("reason") or "",
         })
 
@@ -442,6 +452,38 @@ def apply_changes(ctx: Context, changes: list[dict[str, str]], stamp: str | None
     return {"manifest_path": str(manifest_path), "backup_dir": str(backup_dir), "manifest": manifest}
 
 
+AFTER_COPY_MAX = 2_000_000   # bytes; a settings file is a few KB
+
+
+def _json_object(raw: bytes | None) -> dict | None:
+    try:
+        data = json.loads((raw or b"").decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _key_level_undo(rec: dict, backup_dir: Path) -> dict | None:
+    """For a JSON file that changed since setup: its content with only this tool's part taken out.
+
+    None when that cannot be worked out (not JSON, or the backup is gone): the caller then refuses,
+    as before. Reads the file, its backup, and the copy of what setup wrote when there is one.
+    """
+    path = Path(rec["path"])
+    if path.suffix != ".json" or path.is_symlink():
+        return None
+    try:
+        current = _json_object(path.read_bytes())
+        before = _json_object((backup_dir / rec["backup"]).read_bytes()) if rec.get("backup") else {}
+        after = _json_object((backup_dir / rec["after"]).read_bytes()) if rec.get("after") else None
+    except OSError:
+        return None
+    if current is None or before is None:
+        return None
+    from .undo_keys import revert_own_entries
+    return revert_own_entries(current, before, after)
+
+
 class DriftError(RuntimeError):
     """A file changed after the install; undo refused without --force."""
 
@@ -456,12 +498,22 @@ class DriftError(RuntimeError):
 
 
 def undo_manifest(manifest_path: Path, *, force: bool = False) -> dict[str, Any]:
+    """Put back what one manifest changed.
+
+    A file that is still as setup left it is restored whole from its backup (or deleted, when setup
+    created it). A JSON file that changed since gets a key-level undo: only this tool's own entries
+    are taken out and the later edits stay (see `undo_keys`); its path is listed under `partial`.
+    Any other changed file refuses the whole undo with `DriftError`, before anything is written.
+    `force` skips both and restores every file whole, which discards later edits.
+    """
     data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
     backup_dir = Path(data["backup_dir"])
     restored: list[str] = []
     deleted: list[str] = []
     skipped: list[str] = []
     refused: list[str] = []
+    partial: list[str] = []
+    by_key: dict[str, dict] = {}
 
     def current_hash(path: Path) -> str | None:
         return sha256_file(path)
@@ -481,6 +533,10 @@ def undo_manifest(manifest_path: Path, *, force: bool = False) -> dict[str, Any]
                 continue
             if actual == expected:
                 continue
+            merged = _key_level_undo(rec, backup_dir)
+            if merged is not None:
+                by_key[rec["path"]] = merged
+                continue
             refused.append(rec["path"])
         if refused:
             rec = next(r for r in data["files"] if r["path"] == refused[0])
@@ -492,6 +548,21 @@ def undo_manifest(manifest_path: Path, *, force: bool = False) -> dict[str, Any]
         expected = rec.get("sha256_after")
         before = rec.get("sha256_before")
         action = rec.get("action")
+        if str(path) in by_key:
+            merged = by_key[str(path)]
+            text = (json.dumps(merged, indent=2) + "\n").encode("utf-8")
+            try:
+                if action == "created" and not merged:
+                    path.unlink()           # setup created it and nothing of the user's is in it
+                    deleted.append(str(path))
+                elif text == path.read_bytes():
+                    skipped.append(str(path))   # nothing of ours left in it
+                else:
+                    path.write_bytes(text)
+                    partial.append(str(path))
+            except OSError as exc:
+                raise RuntimeError(f"could not update {path}: {exc}") from exc
+            continue
         if action == "created":
             if actual is None:
                 skipped.append(str(path))
@@ -528,7 +599,8 @@ def undo_manifest(manifest_path: Path, *, force: bool = False) -> dict[str, Any]
         except OSError:
             pass
 
-    return {"restored": restored, "deleted": deleted, "skipped": skipped, "manifest": str(manifest_path)}
+    return {"restored": restored, "deleted": deleted, "skipped": skipped, "partial": partial,
+            "manifest": str(manifest_path)}
 
 
 def latest_manifest(ctx: Context) -> Path | None:

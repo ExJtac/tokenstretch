@@ -105,7 +105,8 @@ def cmd_undo(args) -> int:
             return 1
         # A setup run writes one manifest per step; undo all of them, newest first.
         paths = setup_run_manifests(ctx, latest)
-    result = {"restored": [], "deleted": [], "skipped": [], "manifest": ", ".join(str(p) for p in paths)}
+    result = {"restored": [], "deleted": [], "skipped": [], "partial": [],
+              "manifest": ", ".join(str(p) for p in paths)}
     for path in paths:
         try:
             one = undo_manifest(path, force=bool(args.force))
@@ -115,12 +116,15 @@ def cmd_undo(args) -> int:
         except (OSError, RuntimeError, json.JSONDecodeError, KeyError) as exc:
             print(f"undo failed: {exc}", file=sys.stderr)
             return 1
-        for k in ("restored", "deleted", "skipped"):
-            result[k] += one[k]
+        for k in ("restored", "deleted", "skipped", "partial"):
+            result[k] += [p for p in one.get(k) or [] if k != "partial" or p not in result[k]]
     if args.json:
         print(json.dumps(result, indent=2, default=str))
     else:
         print(f"Restored {len(result['restored'])} file(s), deleted {len(result['deleted'])} created file(s).")
+        for p in result["partial"]:
+            print(f"{p} changed since setup, so it was not replaced: only the entries {PRODUCT_NAME} added "
+                  "were taken out, and your later edits were kept.")
         print(f"Manifest: {result['manifest']}")
         try:
             from . import pace as _pc, paceauto as _pa
@@ -836,7 +840,9 @@ def main(argv=None) -> int:
     _add_context_args(und)
     und.add_argument("manifest", nargs="?", type=Path, help="manifest JSON (default: latest under --home)")
     und.add_argument("--manifest", dest="manifest_flag", type=Path, help="same as the positional manifest path")
-    und.add_argument("--force", action="store_true", help="restore even if a file changed since the install")
+    und.add_argument("--force", action="store_true", help="restore every file whole from its backup, even one that changed since the install "
+                          "(discards the later edits; without it, a changed JSON settings file only loses "
+                          "this tool's own entries)")
     und.add_argument("--json", action="store_true")
 
     b = sub.add_parser(
