@@ -737,7 +737,22 @@ class HostAdapter(Adapter):
         for path, text in files:
             digest = hashlib.sha256(text.encode()).hexdigest()
             groups.setdefault(digest, []).append(path)
-        dup_groups = [list(dict.fromkeys(p)) for p in groups.values() if len(p) >= 2]
+        # Two copies cost twice only when one session loads both: the same folder, or one folder above
+        # the other (agents read instruction files up the folder tree), or a tool's own global folder.
+        # The same file in two separate checkouts of one project is loaded once per session: not counted.
+        global_dirs = {(ctx.home / d).resolve() for d in (".claude", ".codex", ".gemini", ".copilot")}
+
+        def together(a: Path, b: Path) -> bool:
+            da, db = a.resolve().parent, b.resolve().parent
+            return (da == db or da in db.parents or db in da.parents
+                    or da in global_dirs or db in global_dirs)
+
+        dup_groups = []
+        for paths in groups.values():
+            paths = list(dict.fromkeys(paths))
+            keep = [p for p in paths if any(q is not p and together(p, q) for q in paths)]
+            if len(keep) >= 2:
+                dup_groups.append(keep)
         if not dup_groups:
             return []
         # One grouped finding (not one per duplicate set) to keep doctor output readable.

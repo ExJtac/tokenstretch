@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- `doctor` (W17) no longer reports the same instruction file in two separate copies of a project as duplicated text. A session loads only one of those copies. It now counts copies only when one session can load both: the same folder, one folder above the other, or a tool's own global folder.
+
 ## [0.9.1] - 2026-11-13
 
 ### Changed
