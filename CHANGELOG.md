@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-11-14
+
 ### Fixed
 - `startup` and `connectors` no longer list desktop-app plugins that are only on offer. The app keeps a copy of catalog plugins under `~/.claude/plugins/synced/<id>/` whether or not you added them, and every one was reported as switched on, with its connectors and a "switch it off" step for a plugin that was never on. A plugin whose `<plugin>.meta.json` says `"installation_preference": "available"` is now left out. A plugin with no such note, or any other value, is listed as before.
 - The installed `tokenstretch` command no longer runs another copy when you start it inside a folder that has its own `tokenstretch/` folder (for example a checkout of this project). The launcher now starts Python with `-P`, so the current folder is not searched. Existing installs get the new launcher on the next `tokenstretch update`.
