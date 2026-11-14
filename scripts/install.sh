@@ -17,8 +17,8 @@ set -eu
 # ==== PINNED RELEASE ==========================================================================
 # The maintainer sets these at release time, in a commit after the tag (a commit can't name its
 # own hash). Nothing else in this file changes per release. Empty means "no release pinned yet".
-TS_PIN_TAG="v0.9.1"            # release tag, e.g. v0.1.0
-TS_PIN_COMMIT="a5d25af99fe0149ad3de84f4a0d8633949e1d95f"         # full 40-character commit the tag must point at
+TS_PIN_TAG="v0.9.2"            # release tag, e.g. v0.1.0
+TS_PIN_COMMIT="911b013ce21073828484458892652029821fa744"         # full 40-character commit the tag must point at
 TS_PIN_TARBALL_SHA256="2770a4e6315ac4575faef472748bfad4c8735a0f2ffc6137a097c5dc5fc542c6" # SHA-256 of $TS_REPO/archive/$TS_PIN_COMMIT.tar.gz (tarball method only)
 # ==============================================================================================
 
