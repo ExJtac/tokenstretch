@@ -1,6 +1,7 @@
 """`connectors`: calls per connector from the logs, and the off/on switch for the user file."""
 import json
 import os
+from pathlib import Path
 
 from tokenstretch import cli
 from tokenstretch import connectors as cn
@@ -113,3 +114,76 @@ def test_cli_off_unused_and_on(tmp_path, capsys):
     assert cli.main(["connectors", "on", "crm", "--apply", *base]) == 0 and cn.parked(home) == {}
     assert cli.main(["connectors", "on", "crm", *base]) == 1
     assert cli.main(["connectors", "on", *base]) == 2
+
+
+def _mode(path):
+    return oct(path.stat().st_mode & 0o777)
+
+
+def _undo(home):
+    return cli.main(["undo", "--home", str(home), "--root", str(home)])
+
+
+def test_undo_puts_a_switch_back_and_every_copy_is_owner_only(tmp_path, capsys):
+    home, _root = _home(tmp_path)
+    user = home / ".claude.json"
+    before = user.read_bytes()
+    res = cn.switch(home, ["mail"], on=False, apply=True)
+    kit = home / ".tokenstretch"
+    manifest = json.loads(open(res["manifest"], encoding="utf-8").read())
+    assert manifest["profile"] == "connectors" and [Path(r["path"]).name for r in manifest["files"]] == [
+        "connectors-off.json", ".claude.json"]                  # the off file is written first
+    assert "canary-value" not in json.dumps(manifest) and "mail" not in json.dumps(manifest)
+    copies = [p for p in (kit / "backups").rglob("*") if p.is_file()]
+    assert len(copies) == 3                                     # the user file before, and both files after
+    if os.name != "nt":
+        assert {_mode(p) for p in [*copies, user, home / cn.PARK]} == {"0o600"}
+    assert not list(home.rglob("*.tmp"))
+
+    assert _undo(home) == 0
+    out = capsys.readouterr().out
+    assert "canary-value" not in out
+    assert user.read_bytes() == before and not (home / cn.PARK).exists()
+    assert os.name == "nt" or _mode(user) == "0o600"
+
+
+def test_undo_after_the_user_file_changed_moves_only_the_connector_back(tmp_path, capsys):
+    home, _root = _home(tmp_path)
+    user = home / ".claude.json"
+    before = json.loads(user.read_text())
+    cn.switch(home, ["crm"], on=False, apply=True)
+    cn.switch(home, ["mail"], on=False, apply=True)             # the latest change: the one undo reverses
+    now = json.loads(user.read_text())
+    now["theme"], now["numStartups"] = "light", 7               # the tool rewrites this file all the time
+    now["mcpServers"]["added later"] = {"command": "x"}
+    user.write_text(json.dumps(now))
+
+    assert _undo(home) == 0
+    out = capsys.readouterr().out
+    assert "only the entries" in out and "canary-value" not in out
+    after = json.loads(user.read_text())
+    assert after["mcpServers"] == {"my tool": {"command": "t"}, "added later": {"command": "x"},
+                                   "mail": before["mcpServers"]["mail"]}
+    assert after["theme"] == "light" and after["numStartups"] == 7 and after["projects"] == before["projects"]
+    assert cn.parked(home) == {"crm": before["mcpServers"]["crm"]}     # the earlier switch stands
+    assert os.name == "nt" or _mode(user) == "0o600"
+
+
+def test_undo_reverses_a_switch_on(tmp_path):
+    home, _root = _home(tmp_path)
+    cn.switch(home, ["crm", "mail"], on=False, apply=True)
+    cn.switch(home, ["crm"], on=True, apply=True)
+    assert len(list((home / ".tokenstretch" / "manifests").iterdir())) == 2   # same second, two records
+    assert _undo(home) == 0
+    assert sorted(cn.parked(home)) == ["crm", "mail"]
+    assert list(json.loads((home / ".claude.json").read_text())["mcpServers"]) == ["my tool"]
+
+
+def test_cli_names_undo_and_prints_no_entry(tmp_path, capsys):
+    home, root = _home(tmp_path)
+    base = ["--home", str(home), "--root", str(root)]
+    assert cli.main(["connectors", "off", "mail", "--apply", *base]) == 0
+    out = capsys.readouterr().out
+    assert "tokenstretch undo" in out and "readable by you only" in out and "canary-value" not in out
+    assert cli.main(["connectors", "off", "crm", "--apply", "--json", *base]) == 0
+    assert "canary-value" not in capsys.readouterr().out
