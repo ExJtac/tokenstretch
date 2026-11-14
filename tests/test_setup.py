@@ -722,8 +722,10 @@ def test_new_chat_with_a_handoff_note_adds_the_exclude_line(tmp_path):
              out=out.append, home=tmp_path / "home")
     assert not (proj / ".git" / "info").exists()              # no note: nothing is written
     (proj / ".claude" / "handoff.md").write_text("Goal: x\n", encoding="utf-8")
+    import time as _time
+    later = _time.time() + 5       # a clock a little behind the file's time would make the note look like the future
     run_auto(stdin=_io.StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "clear", "cwd": str(proj)})),
-             out=out.append, home=tmp_path / "home")
+             out=out.append, now=lambda: later, home=tmp_path / "home")
     assert GIT_PATTERN in (proj / ".git" / "info" / "exclude").read_text()
 
 

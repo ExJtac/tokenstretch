@@ -127,7 +127,7 @@ You don't have to take the whole plan. Each step has an id, shown in [brackets] 
 | RTK telemetry back off (only if someone turned it on) | `~/.config/rtk/config.toml`, key `telemetry` | Privacy. |
 | *Optional, asked separately because it downloads:* pinned installs of RTK OSS v1.2.0 (`RTK_EDITION=oss`, commit `e288a18`) and the Caveman **skill only** v4.1.0 (commit `1e91f13`) | pinned in `tokenstretch/catalog.py` | Shell-output compression and terse replies, from pinned, hash-checked sources. |
 
-To undo, run **`tokenstretch undo`**. It restores every file from the latest setup run, newest step first, and deletes files that setup created. If you've edited a file since then, undo stops and tells you, unless you pass `--force`. To undo a single step, pass that step's manifest from `~/.tokenstretch/manifests/`.
+To undo, run **`tokenstretch undo`**. It restores every file from the latest setup run, newest step first, and deletes files that setup created. If a JSON settings file (such as `~/.claude/settings.json`) changed since setup, undo does not replace it: it takes out only what tokenstretch added and keeps your later edits (see [Undo when a settings file changed](#undo-when-a-settings-file-changed)). If any other file changed since then, undo stops and tells you, before it writes anything. `--force` restores every file whole from its backup, which discards the later edits. To undo a single step, pass that step's manifest from `~/.tokenstretch/manifests/`.
 
 Shell rc files are never edited. If `ANTHROPIC_MODEL` is set in your shell, setup tells you rather than changing it.
 
@@ -182,6 +182,16 @@ MED W29 [claude-code]: 3 memory entries in this project's memory folder are name
 ```
 
 Both are plain scripts. No model runs, so they use no credits, and the notices go to you: the terminal or the desktop, never into an agent's conversation. What is remembered is one short hash per finding in `~/.tokenstretch/findings-seen.json`: no message, no path. A finding that goes away and comes back counts as new again, and so does one whose severity changes.
+
+### Undo when a settings file changed
+
+Setup writes a settings file whole, so the plain undo is to put the whole backup back. When the file has not changed since setup, that is what happens. When it has (you added a hook, another tool added a key), a whole-file restore would wipe those edits, so undo works key by key:
+
+- A hook or status line that runs tokenstretch is removed. It is matched by its own command string. If setup wrapped a status line of yours, yours comes back.
+- A key that setup added is removed, and a key that setup changed goes back to its old value, when it still has the value setup gave it.
+- Everything else stays as it is now. That includes a key setup set that you have changed again since: your value is kept.
+
+Undo names each file it handled this way. To tell its own plain keys (a model name, an `env` value) from yours, undo uses a copy of the file as setup wrote it, kept beside the backup under `~/.tokenstretch/backups/<time>/after/` and readable only by you. Setup runs from before this copy existed have none: for those, hooks and the status line are still removed, and other keys setup set (for example `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` or `model`) are left for you to change by hand. A changed file that is not valid JSON is never rewritten: undo stops, as before.
 
 ## Autopilot: shorter sessions with nothing to type
 
