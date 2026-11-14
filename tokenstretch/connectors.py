@@ -6,8 +6,10 @@ questions from local files only:
   * How often was each connector called? Counted from the session logs: every tool call named
     `mcp__<connector>__<tool>`, over the last 30 days.
   * Which ones can be switched off here? Only the ones in your own user file (`~/.claude.json`,
-    top-level `mcpServers`). `off` moves the entry into `~/.tokenstretch/connectors-off.json`
-    and `on` moves it back, unchanged. Connectors from a project file, a plugin or an app are
+    top-level `mcpServers`). `off` takes the entry out and `on` puts it back, unchanged.
+    `~/.tokenstretch/connectors-off.json` lists the names that are off, and nothing else: the
+    entry itself (it can hold a key, in `env` or `headers`) stays in the owner-only backup that
+    the switch made of the user file. Connectors from a project file, a plugin or an app are
     reported, with where to switch them, and never edited.
 
 A switch takes effect in the next session: a running session keeps the connectors it started with.
@@ -29,6 +31,7 @@ PARK = Path(".tokenstretch") / "connectors-off.json"
 _CALL_RE = re.compile(r'"name"\s*:\s*"mcp__([A-Za-z0-9_.-]+?)__[A-Za-z0-9_.-]+"')
 _TS_RE = re.compile(r'"timestamp"\s*:\s*"(\d{4}-\d{2}-\d{2})')
 _UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
+_REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")     # a manifest's name: never a path
 
 
 def log_name(name: str) -> str:
@@ -49,9 +52,39 @@ def _servers(data) -> dict:
     return {k: v for k, v in got.items() if isinstance(v, dict)} if isinstance(got, dict) else {}
 
 
-def parked(home: Path) -> dict:
-    """Connectors switched off by `off`: {name: entry}."""
-    return _servers(_json(home / PARK))
+def _park(home: Path) -> tuple[dict, dict]:
+    """The off file: ({name: the switch that holds its entry}, {name: entry} from an older version).
+
+    The off file holds names only. Versions up to 0.9.7 wrote whole entries into it, under
+    `mcpServers`; those are still read, and the next switch rewrites the file with names only.
+    """
+    data = _json(home / PARK)
+    off = data.get("off")
+    refs = {k: v for k, v in off.items() if isinstance(v, str)} if isinstance(off, dict) else {}
+    return refs, {k: v for k, v in _servers(data).items() if k not in refs}
+
+
+def parked(home: Path) -> list[str]:
+    """Names of the connectors switched off by `off`."""
+    refs, old = _park(home)
+    return sorted({*refs, *old})
+
+
+def _saved_entry(home: Path, name: str, ref: str) -> dict | None:
+    """A switched-off connector's entry, from the backup made by the switch named `ref`. None if gone."""
+    if not _REF_RE.fullmatch(ref or ""):
+        return None
+    from .context import Context
+    from .installer import kit_root
+
+    manifest = _json(kit_root(Context(home=home, root=home)) / "manifests" / f"{ref}.json")
+    user_file = str(home / ".claude.json")
+    recs = [r for r in manifest.get("files") or [] if isinstance(r, dict) and r.get("backup")]
+    for rec in sorted(recs, key=lambda r: r.get("path") != user_file):      # the user file's backup first
+        entry = _servers(_json(Path(str(manifest.get("backup_dir"))) / rec["backup"])).get(name)
+        if entry is not None:
+            return entry
+    return None
 
 
 def configured(home: Path, root: Path | None = None) -> list[dict]:
@@ -194,21 +227,32 @@ def switch(home: Path, names: list[str], on: bool, apply: bool = False) -> dict:
     when applied. The entry is moved as it is; nothing in it is read, printed or changed.
 
     Both files are written the way setup writes: each is backed up first and the change is recorded
-    in a manifest, so `undo` puts the switch back. An entry can hold a key, so the two files, their
-    backups and the copies of what was written are all readable by the owner only. The manifest
-    holds paths and checksums, never an entry.
+    in a manifest, so `undo` puts the switch back. An entry can hold a key, so it is never written
+    to the off file: that file holds the names, and for each name which switch backed the entry up.
+    `on` takes the entry from that backup of the user file. The user file, the backups and the
+    copies of what was written are all readable by the owner only. The manifest holds paths and
+    checksums, never an entry.
     """
     user_file, park_file = home / ".claude.json", home / PARK
     data = _json(user_file)
-    live, off = _servers(data), parked(home)
-    src, dst = (off, live) if on else (live, off)
-    moved, skipped = [], {}
+    live = _servers(data)
+    refs, old = _park(home)
+    moved, skipped, back = [], {}, {}
     for name in names:
-        if name not in src:
-            skipped[name] = ("it is not switched off" if on else
-                             "it is not in your user file (project, plugin and app connectors are not edited)")
-        elif name in dst:
+        if on and name not in refs and name not in old:
+            skipped[name] = "it is not switched off"
+        elif not on and name not in live:
+            skipped[name] = "it is not in your user file (project, plugin and app connectors are not edited)"
+        elif name in (live if on else {*refs, *old}):
             skipped[name] = "a connector with that name is already there"
+        elif on:
+            entry = old[name] if name in old else _saved_entry(home, name, refs[name])
+            if entry is None:
+                skipped[name] = (f"its saved entry was not found: the backup of that switch is gone from "
+                                 f"~/{PARK.parent}/backups. Add the connector again in the tool itself")
+            else:
+                back[name] = entry
+                moved.append(name)
         else:
             moved.append(name)
     if not apply or not moved:
@@ -218,21 +262,29 @@ def switch(home: Path, names: list[str], on: bool, apply: bool = False) -> dict:
     from .context import Context
     from .installer import _now_stamp, apply_changes, kit_root
 
-    for name in moved:
-        dst[name] = src.pop(name)
-    data["mcpServers"] = live
-    word = "on" if on else "off"
-    reason = f"connectors {word}: {len(moved)} moved"       # a count, not the names or the entries
-    changes = [                                      # the off file first: an entry is never in neither file
-        {"path": str(park_file), "content": json.dumps({"mcpServers": off}, indent=2) + "\n",
-         "private": True, "reason": reason},
-        {"path": str(user_file), "content": json.dumps(data, indent=2) + "\n", "private": True, "reason": reason},
-    ]
     ctx = Context(home=home, root=home)
     base, n = f"{_now_stamp()}-connectors", 1
     while (kit_root(ctx) / "manifests" / f"{base}-{n:02d}.json").exists():   # two switches in the same second
         n += 1
     stamp = f"{base}-{n:02d}"                        # numbered so that the newest sorts last, as undo expects
+    for name in moved:
+        if on:
+            live[name] = back[name]
+            refs.pop(name, None)
+            old.pop(name, None)
+        else:
+            del live[name]
+            refs[name] = stamp                       # this switch's backup of the user file holds the entry
+    for name in old:                                 # entries an older version kept in the off file: this
+        refs[name] = stamp                           # switch's backup of that file holds them from now on
+    data["mcpServers"] = live
+    word = "on" if on else "off"
+    reason = f"connectors {word}: {len(moved)} moved"       # a count, not the names or the entries
+    changes = [                                      # names only: never an entry, so never a key or a header
+        {"path": str(park_file), "content": json.dumps({"off": dict(sorted(refs.items()))}, indent=2) + "\n",
+         "private": True, "reason": reason},
+        {"path": str(user_file), "content": json.dumps(data, indent=2) + "\n", "private": True, "reason": reason},
+    ]
     done = apply_changes(ctx, changes, stamp=stamp, profile="connectors",
                          extra_manifest={"title": f"Switch connectors {word}"})
     return {"moved": moved, "skipped": skipped, "applied": True, "manifest": done["manifest_path"]}
@@ -240,7 +292,7 @@ def switch(home: Path, names: list[str], on: bool, apply: bool = False) -> dict:
 
 def off_note(home: Path) -> str:
     """One line for a new session: which connectors are off and how to get one back. "" when none."""
-    names = sorted(parked(home))
+    names = parked(home)
     if not names:
         return ""
     return (f"{CLI_NAME}: these connectors are switched off to keep sessions light: {', '.join(names)}. If the "

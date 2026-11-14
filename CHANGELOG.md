@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- `connectors off`: the off file holds server names only. `~/.tokenstretch/connectors-off.json` now lists the names that are off and, for each, which switch backed its entry up. It never holds an entry, so no `env` value, header, URL or argument is written to it. Before, the whole entry was moved into that file. `connectors on` takes the entry from the owner-only backup of `~/.claude.json` that the switch made, and `undo` works as before. If that backup folder was deleted, `on` says so and changes nothing. An off file from 0.9.7 or earlier is still read; the next switch rewrites it with names only and keeps the old file in its backup.
+
 ## [0.9.7] - 2026-11-14
 
 ### Fixed

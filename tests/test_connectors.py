@@ -76,7 +76,10 @@ def test_off_is_a_dry_run_until_apply_and_on_restores_the_entry(tmp_path):
     assert cn.switch(home, ["crm", "mail"], on=False, apply=True)["applied"]
     now = json.loads((home / ".claude.json").read_text())
     assert list(now["mcpServers"]) == ["my tool"] and now["theme"] == "dark" and now["projects"] == before["projects"]
-    assert cn.parked(home) == {k: before["mcpServers"][k] for k in ("crm", "mail")}
+    assert cn.parked(home) == ["crm", "mail"]
+    off_text = (home / cn.PARK).read_text()
+    assert set(json.loads(off_text)) == {"off"} and sorted(json.loads(off_text)["off"]) == ["crm", "mail"]
+    assert not any(word in off_text for word in ("canary-value", "KEY", "env", "mail-server", "https://x", "url"))
     assert oct((home / cn.PARK).stat().st_mode & 0o777) == "0o600" or os.name == "nt"
     assert len(list((home / ".tokenstretch" / "backups").iterdir())) == 1
     rows = {r["name"]: r for r in cn.build(home, None, NOW)["rows"]}
@@ -84,7 +87,7 @@ def test_off_is_a_dry_run_until_apply_and_on_restores_the_entry(tmp_path):
 
     assert cn.switch(home, ["crm", "mail"], on=True, apply=True)["moved"] == ["crm", "mail"]
     after = json.loads((home / ".claude.json").read_text())
-    assert after["mcpServers"] == before["mcpServers"] and cn.parked(home) == {}
+    assert after["mcpServers"] == before["mcpServers"] and cn.parked(home) == []
     assert cn.switch(home, ["crm"], on=True)["skipped"] == {"crm": "it is not switched off"}
 
 
@@ -111,7 +114,7 @@ def test_cli_off_unused_and_on(tmp_path, capsys):
     assert "Switched off: crm" in capsys.readouterr().out and "crm" in cn.parked(home)
     assert cli.main(["connectors", "off", "--unused", *base]) == 0
     assert "Nothing to switch" in capsys.readouterr().out
-    assert cli.main(["connectors", "on", "crm", "--apply", *base]) == 0 and cn.parked(home) == {}
+    assert cli.main(["connectors", "on", "crm", "--apply", *base]) == 0 and cn.parked(home) == []
     assert cli.main(["connectors", "on", "crm", *base]) == 1
     assert cli.main(["connectors", "on", *base]) == 2
 
@@ -165,7 +168,9 @@ def test_undo_after_the_user_file_changed_moves_only_the_connector_back(tmp_path
     assert after["mcpServers"] == {"my tool": {"command": "t"}, "added later": {"command": "x"},
                                    "mail": before["mcpServers"]["mail"]}
     assert after["theme"] == "light" and after["numStartups"] == 7 and after["projects"] == before["projects"]
-    assert cn.parked(home) == {"crm": before["mcpServers"]["crm"]}     # the earlier switch stands
+    assert cn.parked(home) == ["crm"]                                  # the earlier switch stands
+    assert cn.switch(home, ["crm"], on=True, apply=True)["moved"] == ["crm"]
+    assert json.loads(user.read_text())["mcpServers"]["crm"] == before["mcpServers"]["crm"]
     assert os.name == "nt" or _mode(user) == "0o600"
 
 
@@ -187,3 +192,78 @@ def test_cli_names_undo_and_prints_no_entry(tmp_path, capsys):
     assert "tokenstretch undo" in out and "readable by you only" in out and "canary-value" not in out
     assert cli.main(["connectors", "off", "crm", "--apply", "--json", *base]) == 0
     assert "canary-value" not in capsys.readouterr().out
+
+
+def test_off_file_never_holds_env_values_or_headers(tmp_path):
+    home, _root = _home(tmp_path)
+    user = home / ".claude.json"
+    data = json.loads(user.read_text())
+    data["mcpServers"]["api"] = {"type": "http", "url": "https://api.invalid/mcp?token=canary-in-url",
+                                 "headers": {"Authorization": "Bearer canary-header"},
+                                 "env": {"API_TOKEN": "canary-env"}, "args": ["--key", "canary-arg"]}
+    user.write_text(json.dumps(data))
+    for names in (["api"], ["mail"], ["crm"]):                  # three switches, each rewrites the off file
+        assert cn.switch(home, names, on=False, apply=True)["applied"]
+        off_text = (home / cn.PARK).read_text()
+        for secret in ("canary", "Bearer", "Authorization", "API_TOKEN", "headers", "env", "args", "https://"):
+            assert secret not in off_text
+    off = json.loads((home / cn.PARK).read_text())
+    assert sorted(off["off"]) == ["api", "crm", "mail"] and all(isinstance(v, str) for v in off["off"].values())
+    assert "canary" not in cn.off_note(home) and "canary" not in "\n".join(cn.format_report(cn.build(home, None, NOW)))
+    # each one comes back exactly, from the backup of the switch that took it out
+    assert cn.switch(home, ["api", "crm", "mail"], on=True, apply=True)["moved"] == ["api", "crm", "mail"]
+    assert json.loads(user.read_text())["mcpServers"] == data["mcpServers"] and cn.parked(home) == []
+
+
+def test_on_refuses_when_the_backup_is_gone_and_changes_nothing(tmp_path):
+    import shutil
+    home, _root = _home(tmp_path)
+    cn.switch(home, ["mail"], on=False, apply=True)
+    shutil.rmtree(home / ".tokenstretch" / "backups")
+    user, off = (home / ".claude.json").read_bytes(), (home / cn.PARK).read_bytes()
+    res = cn.switch(home, ["mail"], on=True, apply=True)
+    assert res["moved"] == [] and res["applied"] is False and "saved entry was not found" in res["skipped"]["mail"]
+    assert (home / ".claude.json").read_bytes() == user and (home / cn.PARK).read_bytes() == off
+    assert cn.parked(home) == ["mail"]                          # still listed as off: nothing is lost silently
+
+
+def test_off_file_from_an_older_version_is_read_and_rewritten_with_names_only(tmp_path):
+    home, _root = _home(tmp_path)
+    user = home / ".claude.json"
+    data = json.loads(user.read_text())
+    mail, crm = data["mcpServers"].pop("mail"), data["mcpServers"]["crm"]
+    user.write_text(json.dumps(data))
+    (home / cn.PARK).parent.mkdir()
+    (home / cn.PARK).write_text(json.dumps({"mcpServers": {"mail": mail}}))    # what 0.9.7 and earlier wrote
+    assert cn.parked(home) == ["mail"] and "mail" in cn.off_note(home)
+    assert cn.switch(home, ["crm"], on=False, apply=True)["applied"]            # any switch rewrites the file
+    off_text = (home / cn.PARK).read_text()
+    assert "canary-value" not in off_text and sorted(json.loads(off_text)["off"]) == ["crm", "mail"]
+    assert cn.switch(home, ["mail", "crm"], on=True, apply=True)["moved"] == ["mail", "crm"]
+    servers = json.loads(user.read_text())["mcpServers"]
+    assert servers["mail"] == mail and servers["crm"] == crm and cn.parked(home) == []
+
+
+def test_on_straight_from_an_older_off_file_and_undo_of_it(tmp_path):
+    home, _root = _home(tmp_path)
+    user = home / ".claude.json"
+    data = json.loads(user.read_text())
+    mail = data["mcpServers"].pop("mail")
+    user.write_text(json.dumps(data))
+    (home / cn.PARK).parent.mkdir()
+    old = json.dumps({"mcpServers": {"mail": mail}})
+    (home / cn.PARK).write_text(old)
+    before = user.read_bytes()
+    assert cn.switch(home, ["mail"], on=True, apply=True)["moved"] == ["mail"]
+    assert json.loads(user.read_text())["mcpServers"]["mail"] == mail and "canary" not in (home / cn.PARK).read_text()
+    assert _undo(home) == 0
+    assert user.read_bytes() == before and (home / cn.PARK).read_text() == old
+
+
+def test_a_made_up_reference_in_the_off_file_never_reads_outside_the_manifests(tmp_path):
+    home, _root = _home(tmp_path)
+    (home / cn.PARK).parent.mkdir()
+    for ref in ("../../.claude", "/etc/passwd", "", "..", "a/b"):
+        (home / cn.PARK).write_text(json.dumps({"off": {"x": ref}}))
+        res = cn.switch(home, ["x"], on=True, apply=True)
+        assert res["moved"] == [] and "saved entry was not found" in res["skipped"]["x"]
