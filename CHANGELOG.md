@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- The long-history warning no longer fires on a session's first steps. On a dearer model the limit comes down (75K at 2x), and a session can start above that: the warning then showed at once and again after every fresh start, and each fresh start costs a start. The limit is now at least the session's own start size plus half the plain limit, so only history a fresh start would drop counts.
+
 ## [0.9.6] - 2026-11-14
 
 ### Added

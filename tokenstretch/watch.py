@@ -185,6 +185,19 @@ def payback_steps(history: int, start: int | None) -> int | None:
     return max(1, -(-2 * history // (history - start)))
 
 
+def context_limit(max_context: int, start: int | None) -> int:
+    """The history size where "start fresh" is worth saying, given what a fresh session starts at.
+
+    A fresh session is never smaller than its start-up size. When that size is near or over the
+    plain limit (a large start on a dear model), the warning would fire on the first step and after
+    every restart, and each restart costs a start. So the limit is at least the start plus half the
+    plain limit: only history a fresh start would actually drop counts.
+    """
+    if not start or start <= 0:
+        return max_context
+    return max(max_context, start + max_context // 2)
+
+
 def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | None = None) -> list[WatchWarning]:
     """Every waste condition one session shows right now (deduping happens in Watcher).
 
@@ -206,6 +219,7 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
     # Re-reading the same history costs more on a dearer model, so the size limits come down with it.
     lim = cfg.limits(last.get("model") or "")
     weight, max_context, growth_tokens, wake_min_sent = lim["weight"], lim["context"], lim["growth"], lim["wake_sent"]
+    plain_context, max_context = max_context, context_limit(max_context, s.get("start_tokens"))
     priced = (f" On {last['model']} a re-read costs about {weight:g}x what it does on the mid model, so the "
               "limit here is lower." if weight and weight > 1 else "")
 
@@ -230,7 +244,7 @@ def session_warnings(ctx: Context, ad, s: dict, cfg: WatchConfig, now: float | N
         out.append(WatchWarning(base + ("context",), **tag,
                            what=f"history is ~{_k(last['history_tokens'])} tokens (over {_k(max_context)}).",
                            why="every step re-sends the whole conversation, so each reply now costs at least that "
-                               "much input." + (priced if max_context < cfg.max_context else ""),
+                               "much input." + (priced if plain_context < cfg.max_context else ""),
                            fix=(f"finish this step, then type {handoff} (writes a short note) and {clear}; "
                                 f"`{handoff} resume` picks the task up in the fresh session."
                                 if handoff else f"finish this step, then type {clear} (fresh start){alt}.") + pays,
