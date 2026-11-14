@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from .auto import NOTE
+from .auto import NOTE, _project, keep_out_of_git, keep_previous
 from .identity import CLI_NAME, PRODUCT_NAME, state_dir
 from .statusline import find_session, light_context, parse_payload, read_raw, top_warning
 from .watch import WatchConfig, session_warnings
@@ -107,8 +107,16 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
         # The history is long and a fresh start is the fix. A fresh start needs a note to resume from,
         # so the agent writes it now, without being asked: the user is left with one thing to type.
         # Only a person can type the clear command; nothing here runs it.
+        # The agent replaces the note, so the copy of the old one is made here, by the script: it costs
+        # the agent no step. The notes are also kept out of commits (the clone's own exclude file).
+        kept, root = None, _project(payload)
+        if root is not None:
+            kept = keep_previous(root / NOTE)
+            keep_out_of_git(root)
+        old_one = (f"replacing any old one (a copy of the old one is already kept as `{kept.name}`)" if kept
+                   else "replacing any old one")
         act = (f"Finish the current request first. Then, before you end your reply, write `{NOTE.as_posix()}` "
-               "in the project folder, replacing any old one. Write it from what you already know: do not read "
+               f"in the project folder, {old_one}. Write it from what you already know: do not read "
                "files or run commands for it. Under 40 lines, with these parts: Goal; Done (and how it was "
                "checked); State (files changed, branch, anything uncommitted); Decisions; Next step; Open "
                "questions. Do not stop or change the task for this.")

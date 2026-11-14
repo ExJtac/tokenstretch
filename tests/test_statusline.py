@@ -614,6 +614,19 @@ def test_prompt_note_asks_the_agent_to_write_the_handoff_note_when_history_is_lo
     assert "write `.claude/handoff.md`" in extra and "do not read files or run commands" in extra
     assert "Type /clear, then `/handoff resume`." in extra and "high usage in this session" in extra
     assert "do not act on this unless the user asks" not in extra
+    assert "replacing any old one." in extra and "handoff.prev.md" not in extra            # no old note, no cwd
+    # With an old note in the project, the hook keeps a copy itself and keeps both out of commits.
+    proj = tmp_path / "proj"
+    (proj / ".claude").mkdir(parents=True)
+    (proj / ".git").mkdir()
+    (proj / ".claude" / "handoff.md").write_text("Goal: the old task\n", encoding="utf-8")
+    with credential_guard():
+        got = build_nudge(_ctx(w), {**payload, "session_id": "abcd1234-0066", "cwd": str(proj)},
+                          now=lambda: 1_000_000.0)
+    extra = got["hookSpecificOutput"]["additionalContext"]
+    assert "a copy of the old one is already kept as `handoff.prev.md`" in extra
+    assert (proj / ".claude" / "handoff.prev.md").read_text() == "Goal: the old task\n"
+    assert "handoff*.md" in (proj / ".git" / "info" / "exclude").read_text()
 
 
 def test_helper_launch_note_only_for_a_helper_from_a_long_conversation(tmp_path):

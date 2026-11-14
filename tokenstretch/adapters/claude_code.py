@@ -1914,6 +1914,7 @@ class ClaudeCodeAdapter(Adapter):
 
     # ---- /handoff: makes a fresh start cheap ------------------------------------------------
     HANDOFF_NOTE = ".claude/handoff.md"
+    HANDOFF_PREV = ".claude/handoff.prev.md"   # the note before the last one, kept when a new one is written
 
     def _handoff_paths(self, ctx: Context) -> list[Path]:
         """Every place a `/handoff` shortcut could already live (user and project, skill or command)."""
@@ -1957,8 +1958,11 @@ class ClaudeCodeAdapter(Adapter):
             "next, and continue from its \"Next step\". Trust the note. Open a file only when you need its "
             "exact lines.\n"
             "\n"
-            f"Otherwise: write `{self.HANDOFF_NOTE}`, replacing any old one. Write it from what you already "
-            "know. Do not read files or run commands to prepare it. Keep it under 40 lines:\n"
+            f"Otherwise: if `{self.HANDOFF_NOTE}` already exists, first rename it to `{self.HANDOFF_PREV}` "
+            "with one `mv` command, so the old note is kept (an older kept copy is replaced). Then write "
+            f"`{self.HANDOFF_NOTE}`. Write it from what you already know. Apart from that one rename, do not "
+            "read files or run commands to prepare it. Do not add either file to a commit. Keep the note "
+            "under 40 lines:\n"
             "\n"
             "- **Goal:** one sentence.\n"
             "- **Done:** what is finished, and how it was checked.\n"
@@ -1972,8 +1976,28 @@ class ClaudeCodeAdapter(Adapter):
         )
 
     def _setup_handoff(self, ctx: Context) -> SetupItem | None:
-        if any(p.exists() for p in self._handoff_paths(ctx)):
-            return None  # one is already there (ours or yours); never overwrite it
+        path = ctx.home / ".claude" / "skills" / "handoff" / "SKILL.md"
+        marker = f"<!-- added by {PRODUCT_NAME};"
+        if any(p.exists() for p in self._handoff_paths(ctx) if p != path):
+            return None  # you have your own shortcut of that name; never overwrite or shadow it
+        if path.exists():
+            text = self.handoff_skill()
+            try:
+                old = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return None
+            if marker not in old or old == text:
+                return None  # yours (never overwrite it), or ours and already current
+            return SetupItem(
+                id="claude-handoff-skill", adapter_id=self.id,
+                title="Update the /handoff shortcut in Claude Code",
+                why="The copy on this machine is from an older version: it replaced the old note without "
+                    "keeping a copy.",
+                changes=[{"path": str(path), "kind": "modify", "content": text, "key": "handoff skill",
+                          "reason": "replace the older text this tool wrote (about 1 KB; loaded only when you "
+                                    "type /handoff)"}],
+                done="updated the /handoff shortcut",
+            )
         path = ctx.home / ".claude" / "skills" / "handoff" / "SKILL.md"
         return SetupItem(
             id="claude-handoff-skill", adapter_id=self.id,
@@ -1987,8 +2011,10 @@ class ClaudeCodeAdapter(Adapter):
                 "reason": "new manual-only skill (about 1 KB; loaded only when you type /handoff)",
             }],
             done="added the /handoff shortcut",
-            notes=[f"The note goes in `{self.HANDOFF_NOTE}` in the project you're working in. "
-                   "Add that path to `.gitignore` if you don't want it committed.",
+            notes=[f"The note goes in `{self.HANDOFF_NOTE}` in the project you're working in, and the one "
+                   f"it replaces is kept as `{self.HANDOFF_PREV}`.",
+                   "With the hooks installed, both are kept out of commits by one line in the clone's own "
+                   "`.git/info/exclude`. Your `.gitignore` is not edited.",
                    "It is marked `disable-model-invocation`, so it adds nothing to each turn."],
         )
 
