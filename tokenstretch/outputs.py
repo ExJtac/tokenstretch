@@ -15,6 +15,7 @@ import os
 import time
 from pathlib import Path
 
+from .adapters.claude_paths import session_logs_dir
 from .identity import CLI_NAME
 
 DAYS = 7
@@ -68,7 +69,7 @@ def scan(home: Path, now: float | None = None, days: int = DAYS, max_bytes: int 
     """
     now = time.time() if now is None else now
     files = []
-    base = home / ".claude" / "projects"
+    base = session_logs_dir(home)
     for dirpath, _dirs, names in os.walk(base) if base.is_dir() else []:
         for n in names:
             if n.endswith(".jsonl"):

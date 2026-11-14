@@ -1,24 +1,15 @@
-"""Adapter registry. Adding a tool = one module + one line here."""
-from .aider import AiderAdapter
-from .cline import ClineAdapter
-from .claude_code import ClaudeCodeAdapter
-from .codex import CodexAdapter
-from .copilot_cli import CopilotCliAdapter
-from .cursor import CursorAdapter
-from .gemini_cli import GeminiCliAdapter
-from .host import HostAdapter, implemented_check_ids
-from .opencode import OpenCodeAdapter
+"""Adapter registry. Adding a tool = one module + one line in `_registry.py`.
 
-REGISTRY = [
-    HostAdapter(),
-    ClaudeCodeAdapter(),
-    CodexAdapter(),
-    GeminiCliAdapter(),
-    CopilotCliAdapter(),
-    CursorAdapter(),
-    AiderAdapter(),
-    OpenCodeAdapter(),
-    ClineAdapter(),
-]
-
+The registry is built on first use, not on import. The hook commands (`auto`, `nudge`) run on every
+prompt and need only a path from one adapter (`claude_paths`); they must not load all nine.
+"""
 __all__ = ["REGISTRY", "implemented_check_ids"]
+
+
+def __getattr__(name: str):
+    if name in __all__:
+        from . import _registry
+        value = getattr(_registry, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

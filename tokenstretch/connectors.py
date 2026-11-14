@@ -20,6 +20,7 @@ import re
 import time
 from pathlib import Path
 
+from .adapters import claude_paths as paths
 from .identity import CLI_NAME
 
 USE_DAYS = 30
@@ -57,7 +58,7 @@ def parked(home: Path) -> dict:
 def configured(home: Path, root: Path | None = None) -> list[dict]:
     """Every connector named in a local file: {name, scope, log, can_switch, where}."""
     out: list[dict] = []
-    data = _json(home / ".claude.json")
+    data = _json(paths.user_file(home))
     for name in _servers(data):
         out.append({"name": name, "scope": "user", "log": log_name(name), "can_switch": True, "state": "on",
                     "where": "your user file"})
@@ -67,7 +68,7 @@ def configured(home: Path, root: Path | None = None) -> list[dict]:
             out.append({"name": name, "scope": "project (private)", "log": log_name(name), "can_switch": False,
                         "state": "on", "where": f"one project's private settings ({Path(proj).name})"})
     if root is not None:
-        for name in _servers(_json(root / ".mcp.json")):
+        for name in _servers(_json(paths.connectors_file(root))):
             out.append({"name": name, "scope": "project (shared)", "log": log_name(name), "can_switch": False,
                         "state": "on", "where": "this project's .mcp.json"})
     from .startup_plugins import found
@@ -75,7 +76,7 @@ def configured(home: Path, root: Path | None = None) -> list[dict]:
         if plugin["kind"] != "plugin":
             continue
         base = Path(plugin["root"])
-        for name in _servers(_json(base / ".mcp.json")):
+        for name in _servers(_json(paths.connectors_file(base))):
             out.append({"name": name, "scope": f"plugin {plugin['name']}", "can_switch": False, "state": "on",
                         "log": f"plugin_{log_name(plugin['name'])}_{log_name(name)}", "plugin": plugin["name"],
                         "where": f"the {plugin['name']} plugin ({plugin['where']})"})
@@ -94,7 +95,7 @@ def used(home: Path, now: float | None = None, days: int = USE_DAYS, max_bytes: 
     """
     now = time.time() if now is None else now
     files = []
-    base = home / ".claude" / "projects"
+    base = paths.session_logs_dir(home)
     for dirpath, _dirs, names in os.walk(base) if base.is_dir() else []:
         for n in names:
             if n.endswith(".jsonl"):
@@ -198,7 +199,7 @@ def switch(home: Path, names: list[str], on: bool, apply: bool = False) -> dict:
     backups and the copies of what was written are all readable by the owner only. The manifest
     holds paths and checksums, never an entry.
     """
-    user_file, park_file = home / ".claude.json", home / PARK
+    user_file, park_file = paths.user_file(home), home / PARK
     data = _json(user_file)
     live, off = _servers(data), parked(home)
     src, dst = (off, live) if on else (live, off)

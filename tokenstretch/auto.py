@@ -29,12 +29,12 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from .adapters.claude_paths import AUTO_HANDOFF_NOTE as AUTO_NOTE   # written here after a compaction
+from .adapters.claude_paths import HANDOFF_GIT_PATTERN as GIT_PATTERN
+from .adapters.claude_paths import HANDOFF_NOTE as NOTE              # written by the agent (/handoff)
 from .identity import PRODUCT_NAME
 from .statusline import parse_payload, read_raw
 
-NOTE = Path(".claude") / "handoff.md"            # written by the agent (/handoff)
-AUTO_NOTE = Path(".claude") / "handoff-auto.md"  # written here after a compaction
-GIT_PATTERN = "**/.claude/handoff*.md"           # both notes and their `.prev` copies, at any depth
 GIT_COMMENT = (f"# {PRODUCT_NAME}: handoff notes are working files, kept out of commits in this clone only. "
                "To commit them, put # in front of the next line.")
 FRESH_S = 72 * 3600                              # older notes are not offered

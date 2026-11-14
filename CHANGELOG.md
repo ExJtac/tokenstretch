@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- Internal, no change in behaviour: Claude Code's paths are written in one place. `connectors.py`, `nudge.py`, `auto.py`, `outputs.py`, `startup_plugins.py` and `trim_skills.py` no longer spell `~/.claude`, `~/.claude.json`, `.mcp.json` or the handoff note paths themselves. They ask the Claude Code adapter's `adapters/claude_paths.py`, which the adapter also uses. A test fails if one of those files spells such a path again. The adapter registry is now built on first use, so the hook commands, which run on every prompt, read a path without loading all nine adapters.
+
 ## [0.9.7] - 2026-11-14
 
 ### Fixed
