@@ -1551,7 +1551,7 @@ class ClaudeCodeAdapter(Adapter):
             else:
                 self._fold_live(ctx, same)   # one step per file: add the live keys to that step
         for item in (self._setup_handoff(ctx), self._setup_brief(ctx), self._setup_credits(ctx),
-                     self._setup_dash_reminder(ctx)):
+                     self._setup_advisor(ctx), self._setup_dash_reminder(ctx)):
             if item:
                 items.append(item)
         return items
@@ -1826,6 +1826,90 @@ class ClaudeCodeAdapter(Adapter):
             done="added the /credits shortcut",
             notes=["It is marked `disable-model-invocation`, so it adds nothing to each turn.",
                    "Unlike the commands it runs, /credits uses the model, so it costs one short reply."],
+        )
+
+    # ---- advisor: an on-demand, read-only helper that reports to the user -----------------------
+    ADVISOR_NAME = f"{PRODUCT_NAME}-advisor"
+
+    def advisor_path(self, ctx: Context) -> Path:
+        return ctx.home / ".claude" / "agents" / f"{self.ADVISOR_NAME}.md"
+
+    def advisor_agent(self, ctx: Context) -> str:
+        return (
+            "---\n"
+            f"name: {self.ADVISOR_NAME}\n"
+            "description: Read-only credit checkup that reports to the user. Use only when the user asks for a "
+            f"{PRODUCT_NAME} or credit-usage review.\n"
+            "tools: Bash, Read\n"
+            "model: haiku\n"
+            "---\n"
+            f"<!-- added by {PRODUCT_NAME}; `{CLI_NAME} undo` removes it -->\n"
+            "You are a read-only advisor. Your reader is the user, a person. Your report is for them, not for "
+            "another agent.\n"
+            "\n"
+            "Run these three commands, one call each, and nothing else:\n"
+            "\n"
+            f"1. `{CLI_NAME} doctor --new`\n"
+            f"2. `{CLI_NAME} watch --once --checkup 0`\n"
+            f"3. `{CLI_NAME} startup`\n"
+            "\n"
+            f"If `{CLI_NAME}` is not found, do not search for it and do not install anything. Use this in "
+            f"its place, exactly as written: `{self.cli_absolute(ctx)}`. All three make no network or "
+            "model calls and change no files outside this tool's own state folder.\n"
+            "\n"
+            "Rules:\n"
+            "\n"
+            "- Change no file and no setting. Never run `setup`, `trim --apply`, `connectors --apply`, `update`, "
+            "`undo` or an install.\n"
+            "- Do not open session logs, memory files or credential files yourself. Use only what the three "
+            "commands print.\n"
+            "- Do not start helpers, and do not send messages to other agents or sessions.\n"
+            "- Every number is an estimate from local logs. Say so once. Do not turn tokens into money.\n"
+            "\n"
+            "Then reply in under 200 words, in plain words, with no code block:\n"
+            "\n"
+            "- **New since the last check:** each finding from the first command, one line each. If it says "
+            "there are none, say that in one line.\n"
+            "- **Costing credits now:** each warning from the second command, most costly first.\n"
+            "- **Do first:** at most three steps, largest saving first. For each, the exact command or the "
+            "setting for the user to change. The user makes the change, not you.\n"
+        )
+
+    def _setup_advisor(self, ctx: Context) -> SetupItem | None:
+        path = self.advisor_path(ctx)
+        marker = f"<!-- added by {PRODUCT_NAME};"
+        if (ctx.root / ".claude" / "agents" / path.name).exists():
+            return None  # the project has its own agent of that name; never shadow or touch it
+        text = self.advisor_agent(ctx)
+        if path.exists():
+            try:
+                old = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return None
+            if marker not in old or old == text:
+                return None  # yours (never overwrite it), or ours and already current
+            return SetupItem(
+                id="claude-advisor-agent", adapter_id=self.id,
+                title=f"Update the {self.ADVISOR_NAME} helper in Claude Code",
+                why="The copy on this machine is from an older version, or this tool has moved since.",
+                changes=[{"path": str(path), "kind": "modify", "content": text, "key": "advisor agent",
+                          "reason": "replace the older text this tool wrote (about 2 KB; read only when the helper runs)"}],
+                done=f"updated the {self.ADVISOR_NAME} helper",
+            )
+        return SetupItem(
+            id="claude-advisor-agent", adapter_id=self.id,
+            title=f"Add a {self.ADVISOR_NAME} helper to Claude Code",
+            why="A helper you can ask for a credit review: it runs the read-only checks in its own short "
+                "conversation on the cheapest model and reports to you. It changes nothing and only runs "
+                "when you ask.",
+            changes=[{"path": str(path), "kind": "create", "content": text, "key": "advisor agent",
+                      "reason": "new helper file (about 2 KB; read only when the helper runs)"}],
+            done=f"added the {self.ADVISOR_NAME} helper",
+            notes=[f"Ask for it in a session: \"use the {self.ADVISOR_NAME} helper\".",
+                   "Its one-line description is listed in each session (about 30 tokens). The rest is read only "
+                   "when it runs.",
+                   "Unlike the commands it runs, the helper uses the model: one short run on the cheapest model "
+                   "each time you ask. Nothing starts it on a schedule."],
         )
 
     # ---- /handoff: makes a fresh start cheap ------------------------------------------------
