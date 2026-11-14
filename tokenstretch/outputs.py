@@ -39,7 +39,7 @@ def _target(name: str, inp, home: Path) -> str:
         val = inp.get(key)
         if isinstance(val, str) and val:
             try:
-                return "~/" + str(Path(val).relative_to(home))
+                return "~/" + Path(val).relative_to(home).as_posix()
             except ValueError:
                 return val
     cmd = inp.get("command")

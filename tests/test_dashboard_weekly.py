@@ -174,7 +174,8 @@ def test_dashboard_state_json(tmp_path):
         assert c not in blob
     assert st["footer"] == "Runs only on this machine. Nothing is sent anywhere."
     o = st["overview"]
-    assert o["tokens_week"] == o["tokens_today"] > 0 and o["cost_week"]["usd"] == 1.5
+    # the rows span the last 4 minutes: just after midnight UTC some of them are yesterday's
+    assert o["tokens_week"] >= o["tokens_today"] > 0 and o["cost_week"]["usd"] == 1.5
     assert o["active_sessions"] == 1 and o["biggest_history"]["tokens"] == 200_010
     s = st["sessions"][0]
     assert s["tool"] == "Claude Code" and s["project"] == "~-code-demo-app" and s["long"] and s["pct"] == 100.0
