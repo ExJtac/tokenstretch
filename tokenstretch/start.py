@@ -16,16 +16,17 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from . import compact as cm
 from . import pace as pc
 from . import paceauto
 from .context import Context
 from .identity import CLI_NAME, VERSION
-from .installer import _now_stamp
 from .setup import apply_plan, build_plan, detected_adapters, select_items, sys_stdin_isatty
 
 MIN_PYTHON = (3, 11)
 READING_ADAPTER = "claude-code"     # the only tool whose status line hands over the plan's limits
 PACE_AUTO_ID = "pace-auto"
+COMPACT_ID = "compact-mode"
 WEEK_MIN_S = 5 * 86400              # a stored window this long or longer counts as "the plan's week"
 AHEAD_POINTS = 5.0                  # used this many points above the share of the week gone: ahead
 BEHIND_POINTS = 10.0                # used this many points below it: behind
@@ -49,7 +50,7 @@ def _q(text: str) -> str:
     return f'"{text}"' if any(c in text for c in " \t'\"") else text
 
 
-def planned_changes(ctx: Context, items, pace_auto_missing: bool) -> list[dict]:
+def planned_changes(ctx: Context, items, pace_auto_missing: bool, compact_items=()) -> list[dict]:
     """Each change as {id, title, files}: what setup would apply, then the plan readings switch."""
     rows = []
     for item in items:
@@ -62,6 +63,9 @@ def planned_changes(ctx: Context, items, pace_auto_missing: bool) -> list[dict]:
     if pace_auto_missing:
         rows.append({"id": PACE_AUTO_ID, "title": "Switch on automatic plan readings (`pace auto`)",
                      "files": [_short(str(pc.state_path(ctx.home)), ctx.home)]})
+    if compact_items:
+        rows.append({"id": COMPACT_ID, "title": "Turn on compact mode (optional rules: shorter replies, nothing left out)",
+                     "files": [_short(ch["path"], ctx.home) for i in compact_items for ch in i.changes]})
     return rows
 
 
@@ -146,7 +150,7 @@ def pace_summary(ctx: Context, now: float | None = None) -> dict:
 
 def run_start(ctx: Context, *, yes: bool = False, as_json: bool = False, detail: bool = False,
               interactive: bool | None = None, input_fn=input, out: Callable[[str], None] = print,
-              flags: list[str] | None = None, now: float | None = None) -> int:
+              flags: list[str] | None = None, now: float | None = None, compact: bool = False) -> int:
     """Exit codes: 0 fine (also when nothing was changed or the question was answered no),
     1 a real failure (Python too old, or a step failed while applying)."""
     flags = list(flags or [])
@@ -164,21 +168,29 @@ def run_start(ctx: Context, *, yes: bool = False, as_json: bool = False, detail:
     state = pc.load_state(ctx.home)
     has_reader = any(a.id == READING_ADAPTER for a in adapters)
     auto_missing = has_reader and not paceauto.is_on(state)
-    changes = planned_changes(ctx, items, auto_missing)
-    undo = [cmd("undo")] if items else []
+    compact_items = cm.plan(ctx, True, adapters)      # empty when it is on already, or has nowhere to go
+    offer_compact = bool(compact_items) and not compact
+    if not compact:
+        compact_items = []
+    changes = planned_changes(ctx, items, auto_missing, compact_items)
+    undo = [cmd("undo")] if items or compact_items else []
     if auto_missing or paceauto.is_on(state):
         undo.append(cmd("pace", "auto", "--off"))
     result: dict = {
         "version": VERSION,
         "checks": {"python": {**py, "needs": "%d.%d" % MIN_PYTHON}, "tools": tools,
                    "setup_steps_pending": len(items), "pace_auto": paceauto.is_on(state)},
-        "planned_changes": changes, "applied": False, "mode": "dry-run", "apply_command": cmd("start", "--yes"),
+        "planned_changes": changes, "applied": False, "mode": "dry-run", "apply_command": cmd("start", "--yes", *(["--compact"] if compact else [])),
         "undo": undo, "pace": None, "error": None,
     }
 
     def finish(code: int) -> int:
         if as_json:
             print(json.dumps(result, indent=2))
+        elif offer_compact and code == 0:
+            say()
+            say("Optional: compact mode asks the agent for complete answers in fewer words. "
+                f"To add it to this project: `{cmd('compact', 'on')}`")
         return code
 
     say("Checking this computer:")
@@ -226,18 +238,23 @@ def run_start(ctx: Context, *, yes: bool = False, as_json: bool = False, detail:
 
     done = 0
     try:
+        run_id = cm._run_id(ctx)
         if items:
-            apply_plan(ctx, items, _now_stamp(), lambda _line: None)
+            apply_plan(ctx, items, run_id, lambda _line: None)
             done = len(items)
+        if compact_items:
+            # Planned again: setup may just have added the rules block the compact rules merge into.
+            cm.apply(ctx, cm.plan(ctx, True, adapters), run_id, first=len(items) + 1)
+            done += 1
         if auto_missing:
             paceauto.switch(ctx.home, True)
             done += 1
         say(f"Done: {done} change{'s' if done != 1 else ''} made. Your own files were backed up first.")
     except (OSError, RuntimeError, ValueError) as exc:
         result["error"] = str(exc)
-        result["applied"] = bool(items)
+        result["applied"] = bool(items or compact_items)
         print(f"start stopped: {exc}", file=sys.stderr)
-        if items:
+        if items or compact_items:
             print(f"Some changes were made. To put them back: {cmd('undo')}", file=sys.stderr)
         return finish(1)
     result.update(applied=True, mode="applied")

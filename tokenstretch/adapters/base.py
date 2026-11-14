@@ -130,6 +130,67 @@ def add_rules_block(existing: str, block: str) -> str | None:
     return existing + sep + block
 
 
+COMPACT_START = f"<!-- {PRODUCT_NAME}:compact start -->"
+COMPACT_END = f"<!-- {PRODUCT_NAME}:compact end -->"
+
+
+def compact_block(merged: bool = False) -> str:
+    """Compact mode: complete answers in fewer tokens. Optional, off by default.
+
+    `merged` is the form that sits inside the credit-rules block: no heading of its own, and no
+    read-narrowly rule, because that block already has one. Paid on every step, so keep it short.
+    """
+    head = "" if merged else f"## Compact mode (added by {PRODUCT_NAME}; `{CLI_NAME} compact off` removes it)\n"
+    read = "" if merged else "- Search first, then read only the line ranges you need.\n"
+    return (
+        f"{COMPACT_START}\n"
+        f"{head}"
+        "- Change files with targeted edits or diffs. Never reprint a whole file to change a few lines.\n"
+        "- Point to code (`auth.py:40-60`). Quote only the lines under discussion.\n"
+        "- Don't restate the question, the plan, or earlier messages. No intros, no recaps.\n"
+        "- Fewer words, never fewer facts: keep the full conclusion, caveats, and next steps.\n"
+        "- End each finished task with one line: what changed, where, what is next.\n"
+        "- Hand work to another agent as: goal / done / files / next / open questions.\n"
+        f"{read}"
+        f"{COMPACT_END}\n"
+    )
+
+
+def add_compact_block(existing: str) -> str | None:
+    """Return new text with compact mode on, or None if it is already on.
+
+    A file that has the credit-rules block gets the short form inside that block, so there is one
+    block and no rule twice. Any other file gets the full form appended.
+    """
+    if COMPACT_START in existing:
+        return None
+    start = existing.find(RULES_START)
+    end = existing.find(RULES_END, start) if start >= 0 else -1
+    if end > 0 and existing[end - 1] == "\n":
+        return existing[:end] + compact_block(merged=True) + existing[end:]
+    if not existing:
+        return compact_block()
+    sep = "" if existing.endswith("\n\n") else "\n" if existing.endswith("\n") else "\n\n"
+    return existing + sep + compact_block()
+
+
+def remove_compact_block(existing: str) -> str | None:
+    """Return the text with the compact block taken out, or None if there is none."""
+    start = existing.find(COMPACT_START)
+    if start < 0:
+        return None
+    end = existing.find(COMPACT_END, start)
+    if end < 0:
+        return None
+    end += len(COMPACT_END)
+    if existing[end:end + 1] == "\n":
+        end += 1
+    head, tail = existing[:start], existing[end:]
+    if not tail and head.endswith("\n\n"):
+        head = head[:-1]          # the blank line that was put in front of an appended block
+    return head + tail
+
+
 @dataclass
 class SetupItem:
     """One plain-English step in `tokenstretch setup`, planned by an adapter (never written by it).
@@ -302,6 +363,51 @@ class Adapter:
     def setup_items(self, ctx: Context) -> list[SetupItem]:
         """Safe, local-only fixes for `tokenstretch setup`. Plans only; the core writes with backups."""
         return []
+
+    # ---- compact mode (optional rules block) ---------------------------------------------
+    COMPACT_CREATE = False   # may `compact on` start this tool's instruction file when there is none
+
+    def compact_file(self, ctx: Context) -> Path | None:
+        """The project instruction file this tool's compact block goes in. None: not supported."""
+        return None
+
+    def compact_also_loads(self, ctx: Context) -> list[Path]:
+        """Other project files this tool loads every step. A compact block in one of them is enough."""
+        return []
+
+    def compact_item(self, ctx: Context, on: bool, planned: frozenset[Path] = frozenset()) -> SetupItem | None:
+        """Plan turning compact mode on or off in this tool's file. Plans only; the core writes with backups.
+
+        `planned` holds the files other tools' steps in the same run will add the block to.
+        """
+        path = self.compact_file(ctx)
+        if path is None or ctx.root.resolve() == ctx.home.resolve():
+            return None      # no project folder; never write an instruction file in the home folder
+        there = path.is_file()
+        existing = path.read_text(encoding="utf-8", errors="replace") if there else ""
+        if on:
+            if not there and not self.COMPACT_CREATE:
+                return None
+            for other in self.compact_also_loads(ctx):
+                if other in planned or (other.is_file() and COMPACT_START in other.read_text(encoding="utf-8", errors="replace")):
+                    return None
+            new = add_compact_block(existing)
+        else:
+            new = remove_compact_block(existing)
+        if new is None:
+            return None
+        name = path.name
+        return SetupItem(
+            id=f"{self.id}-compact-block", adapter_id=self.id,
+            title=f"Add the compact-mode rules to {name}" if on else f"Take the compact-mode rules out of {name}",
+            why="Whole-file reprints, quoted code and recaps are paid for as output and again as history on "
+                "every later step. These rules cut the words and keep the facts.",
+            changes=[{
+                "path": str(path), "kind": "modify" if there else "create", "content": new, "key": "compact block",
+                "reason": "add a marked compact-mode block" if on else "remove the marked compact-mode block",
+            }],
+            done=f"added compact mode to {name}" if on else f"took compact mode out of {name}",
+        )
 
     def live_sessions(self, ctx: Context, limit: int = 5, max_age_s: float | None = None) -> list[dict]:
         """Newest local sessions (written within max_age_s if given), read-only: [{adapter, session, project, model, history_tokens, last_write, path}]."""

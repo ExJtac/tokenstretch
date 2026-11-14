@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- Compact mode, optional and off by default: `tokenstretch compact on` adds a short rules block to the project instruction file that asks the agent for complete answers in fewer tokens. Seven rules: targeted edits instead of whole-file reprints, pointers to code (`auth.py:40-60`) instead of quotes, no restating or recaps, fewer words but never fewer facts, a one-line finish, a fixed handoff format (goal / done / files / next / open questions), and search before reading. `compact off` takes it out, plain `compact` says where it is, and `start --compact` turns it on with setup; `start` mentions it otherwise. It goes in `CLAUDE.md` and `AGENTS.md` (created if missing) and in an existing `GEMINI.md` or `.github/copilot-instructions.md`, through each tool's adapter. In a file that has the credit-saving rules block it goes inside that block, without the rule the block already has. Every change is backed up and `undo` reverses it. The block is under 200 approx. tokens, checked by a test. No saving is claimed for it: that has not been measured yet.
+
 ## [0.9.5] - 2026-11-14
 
 ### Fixed

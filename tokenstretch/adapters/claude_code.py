@@ -2068,6 +2068,11 @@ class ClaudeCodeAdapter(Adapter):
             notes=notes,
         )
 
+    COMPACT_CREATE = True
+
+    def compact_file(self, ctx: Context) -> Path | None:
+        return ctx.root / "CLAUDE.md"
+
     def _setup_rules(self, ctx: Context) -> SetupItem | None:
         if ctx.root.resolve() == ctx.home.resolve():
             return None  # no project folder; never write ~/CLAUDE.md

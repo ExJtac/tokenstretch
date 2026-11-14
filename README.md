@@ -61,6 +61,7 @@ It checks your computer, lists every change in plain words, and asks once. Nothi
 | `tokenstretch doctor --new` | Only the findings that are new since the last check. No model, no credits. `watch` does the same every 30 minutes. |
 | `tokenstretch dashboard` | One live page on your own machine (127.0.0.1): sessions, warnings, weekly pace. |
 | `tokenstretch trim` | Shows what your CLAUDE.md, AGENTS.md, GEMINI.md cost per turn and proposes a safe trim (dry run unless `--apply`). |
+| `tokenstretch compact on` / `off` | Optional, off by default. Adds a short rules block that asks the agent for complete answers in fewer words: targeted edits, pointers to code instead of quotes, no recaps. Its saving has not been measured yet. |
 | `tokenstretch startup` / `connectors` / `outputs` | What every session carries before the first prompt, which connectors you never call, and which tool outputs fill your sessions. |
 | `tokenstretch model suggest` / `model cost` | Right-sized model and effort for a task, and where your credits went per model. |
 | `tokenstretch brief` / `queue` / `pace` | Cheap task briefs, a file-based task queue for agent teams, and pacing a plan's weekly limit. |
