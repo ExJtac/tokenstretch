@@ -1528,12 +1528,19 @@ class ClaudeCodeAdapter(Adapter):
             data["statusLine"] = line
             added.append("statusLine: your status line kept, with the history size and top warning added after it"
                          if theirs else "statusLine: history size and top warning")
-        if not any(f"{PACKAGE_NAME} nudge" in cmd for cmd, _ in _hook_cmds(data)):
+        nudges = {where for cmd, where in _hook_cmds(data) if f"{PACKAGE_NAME} nudge" in cmd}
+        if "hooks.UserPromptSubmit" not in nudges:
             # Exit 2 from a prompt hook blocks the prompt, and an older copy of this tool without
             # `nudge` would exit 2. So the hook command can only ever succeed.
             if _ensure_hook(data, "UserPromptSubmit", f"{base} nudge 2>/dev/null || true"):
                 data["hooks"]["UserPromptSubmit"][-1]["hooks"][0]["timeout"] = 5
                 added.append("hooks.UserPromptSubmit: show the top warning in the session")
+        if "hooks.Stop" not in nudges:
+            # The same warning when a reply ends. It prints a message for you only: nothing is passed
+            # to the agent, so it cannot start another step. Exit 2 here would keep the agent working.
+            if _ensure_hook(data, "Stop", f"{base} nudge 2>/dev/null || true"):
+                data["hooks"]["Stop"][-1]["hooks"][0]["timeout"] = 5
+                added.append("hooks.Stop: show the top warning when a reply ends, with where the fix is")
         # Keep sessions short with nothing to type: compact earlier, make the summary a resumable
         # note, save it, and point a new chat at it.
         have = {cmd for cmd, _ in _hook_cmds(data)}

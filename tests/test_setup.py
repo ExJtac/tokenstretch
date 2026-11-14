@@ -102,6 +102,8 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     assert s["statusLine"]["type"] == "command" and s["statusLine"]["command"].endswith(" statusline")
     hook = s["hooks"]["UserPromptSubmit"][0]["hooks"][0]
     assert hook["command"].endswith(" nudge 2>/dev/null || true") and hook["timeout"] == 5   # can never block a prompt
+    end = s["hooks"]["Stop"][0]["hooks"][0]
+    assert end["command"].endswith(" nudge 2>/dev/null || true") and end["timeout"] == 5     # can never hold a reply open
     assert set(s) == {"model", "theme", "statusLine", "hooks", "env"}
     assert s["env"] == {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"}
     for event in ("PreCompact", "PostCompact", "SessionStart"):
