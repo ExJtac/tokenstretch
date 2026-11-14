@@ -92,19 +92,27 @@ def cmd_install(args) -> int:
 
 
 def cmd_undo(args) -> int:
-    from .installer import DriftError, latest_manifest, undo_manifest
+    from .installer import DriftError, latest_manifest, undo_manifest, undo_target
     from .setup import setup_run_manifests
 
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
     if args.manifest:
         paths = [Path(args.manifest)]
     else:
-        latest = latest_manifest(ctx)
-        if latest is None:
+        if latest_manifest(ctx) is None:
             print(f"No install manifest found under ~/{STATE_DIRNAME}/manifests.", file=sys.stderr)
             return 1
+        # `compact off` is never reversed (that would put the block back), nor the `compact on` it took out.
+        latest, passed = undo_target(ctx)
+        if latest is None:
+            if args.json:
+                print(json.dumps({"restored": [], "deleted": [], "skipped": [], "partial": [], "manifest": ""}, indent=2))
+            else:
+                print(f"Nothing to undo: the last change was `{CLI_NAME} compact off`, and the block is already out. "
+                      f"To turn compact mode on again: `{CLI_NAME} compact on`")
+            return 0
         # A setup run writes one manifest per step; undo all of them, newest first.
-        paths = setup_run_manifests(ctx, latest)
+        paths = [p for p in setup_run_manifests(ctx, latest) if p not in passed]
     result = {"restored": [], "deleted": [], "skipped": [], "partial": [],
               "manifest": ", ".join(str(p) for p in paths)}
     for path in paths:
@@ -981,7 +989,7 @@ def main(argv=None) -> int:
     tr.add_argument("--no-diff", action="store_true", help="don't print the unified diff")
     tr.add_argument("--json", action="store_true")
 
-    cp = sub.add_parser("compact", help="optional rules block for complete answers in fewer tokens: "
+    cp = sub.add_parser("compact", help="optional rules block for shorter, cleaner reports: "
                                         "on, off, or (with neither) where it is now")
     _add_context_args(cp)
     cp.add_argument("action", nargs="?", choices=["on", "off"], help="turn compact mode on or off in this project")

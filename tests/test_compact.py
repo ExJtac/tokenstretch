@@ -233,3 +233,148 @@ def test_start_offers_it_and_start_compact_applies_it_with_one_undo(tmp_path):
     assert "Already set up" in out and "compact on" not in out       # on already: no offer, nothing to do
     assert _cli(w, "undo")[0] == 0
     assert _snapshot(w) == before
+
+
+# ---- restore: off, undo, line endings, one block ---------------------------------------------------
+
+def test_undo_after_compact_off_does_not_put_the_block_back(tmp_path):
+    w = _world(tmp_path)
+    md = w / "root" / "CLAUDE.md"
+    before = _snapshot(w)
+    assert _cli(w, "compact", "on")[0] == 0 and _cli(w, "compact", "off")[0] == 0
+    code, out, _ = _cli(w, "undo")
+    assert code == 0 and "Nothing to undo" in out and _snapshot(w) == before
+    assert COMPACT_START not in md.read_text()
+    assert json.loads(_cli(w, "undo", "--json")[1])["restored"] == []
+    # a new `on` is the latest change again, and undo reverses that one
+    assert _cli(w, "compact", "on")[0] == 0 and COMPACT_START in md.read_text()
+    assert _cli(w, "undo")[0] == 0 and _snapshot(w) == before
+
+
+def test_undo_after_compact_off_goes_to_the_setup_run_before_it(tmp_path):
+    w = _world(tmp_path)
+    md = w / "root" / "CLAUDE.md"
+    before = _snapshot(w)
+    assert _cli(w, "setup", "--yes", "--no-installs")[0] == 0
+    after_setup = _snapshot(w)
+    assert _cli(w, "compact", "on")[0] == 0 and _cli(w, "compact", "off")[0] == 0
+    assert _snapshot(w) == after_setup
+    assert _cli(w, "undo")[0] == 0                                   # reverses setup, not the compact switch
+    assert COMPACT_START not in md.read_text() and RULES_START not in md.read_text()
+    assert _snapshot(w) == before
+
+
+def test_compact_off_deletes_a_file_that_compact_created_and_undo_is_clean(tmp_path):
+    w = _world(tmp_path)
+    md = w / "root" / "CLAUDE.md"
+    md.unlink()
+    before = _snapshot(w)
+    assert _cli(w, "compact", "on")[0] == 0 and md.is_file()
+    assert _cli(w, "compact", "off")[0] == 0
+    assert not md.exists() and _snapshot(w) == before                # not left behind empty
+    assert _cli(w, "undo")[0] == 0 and not md.exists()               # and undo does not bring it back
+    # the deleted file was backed up first
+    assert any(COMPACT_START in p.read_text() for p in (w / "home" / ".tokenstretch" / "backups").rglob("CLAUDE.md"))
+
+
+def test_compact_off_keeps_a_created_file_the_user_wrote_in(tmp_path):
+    w = _world(tmp_path)
+    md = w / "root" / "CLAUDE.md"
+    md.unlink()
+    assert _cli(w, "compact", "on")[0] == 0
+    md.write_bytes(b"# Mine\n\n" + md.read_bytes())
+    assert _cli(w, "compact", "off")[0] == 0
+    assert md.read_bytes().startswith(b"# Mine\n") and COMPACT_START.encode() not in md.read_bytes()
+
+
+@pytest.mark.parametrize("raw", [
+    b"# P\r\n\r\nline one\nline two\r\nline three\n",                # mixed, LF last
+    b"# P\n\nline one\r\nline two\r\n",                              # mixed, CRLF last
+    b"# P\r\nno final line ending",
+    b"# P\nno final line ending",
+    b"# P\n\n\n",
+    b"# P\r\n\r\n",
+    b"caf\xe9 is not UTF-8\n",                                       # bytes that are not UTF-8 come back as they were
+    b"",
+])
+def test_off_and_undo_restore_any_line_endings_byte_for_byte(tmp_path, raw):
+    w = _world(tmp_path)
+    md = w / "root" / "CLAUDE.md"
+    md.write_bytes(raw)
+    before = _snapshot(w)
+    assert _cli(w, "compact", "on")[0] == 0
+    on = md.read_bytes()
+    assert on.startswith(raw) and COMPACT_START.encode() in on       # nothing already there is changed
+    assert _cli(w, "compact", "off")[0] == 0 and _snapshot(w) == before
+    assert _cli(w, "compact", "on")[0] == 0 and _cli(w, "undo")[0] == 0 and _snapshot(w) == before
+
+
+def test_mixed_line_endings_keep_every_existing_byte_when_the_file_was_edited_since(tmp_path):
+    w = _world(tmp_path)
+    md = w / "root" / "CLAUDE.md"
+    raw = b"# P\r\n\r\nline one\nline two\r\n"
+    md.write_bytes(raw)
+    assert _cli(w, "compact", "on")[0] == 0
+    md.write_bytes(md.read_bytes() + b"added later\n")               # no longer what `on` wrote: text removal
+    assert _cli(w, "compact", "off")[0] == 0
+    assert md.read_bytes() == raw + b"\r\nadded later\n" and COMPACT_START.encode() not in md.read_bytes()
+
+
+def test_block_text_helpers_never_change_an_existing_character():
+    for text in ["a\r\nb\nc\r\n", "a\nb\r\nc\n", "a\r\nb", "a\r\n\r\n", f"a\r\nb\n\r\n{RULES}".replace("\n", "\r\n")]:
+        on = add_compact_block(text)
+        assert on.startswith(text[:text.find(RULES_END)] if RULES_END in text else text)
+        nl = "\r\n" if text.count("\r\n") > text.count("\n") - text.count("\r\n") else "\n"
+        block = on[on.index(COMPACT_START):on.index(COMPACT_END)]
+        assert ("\r\n" in block) == (nl == "\r\n") and block.replace("\r\n", "").count("\n") == (0 if nl == "\r\n" else block.count("\n"))
+        # Text removal is exact when the file ended with one line ending. Other endings are restored
+        # from the backup instead (see the byte-for-byte test above), because the text alone cannot say
+        # whether a blank line in front of the block was there before.
+        if text.endswith("\n") and not text.endswith(("\n\n", "\n\r\n")):
+            assert remove_compact_block(on) == text
+
+
+def test_setup_after_a_standalone_compact_block_leaves_one_block(tmp_path):
+    w = _world(tmp_path)
+    md = w / "root" / "CLAUDE.md"
+    before = _snapshot(w)
+    assert _cli(w, "compact", "on")[0] == 0
+    standalone = md.read_text()
+    assert standalone.count("## ") == 1 and RULES_START not in standalone
+    assert _cli(w, "setup", "--yes", "--no-installs")[0] == 0
+    both = md.read_text()
+    assert both.count(COMPACT_START) == 1 and both.count(RULES_START) == 1
+    assert both.count("## ") == 1                                    # one block, one heading
+    assert both.index(RULES_START) < both.index(COMPACT_START) < both.index(COMPACT_END) < both.index(RULES_END)
+    assert both.count("Read narrowly") == 1 and "Search first" not in both
+    assert _cli(w, "compact", "off")[0] == 0
+    assert COMPACT_START not in md.read_text() and md.read_text().count(RULES_START) == 1
+    # CLAUDE.md is no longer what setup wrote, so undo refuses that file, as for any file edited
+    # since setup, and leaves it as it is. It does not put the compact block back.
+    left = md.read_bytes()
+    assert _cli(w, "undo")[0] == 2 and md.read_bytes() == left
+
+
+def test_a_deleted_file_is_put_back_by_undo_and_never_over_a_new_one(tmp_path):
+    from tokenstretch.installer import DriftError, undo_manifest
+    w = _world(tmp_path)
+    md, ctx = w / "root" / "CLAUDE.md", _ctx(w)
+    raw = md.read_bytes()
+    with credential_guard():
+        done = apply_changes(ctx, [{"path": str(md), "kind": "delete", "reason": "test"}], stamp="del-1")
+    assert not md.exists() and done["manifest"]["files"][0]["action"] == "deleted"
+    md.write_text("something new\n")
+    with pytest.raises(DriftError):
+        undo_manifest(done["manifest_path"])
+    assert md.read_text() == "something new\n"
+    md.unlink()
+    assert undo_manifest(done["manifest_path"])["restored"] == [str(md)] and md.read_bytes() == raw
+    assert undo_manifest(done["manifest_path"])["skipped"] == [str(md)]
+
+
+def test_undo_reads_the_switch_from_manifests_written_before_the_key_existed():
+    from tokenstretch.installer import compact_switch
+    assert compact_switch({"profile": "compact", "title": "Take the compact-mode rules out of CLAUDE.md"}) == "off"
+    assert compact_switch({"profile": "compact", "title": "Add the compact-mode rules to CLAUDE.md"}) == "on"
+    assert compact_switch({"profile": "clean", "title": "Take"}) is None
+    assert compact_switch({"profile": "compact", "compact": "on", "title": "Take"}) == "on"

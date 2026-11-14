@@ -64,7 +64,7 @@ def planned_changes(ctx: Context, items, pace_auto_missing: bool, compact_items=
         rows.append({"id": PACE_AUTO_ID, "title": "Switch on automatic plan readings (`pace auto`)",
                      "files": [_short(str(pc.state_path(ctx.home)), ctx.home)]})
     if compact_items:
-        rows.append({"id": COMPACT_ID, "title": "Turn on compact mode (optional rules: shorter replies, nothing left out)",
+        rows.append({"id": COMPACT_ID, "title": "Turn on compact mode (optional rules: shorter, cleaner reports)",
                      "files": [_short(ch["path"], ctx.home) for i in compact_items for ch in i.changes]})
     return rows
 

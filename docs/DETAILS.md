@@ -445,7 +445,7 @@ The proposed edit never rewrites or summarizes your prose. It only removes exact
 
 ## Compact mode (optional)
 
-Compact mode is a short rules block for your project instruction file. It asks the agent for the same answer in fewer tokens. It is not terse or broken speech: the conclusion, the caveats and the next steps all stay. It is off by default.
+Compact mode is a short rules block for your project instruction file. It gives shorter, cleaner reports. It is not terse or broken speech: the conclusion, the caveats and the next steps all stay. It is off by default.
 
 ```sh
 tokenstretch compact on        # add the rules to this project
@@ -469,9 +469,9 @@ Where it goes: the project `CLAUDE.md` (Claude Code) and `AGENTS.md` (Codex), wh
 
 If the file already has the credit-saving rules block from setup, the compact rules go inside that block, without rule 7, because the block already says it. So there is one block and no rule twice. The block is paid for on every step, so it is kept small: about 175 tokens alone, about 140 inside the rules block (approx. tokens = characters / 4), and a test fails if it reaches 200.
 
-Each file is backed up before it is changed. `tokenstretch compact off` takes the block out at any time. `tokenstretch undo` right after `compact on` puts the file back byte for byte; after `start --compact`, one `undo` reverses the whole run. A session that is already open keeps the rules it started with; the change applies to new sessions.
+Each file is backed up before it is changed. `tokenstretch compact off` takes the block out at any time. `tokenstretch undo` right after `compact on` puts the file back byte for byte; after `start --compact`, one `undo` reverses the whole run. `compact off` on a file that has not changed since `compact on` also puts it back byte for byte, whatever its line endings, and deletes a file that `compact on` created. In a file edited in between, only the block is taken out. `undo` never reverses a `compact off`: it passes over that switch, and the `compact on` it took out, and reverses the change before them. A session that is already open keeps the rules it started with; the change applies to new sessions.
 
-What is not known yet: how much this saves. A rules block changes what the agent writes, and the block itself costs tokens on every step, so the net effect has to be measured with the same model on both sides and several runs a side. Until that is done, tokenstretch makes no saving claim for compact mode.
+No saving is claimed for compact mode. A bench with the same model on both sides, three runs a side, showed none: cost ratio on/off 0.97, with overlapping ranges. The final reports were about 21% shorter and nothing was dropped. The block itself costs tokens on every step.
 
 ## Write a brief that stays cheap
 
