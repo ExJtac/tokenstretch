@@ -187,21 +187,16 @@ def format_report(d: dict) -> list[str]:
     return out
 
 
-def _write(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)   # entries can hold keys: owner-only
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
-
-
 def switch(home: Path, names: list[str], on: bool, apply: bool = False) -> dict:
     """Move connectors between the user file and the off file. Dry-run unless `apply`.
 
-    Returns {"moved": [...], "skipped": {name: reason}, "applied": bool}. The entry is moved as it is;
-    nothing in it is read, printed or changed.
+    Returns {"moved": [...], "skipped": {name: reason}, "applied": bool}, plus "manifest" (its path)
+    when applied. The entry is moved as it is; nothing in it is read, printed or changed.
+
+    Both files are written the way setup writes: each is backed up first and the change is recorded
+    in a manifest, so `undo` puts the switch back. An entry can hold a key, so the two files, their
+    backups and the copies of what was written are all readable by the owner only. The manifest
+    holds paths and checksums, never an entry.
     """
     user_file, park_file = home / ".claude.json", home / PARK
     data = _json(user_file)
@@ -220,18 +215,27 @@ def switch(home: Path, names: list[str], on: bool, apply: bool = False) -> dict:
         return {"moved": moved, "skipped": skipped, "applied": False}
     if not on and not user_file.is_file():
         return {"moved": [], "skipped": {n: "the user file could not be read" for n in names}, "applied": False}
-    if user_file.is_file():                          # keep the file as it was, owner-only like the off file
-        keep = home / ".tokenstretch" / "backups" / f"claude.json.{int(time.time())}.bak"
-        keep.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(keep, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(user_file.read_bytes())
+    from .context import Context
+    from .installer import _now_stamp, apply_changes, kit_root
+
     for name in moved:
         dst[name] = src.pop(name)
-    _write(park_file, {"mcpServers": off})          # the off file first: an entry is never in neither file
     data["mcpServers"] = live
-    _write(user_file, data)
-    return {"moved": moved, "skipped": skipped, "applied": True}
+    word = "on" if on else "off"
+    reason = f"connectors {word}: {len(moved)} moved"       # a count, not the names or the entries
+    changes = [                                      # the off file first: an entry is never in neither file
+        {"path": str(park_file), "content": json.dumps({"mcpServers": off}, indent=2) + "\n",
+         "private": True, "reason": reason},
+        {"path": str(user_file), "content": json.dumps(data, indent=2) + "\n", "private": True, "reason": reason},
+    ]
+    ctx = Context(home=home, root=home)
+    base, n = f"{_now_stamp()}-connectors", 1
+    while (kit_root(ctx) / "manifests" / f"{base}-{n:02d}.json").exists():   # two switches in the same second
+        n += 1
+    stamp = f"{base}-{n:02d}"                        # numbered so that the newest sorts last, as undo expects
+    done = apply_changes(ctx, changes, stamp=stamp, profile="connectors",
+                         extra_manifest={"title": f"Switch connectors {word}"})
+    return {"moved": moved, "skipped": skipped, "applied": True, "manifest": done["manifest_path"]}
 
 
 def off_note(home: Path) -> str:
