@@ -100,6 +100,14 @@ def test_install_from_pinned_tag_runs_offline(tmp_path, release):
     assert f"commit:{release['commit']}" in (data / "install-manifest.txt").read_text()
     out = subprocess.run([str(shim), "--version"], capture_output=True, text=True, env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
     assert out.returncode == 0 and out.stdout.startswith("tokenstretch ")
+    # Run inside a project that has its own tokenstretch/ folder: the installed copy still answers.
+    other = tmp_path / "project" / "tokenstretch"
+    other.mkdir(parents=True)
+    (other / "__init__.py").write_text("")
+    (other / "__main__.py").write_text("print('WRONG COPY')\n")
+    there = subprocess.run([str(shim), "--version"], capture_output=True, text=True, cwd=other.parent,
+                           env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
+    assert there.returncode == 0 and there.stdout == out.stdout and "WRONG COPY" not in there.stdout
     # Nothing set up, no shell file touched, no state dir created.
     assert not (home / ".tokenstretch").exists() and not (home / ".zshrc").exists()
     assert "not on your PATH" in r.stdout

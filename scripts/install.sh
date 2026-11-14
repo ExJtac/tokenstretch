@@ -259,7 +259,8 @@ if [ "$DRY_RUN" = 0 ]; then
     cat > "$SHIM" <<SH
 #!/bin/sh
 $MARKER
-exec "$VENV/bin/python" -m tokenstretch "\$@"
+# -P: never import from the folder the command is run in (a project with its own tokenstretch/ folder)
+exec "$VENV/bin/python" -P -m tokenstretch "\$@"
 SH
     chmod 755 "$SHIM"
 fi

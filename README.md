@@ -140,7 +140,7 @@ sh install.sh
 What the installer does:
 - It installs one pinned release, never "latest". The tag and commit are written at the top of the script. With git, it clones the pinned tag and refuses if the tag doesn't point at the pinned commit. Without git, it downloads that commit's tarball and refuses unless its SHA-256 matches the pinned hash. That fetch is its only network use.
 - It installs into its own folder, `~/.local/share/tokenstretch`, with a private venv made by `python -m venv --without-pip`. tokenstretch has no dependencies, so there's no pip and nothing from PyPI.
-- It adds a `tokenstretch` launcher in `~/.local/bin`.
+- It adds a `tokenstretch` launcher in `~/.local/bin`. The launcher always runs the installed copy, whatever folder you are in.
 - It never edits your shell startup files unless you pass `--add-to-path`, and it backs them up first when you do.
 - It never runs `setup` or installs other tools. There's no telemetry and no install ping.
 

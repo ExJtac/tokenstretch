@@ -6,7 +6,9 @@ sizes the skills in `~/.claude/skills/<name>/`. This module adds the three place
 
   * plugins installed from the terminal (`~/.claude/plugins/installed_plugins.json`, switched in
     `enabledPlugins` in `~/.claude/settings.json`);
-  * plugins the desktop app adds (`~/.claude/plugins/synced/<id>/<plugin>/`);
+  * plugins the desktop app adds (`~/.claude/plugins/synced/<id>/<plugin>/`). The app also keeps
+    plugins there that it only offers; `<plugin>.meta.json` marks those `available`, and they are
+    left out because no session loads them;
   * skills the desktop app adds (`~/.claude/skills/synced/<id>/<skill>/SKILL.md`).
 
 Sizes are the listing text only (name + description, bytes / 4), an estimate. Use is counted from
@@ -62,6 +64,15 @@ def _json(path: Path) -> dict:
         return {}
 
 
+def _only_offered(root: Path) -> bool:
+    """True when the app's note beside a synced plugin says it is on offer, not installed.
+
+    The desktop app keeps a copy of catalog plugins it only offers. `<plugin>.meta.json` next to the
+    folder then says `"installation_preference": "available"`. No session loads such a plugin.
+    """
+    return _json(root.parent / f"{root.name}.meta.json").get("installation_preference") == "available"
+
+
 def _plugin(root: Path) -> dict:
     """Skill names, listing bytes and connector count of one plugin folder."""
     names, size = [], 0
@@ -96,7 +107,8 @@ def found(home: Path) -> list[dict]:
     synced = claude / "plugins" / "synced"
     for account in sorted(synced.iterdir()) if synced.is_dir() else []:
         for root in sorted(account.iterdir()) if account.is_dir() else []:
-            if root.is_dir() and not root.is_symlink() and (root / ".claude-plugin").is_dir():
+            if (root.is_dir() and not root.is_symlink() and (root / ".claude-plugin").is_dir()
+                    and not _only_offered(root)):
                 out.append({"kind": "plugin", "name": root.name, "where": "app", "key": root.name, "root": str(root),
                             **_plugin(root)})
     synced = claude / "skills" / "synced"
