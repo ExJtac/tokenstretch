@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .adapters.claude_paths import skills_dir
 from .context import Context
 from .identity import CLI_NAME, PRODUCT_NAME, VERSION
 from .trim import (APPROX, _FENCE, _HEADING, _display, _exists, _fence_mask, _isatty, _under, approx_tokens,
@@ -219,7 +220,7 @@ def plan_skills(ctx: Context, min_tokens: int = DEFAULT_MIN_TOKENS, adapters=Non
                 skipped.append({"file": f.display, "reason": why})
             continue
         in_project = f.scope != "user" and _under(f.real, ctx.root)
-        base = (ctx.root if in_project else ctx.home) / ".claude" / "skills"
+        base = skills_dir(ctx.root if in_project else ctx.home)
         lines = f.lines()
         secs, rules = find_sections(lines, RULES_START, RULES_END)
         first_ln = next((i for i, l in enumerate(lines) if l.strip()), 0)

@@ -35,7 +35,7 @@ Both runs must pass. CI (`.github/workflows/test.yml`) runs both on every push a
 
 1. Read `ADAPTERS.md` (the adapter contract and current adapters and their paths).
 2. Create `tokenstretch/adapters/<tool>.py` with a class that subclasses `Adapter` (or `DoctorOnlyAdapter` for a doctor-only tool). At minimum, implement `detect`, `checks`, and `privacy_checks`. Optionally add `effective_models`, `live_sessions`, `setup_items`, log parsing for `bench`, and hook planners.
-3. Register it in `tokenstretch/adapters/__init__.py`.
+3. Register it in `tokenstretch/adapters/_registry.py`.
 4. Add a fixture under `tests/fixtures/<tool>/` (fake configs only, no real secrets) and tests for each check ID it emits.
 5. Cite your source for every path and key (official docs or source at a commit). Mark anything you couldn't verify as **unverified** in code comments and `ADAPTERS.md`.
 

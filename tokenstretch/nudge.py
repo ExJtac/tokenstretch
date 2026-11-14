@@ -166,10 +166,11 @@ def _launch_note(ctx, payload: dict, s: dict, t: float, repeat_s: float) -> dict
 
 def end_hook_on(home: Path) -> bool:
     """True when Claude Code's user settings run this tool's `nudge` as a `Stop` hook."""
+    from .adapters.claude_paths import settings_file
     from .jsonkey import commands_at
     try:    # the Stop hook commands only: the settings file can hold keys under `env`
         return any(" nudge" in c and CLI_NAME in c
-                   for c in commands_at(home / ".claude" / "settings.json", "hooks", "Stop"))
+                   for c in commands_at(settings_file(home), "hooks", "Stop"))
     except Exception:  # noqa: BLE001 - unreadable or another shape: keep the older behaviour
         return False
 

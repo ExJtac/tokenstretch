@@ -12,6 +12,7 @@ from ..identity import CLI_NAME, PACKAGE_NAME, PRODUCT_NAME, STATE_DIRNAME
 from ..files import count_lines_bytes, env_truthy, frontmatter, import_refs, read_json, walk_glob_names
 from ..findings import Finding, UsageRecord
 from ..util import is_loopback_url
+from . import claude_paths as paths
 from .base import Adapter, SetupItem, add_rules_block, rules_block, BaseUrl, ConfigLocation, DetectResult, HeadlessRun, HookPlan, InstallStep, InstructionFile, McpServer
 CACHE_DISABLE = (
     "DISABLE_PROMPT_CACHING",
@@ -28,9 +29,9 @@ MCP_TOOL = re.compile(r"^mcp__([^_]+(?:_[^_]+)*)__")
 
 def _settings_paths(ctx: Context) -> list[Path]:
     return [
-        ctx.home / ".claude" / "settings.json",
-        ctx.root / ".claude" / "settings.json",
-        ctx.root / ".claude" / "settings.local.json",
+        paths.settings_file(ctx.home),
+        paths.settings_file(ctx.root),
+        paths.local_settings_file(ctx.root),
     ]
 
 
@@ -48,9 +49,9 @@ def _merged_settings(ctx: Context) -> tuple[dict, dict[str, str]]:
     merged: dict = {}
     sources: dict[str, str] = {}
     order = [
-        ctx.home / ".claude" / "settings.json",
-        ctx.root / ".claude" / "settings.json",
-        ctx.root / ".claude" / "settings.local.json",
+        paths.settings_file(ctx.home),
+        paths.settings_file(ctx.root),
+        paths.local_settings_file(ctx.root),
     ]
     for p in order:
         data = read_json(p)
@@ -75,7 +76,7 @@ def _merged_settings(ctx: Context) -> tuple[dict, dict[str, str]]:
 
 
 def _claude_json(ctx: Context) -> tuple[Path, dict]:
-    p = ctx.home / ".claude.json"
+    p = paths.user_file(ctx.home)
     data = read_json(p)
     return p, data if isinstance(data, dict) and "__error__" not in data else {}
 
@@ -1918,8 +1919,8 @@ class ClaudeCodeAdapter(Adapter):
         )
 
     # ---- /handoff: makes a fresh start cheap ------------------------------------------------
-    HANDOFF_NOTE = ".claude/handoff.md"
-    HANDOFF_PREV = ".claude/handoff.prev.md"   # the note before the last one, kept when a new one is written
+    HANDOFF_NOTE = paths.HANDOFF_NOTE.as_posix()
+    HANDOFF_PREV = paths.HANDOFF_PREV.as_posix()   # the note before the last one, kept when a new one is written
 
     def _handoff_paths(self, ctx: Context) -> list[Path]:
         """Every place a `/handoff` shortcut could already live (user and project, skill or command)."""

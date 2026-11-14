@@ -24,6 +24,7 @@ import re
 import time
 from pathlib import Path
 
+from .adapters import claude_paths as paths
 from .files import count_lines_bytes
 from .jsonkey import count_key, read_key
 from .util import frontmatter
@@ -82,19 +83,18 @@ def _plugin(root: Path) -> dict:
         if got:
             names.append(got[0])
             size += got[1]
-    connectors = count_key(root / ".mcp.json", "mcpServers")   # a number only: an entry can hold a key
+    connectors = count_key(paths.connectors_file(root), "mcpServers")   # a number only: an entry can hold a key
     hooks = ((root / "hooks").is_dir() or (root / "hooks.json").is_file()
-             or bool(_json(root / ".claude-plugin" / "plugin.json").get("hooks")))
+             or bool(_json(paths.plugin_marker_dir(root) / "plugin.json").get("hooks")))
     return {"skills": names, "bytes": size, "connectors": connectors, "hooks": hooks}
 
 
 def found(home: Path) -> list[dict]:
     """Every plugin and app-added skill that is switched on, with its listing size. No log reads."""
-    claude = home / ".claude"
     out: list[dict] = []
-    enabled = read_key(claude / "settings.json", "enabledPlugins")   # this key only: `env` can hold keys
+    enabled = read_key(paths.settings_file(home), "enabledPlugins")   # this key only: `env` can hold keys
     enabled = enabled if isinstance(enabled, dict) else {}
-    installed = _json(claude / "plugins" / "installed_plugins.json").get("plugins")
+    installed = _json(paths.installed_plugins_file(home)).get("plugins")
     for key, rows in sorted(installed.items()) if isinstance(installed, dict) else []:
         if enabled.get(key) is not True or not isinstance(rows, list) or not rows:
             continue
@@ -104,14 +104,14 @@ def found(home: Path) -> list[dict]:
             continue
         out.append({"kind": "plugin", "name": key.split("@")[0], "where": "terminal", "key": key, "root": str(root),
                     **_plugin(root)})
-    synced = claude / "plugins" / "synced"
+    synced = paths.synced_plugins_dir(home)
     for account in sorted(synced.iterdir()) if synced.is_dir() else []:
         for root in sorted(account.iterdir()) if account.is_dir() else []:
-            if (root.is_dir() and not root.is_symlink() and (root / ".claude-plugin").is_dir()
+            if (root.is_dir() and not root.is_symlink() and paths.plugin_marker_dir(root).is_dir()
                     and not _only_offered(root)):
                 out.append({"kind": "plugin", "name": root.name, "where": "app", "key": root.name, "root": str(root),
                             **_plugin(root)})
-    synced = claude / "skills" / "synced"
+    synced = paths.synced_skills_dir(home)
     for account in sorted(synced.iterdir()) if synced.is_dir() else []:
         for sk in sorted(account.iterdir()) if account.is_dir() else []:
             got = _listing(sk / "SKILL.md", sk.name) if sk.is_dir() and not sk.is_symlink() else None
@@ -131,7 +131,7 @@ def used(home: Path, now: float | None = None, days: int = USE_DAYS, max_bytes: 
     skills: dict[str, int] = {}
     plugins: dict[str, int] = {}
     files = []
-    base = home / ".claude" / "projects"
+    base = paths.session_logs_dir(home)
     for dirpath, _dirs, names in os.walk(base) if base.is_dir() else []:
         for n in names:
             if n.endswith(".jsonl"):
