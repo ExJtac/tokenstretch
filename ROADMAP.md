@@ -32,6 +32,8 @@
 
 - `trim`: offer moving blocks out of user-level files once each tool's import syntax is verified, and flag headings left empty after duplicates are removed.
 
+- Move the Claude Code specifics that live outside the adapter into `tokenstretch/adapters/claude_code.py`, behind the adapter interface in `ADAPTERS.md`. Today these core modules name Claude Code paths, file formats or flags directly: `auto.py` (the hook payloads and `.claude/handoff.md`), `connectors.py` (`~/.claude.json` and the `mcp__` tool names in the logs), `startup_plugins.py` (the plugin and skill folders), `trim_skills.py` (the skill file format), `rework.py` (the log row shapes), parts of `nudge.py` (the hook replies and the `Stop` hook check) and the worker settings in `startup.py` (`agent_settings`). They work, and nothing is moved yet: this is a note of what a second full adapter for these features would have to lift out first.
+
 ## Good first issues
 - **Goose adapter** (doctor-only): detect the config, check the default model and telemetry. See `ADAPTERS.md` for the interface.
 - **Devin / Windsurf adapter** (doctor-only), starting with instruction-file size and duplicate rules.

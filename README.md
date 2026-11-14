@@ -86,7 +86,8 @@ The telemetry and terms-of-service checks are about privacy and safety, not savi
 - **No telemetry, no analytics, no phone-home, no update checks unless you run `tokenstretch update`.** No outbound network libraries: that one command starts `curl` to read two public files and sends nothing about you. The only socket tokenstretch itself opens is the optional dashboard, bound to 127.0.0.1 with a one-time key, and tests block every non-loopback connection.
 - **No network calls**, except the pinned installs you confirm in a separate prompt and `tokenstretch update` when you run it.
 - **Never opens credential files.** Login files and tokens are only `stat`'d (checked for existence and permissions), never read, copied, symlinked, or proxied. Tests plant canary credentials and fail if any are opened.
-- **Your prompts, code, and logs never leave your machine because of this tool.** Session logs are read locally, only to show model and history size.
+- **Your prompts, code, and logs never leave your machine because of this tool.** Session logs are read locally: for model, usage and history size, for counts of tool and connector calls, and for the memory check (`doctor` W29), which reads up to 2 MB from the end of the newest 5 session logs in a project's folder and only counts the rows that name another project.
+- **Settings files that can hold a key are read for one thing at a time.** `~/.claude/settings.json` and a plugin's `.mcp.json` can hold an API key next to ordinary settings. tokenstretch reads them for what a command needs (which plugins are on, how many connectors, whether a hook is set); no value from them is kept, logged or shown. [Where a switched-off connector's entry is held](docs/DETAILS.md#see-which-connectors-you-use).
 - **Every file change is backed up**, and `undo` restores it.
 - **Checkable:** the whole test suite also runs with networking disabled (`unshare -rn`).
 

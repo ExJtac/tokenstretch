@@ -1372,6 +1372,11 @@ class ClaudeCodeAdapter(Adapter):
         Each project has its own memory folder, and every session in the project loads that folder's
         index. An entry about another project is paid for by sessions that never need it. Only file and
         folder names are compared; no memory file is opened.
+
+        Session logs are read, though: a folder whose own recent sessions work on the other project is
+        left out, and `_memory_word_in_use` finds that by reading up to 2 MB from the end of each of the
+        newest 5 session logs in the folder and counting the rows that hold the name. Nothing from a
+        log is kept or shown.
         """
         proj = ctx.home / ".claude" / "projects"
         try:
