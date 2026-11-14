@@ -1,4 +1,4 @@
-"""Compact mode: an optional rules block that asks for complete answers in fewer tokens.
+"""Compact mode: an optional rules block for shorter, cleaner reports. No saving is claimed.
 
 Off by default. `compact on` adds the block to each detected tool's project instruction file,
 `compact off` takes it out, and plain `compact` says where it is. Each adapter names its own file;
@@ -14,7 +14,7 @@ from typing import Callable
 from .adapters.base import COMPACT_START, SetupItem
 from .context import Context
 from .identity import CLI_NAME
-from .installer import _now_stamp, apply_changes, kit_root
+from .installer import _now_stamp, apply_changes, compact_switch, kit_root, sha256_bytes, sha256_file
 from .setup import _short, detected_adapters
 
 
@@ -27,8 +27,61 @@ def plan(ctx: Context, on: bool, adapters=None) -> list[SetupItem]:
         if item is None or any(Path(ch["path"]) in planned for ch in item.changes):
             continue
         planned.update(Path(ch["path"]) for ch in item.changes)
+        if not on:
+            for ch in item.changes:
+                _exact_off(ctx, ch)
         items.append(item)
     return items
+
+
+def _switched_on(ctx: Context, path: str) -> tuple[dict, Path] | None:
+    """The record of the `compact on` that last changed `path`, with its backup folder.
+
+    None when a later change to the file was recorded by anything else: then that record no longer
+    says what the file was like before the block.
+    """
+    d = kit_root(ctx) / "manifests"
+    for p in sorted(d.glob("*.json"), reverse=True) if d.is_dir() else []:
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for rec in (data.get("files") or []) if isinstance(data, dict) else []:
+            if rec.get("path") == path:
+                on = compact_switch(data) == "on" and rec.get("action") in {"created", "modified"}
+                return (rec, Path(str(data.get("backup_dir") or ""))) if on else None
+    return None
+
+
+def _exact_off(ctx: Context, change: dict) -> None:
+    """Make `compact off` put the file back exactly as it was before `compact on`, where that is known.
+
+    Taking the block out of the text cannot always tell what was there before: a file with no final
+    line ending and one with a single line ending look the same once the block is appended. So when
+    the file is still byte for byte what `compact on` wrote, the backup made then goes back, and a
+    file that `compact on` created is deleted instead of being left empty. A file edited since keeps
+    its edits: only the block is taken out of the text.
+    """
+    found = _switched_on(ctx, change["path"])
+    if found is None:
+        return
+    rec, backup_dir = found
+    path = Path(change["path"])
+    left = change.get("content") or b""
+    left = left.encode("utf-8", errors="surrogateescape") if isinstance(left, str) else left
+    if rec.get("action") == "created":
+        if sha256_file(path) == rec.get("sha256_after") or not left.strip():
+            change["kind"], change["content"] = "delete", b""
+            change["reason"] = "delete the file compact mode created; nothing else is in it"
+        return
+    if sha256_file(path) != rec.get("sha256_after") or not rec.get("backup"):
+        return
+    try:
+        before = (backup_dir / rec["backup"]).read_bytes()
+    except OSError:
+        return
+    if sha256_bytes(before) == rec.get("sha256_before"):
+        change["content"] = before
 
 
 def files_on(ctx: Context, adapters=None) -> list[Path]:
@@ -53,13 +106,18 @@ def _run_id(ctx: Context) -> str:
     return run
 
 
-def apply(ctx: Context, items: list[SetupItem], run_id: str | None = None, first: int = 1) -> list[str]:
-    """Write each step with a backup and a manifest. Returns the manifest paths."""
+def apply(ctx: Context, items: list[SetupItem], run_id: str | None = None, first: int = 1, *,
+          on: bool = True) -> list[str]:
+    """Write each step with a backup and a manifest. Returns the manifest paths.
+
+    The manifest says which way the switch went, so `undo` can tell an `off` from an `on`.
+    """
     run_id = run_id or _run_id(ctx)
     manifests = []
     for n, item in enumerate(items, first):
         done = apply_changes(ctx, item.changes, stamp=f"{run_id}-{n:02d}", profile="compact",
-                             extra_manifest={"setup_run": run_id, "setup_item": item.id, "title": item.title})
+                             extra_manifest={"setup_run": run_id, "setup_item": item.id, "title": item.title,
+                                             "compact": "on" if on else "off"})
         manifests.append(done["manifest_path"])
     return manifests
 
@@ -85,7 +143,7 @@ def run_compact(ctx: Context, action: str | None, *, dry_run: bool = False, as_j
               "changes": [{"id": i.id, "title": i.title, "files": [ch["path"] for ch in i.changes]} for i in items]}
     if items and not dry_run:
         try:
-            result["manifests"] = apply(ctx, items)
+            result["manifests"] = apply(ctx, items, on=on)
         except (OSError, RuntimeError, ValueError) as exc:
             out(f"compact stopped: {exc}")
             return 1

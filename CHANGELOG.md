@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+- Compact mode: four restore defects.
+  - `undo` after `compact off` no longer puts the block back. `compact off` is a removal, so `undo` passes over it and over the `compact on` it took out, and reverses the change before them. With nothing before them it says so and changes nothing.
+  - `compact off` deletes a file that `compact on` created, when nothing else was written in it. Before, an empty file stayed. The file is backed up first.
+  - `setup` on a file that already has a standalone compact block leaves one block: the compact rules move inside the new credit-saving rules block, in their short form. Before, the file had two blocks and one rule twice.
+  - Files that mix CRLF and LF line endings, have no final line ending, or hold bytes that are not UTF-8 come back byte for byte. `compact on` no longer rewrites any existing line ending, and `compact off` on a file unchanged since `compact on` puts the backup back as it was. A file edited in between has only the block taken out.
+
+### Changed
+- Compact mode is described as "shorter, cleaner reports". No saving is claimed: a 3 v 3 same-model bench showed none (cost ratio 0.97, ranges overlap). The final reports were about 21% shorter with nothing dropped.
+
 ## [0.9.7] - 2026-11-14
 
 ### Fixed

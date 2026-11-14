@@ -424,6 +424,16 @@ def apply_changes(ctx: Context, changes: list[dict[str, str]], stamp: str | None
             bpath = backup_dir / backup_rel
             bpath.parent.mkdir(parents=True, exist_ok=True)
             _put(bpath, before or b"", private)
+        if ch.get("kind") == "delete":
+            # Take the file away. Its backup was made just above, so undo can put it back.
+            if existed:
+                path.unlink()
+                records.append({
+                    "path": str(path), "action": "deleted", "sha256_before": before_hash, "sha256_after": None,
+                    "backup": backup_rel, "after": None, "reason": ch.get("reason") or "",
+                    **({"private": True} if private else {}),
+                })
+            continue
         # mkdir parents; record new directories
         parent = path.parent
         to_make = []
@@ -556,9 +566,12 @@ def undo_manifest(manifest_path: Path, *, force: bool = False) -> dict[str, Any]
             # Already undone: created file gone, or modified file back to before.
             if action == "created" and actual is None:
                 continue
-            if action == "modified" and actual == before:
+            if action in {"modified", "deleted"} and actual == before:
                 continue
             if actual == expected:
+                continue
+            if action == "deleted":
+                refused.append(rec["path"])   # a new file is in its place: never overwritten without --force
                 continue
             merged = _key_level_undo(rec, backup_dir)
             if merged is not None:
@@ -601,7 +614,7 @@ def undo_manifest(manifest_path: Path, *, force: bool = False) -> dict[str, Any]
                 deleted.append(str(path))
             except OSError as exc:
                 raise RuntimeError(f"could not delete {path}: {exc}") from exc
-        else:  # modified
+        else:  # modified, or deleted: the backup goes back
             if actual == before:
                 skipped.append(str(path))
                 continue
@@ -636,6 +649,45 @@ def latest_manifest(ctx: Context) -> Path | None:
         return None
     files = sorted(d.glob("*.json"))
     return files[-1] if files else None
+
+
+def compact_switch(manifest: dict) -> str | None:
+    """"on" or "off" for a manifest written by a compact-mode switch, else None."""
+    mode = manifest.get("compact")
+    if mode in {"on", "off"}:
+        return mode
+    if manifest.get("profile") == "compact":      # written by 0.9.6 or 0.9.7, before the key existed
+        return "off" if str(manifest.get("title") or "").startswith("Take ") else "on"
+    return None
+
+
+def undo_target(ctx: Context) -> tuple[Path | None, set[Path]]:
+    """The manifest plain `undo` should reverse, and the manifests it must leave alone.
+
+    `compact off` is itself a removal, so undo never reverses it: that would put the block back.
+    The `compact on` it took out is spent too. Both are passed over, and undo goes to the change
+    before them. Returns (None, passed over) when nothing else is left.
+    """
+    d = kit_root(ctx) / "manifests"
+    passed: set[Path] = set()
+    taken_out: set[str] = set()
+    for p in sorted(d.glob("*.json"), reverse=True) if d.is_dir() else []:
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return p, passed
+        mode = compact_switch(data) if isinstance(data, dict) else None
+        files = {str(r.get("path")) for r in (data.get("files") or [])} if isinstance(data, dict) else set()
+        if mode == "off":
+            taken_out |= files
+            passed.add(p)
+            continue
+        if mode == "on" and files and files <= taken_out:
+            taken_out -= files
+            passed.add(p)
+            continue
+        return p, passed
+    return None, passed
 
 
 @dataclass

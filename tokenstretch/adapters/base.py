@@ -119,9 +119,18 @@ def rules_block(mid_model: str, clear_hint: str) -> str:
 
 
 def add_rules_block(existing: str, block: str) -> str | None:
-    """Return new text with the block appended, or None if a block is already there."""
+    """Return new text with the block appended, or None if a block is already there.
+
+    A file that already has a standalone compact block keeps one block: the compact rules move
+    inside the new rules block, in their short form, instead of sitting beside it.
+    """
     if RULES_START in existing:
         return None
+    if COMPACT_START in existing:
+        bare = remove_compact_block(existing)
+        if bare is not None and COMPACT_START not in bare:
+            with_rules = add_rules_block(bare, block)
+            return add_compact_block(with_rules) or with_rules
     if not existing:
         return block
     sep = "\n" if existing.endswith("\n") else "\n\n"
@@ -135,7 +144,7 @@ COMPACT_END = f"<!-- {PRODUCT_NAME}:compact end -->"
 
 
 def compact_block(merged: bool = False) -> str:
-    """Compact mode: complete answers in fewer tokens. Optional, off by default.
+    """Compact mode: shorter, cleaner reports. Optional, off by default. No saving is claimed.
 
     `merged` is the form that sits inside the credit-rules block: no heading of its own, and no
     read-narrowly rule, because that block already has one. Paid on every step, so keep it short.
@@ -156,22 +165,38 @@ def compact_block(merged: bool = False) -> str:
     )
 
 
+def _eol(text: str) -> str:
+    """The line ending most lines of `text` use: CRLF or LF. LF for a tie or an empty text."""
+    crlf = text.count("\r\n")
+    return "\r\n" if crlf > text.count("\n") - crlf else "\n"
+
+
+def _cut_eol(text: str) -> str:
+    """`text` without one trailing line ending, of either kind."""
+    return text[:-2] if text.endswith("\r\n") else text[:-1] if text.endswith("\n") else text
+
+
 def add_compact_block(existing: str) -> str | None:
     """Return new text with compact mode on, or None if it is already on.
 
     A file that has the credit-rules block gets the short form inside that block, so there is one
-    block and no rule twice. Any other file gets the full form appended.
+    block and no rule twice. Any other file gets the full form appended. No existing character is
+    changed: the block is written with the file's own line ending, and the lines already there
+    keep theirs, also when the file mixes CRLF and LF.
     """
     if COMPACT_START in existing:
         return None
+    nl = _eol(existing)
     start = existing.find(RULES_START)
     end = existing.find(RULES_END, start) if start >= 0 else -1
     if end > 0 and existing[end - 1] == "\n":
-        return existing[:end] + compact_block(merged=True) + existing[end:]
+        return existing[:end] + compact_block(merged=True).replace("\n", nl) + existing[end:]
+    block = compact_block().replace("\n", nl)
     if not existing:
-        return compact_block()
-    sep = "" if existing.endswith("\n\n") else "\n" if existing.endswith("\n") else "\n\n"
-    return existing + sep + compact_block()
+        return block
+    one = _cut_eol(existing)
+    sep = nl + nl if one == existing else nl if _cut_eol(one) == one else ""
+    return existing + sep + block
 
 
 def remove_compact_block(existing: str) -> str | None:
@@ -183,11 +208,13 @@ def remove_compact_block(existing: str) -> str | None:
     if end < 0:
         return None
     end += len(COMPACT_END)
-    if existing[end:end + 1] == "\n":
+    if existing[end:end + 2] == "\r\n":
+        end += 2
+    elif existing[end:end + 1] == "\n":
         end += 1
     head, tail = existing[:start], existing[end:]
-    if not tail and head.endswith("\n\n"):
-        head = head[:-1]          # the blank line that was put in front of an appended block
+    if not tail and _cut_eol(head) != head and _cut_eol(_cut_eol(head)) != _cut_eol(head):
+        head = _cut_eol(head)     # the blank line that was put in front of an appended block
     return head + tail
 
 
@@ -384,10 +411,9 @@ class Adapter:
         if path is None or ctx.root.resolve() == ctx.home.resolve():
             return None      # no project folder; never write an instruction file in the home folder
         there = path.is_file()
-        # read the bytes as they are: text mode would turn CRLF into LF, and `off` must restore the file exactly
-        existing = path.read_bytes().decode("utf-8", errors="replace") if there else ""
-        crlf = "\r\n" in existing
-        existing = existing.replace("\r\n", "\n")
+        # Read the bytes as they are and write them back the same way: text mode would turn CRLF
+        # into LF, and a byte that is not UTF-8 must come back as it was, not as a replacement mark.
+        existing = path.read_bytes().decode("utf-8", errors="surrogateescape") if there else ""
         if on:
             if not there and not self.COMPACT_CREATE:
                 return None
@@ -399,8 +425,6 @@ class Adapter:
             new = remove_compact_block(existing)
         if new is None:
             return None
-        if crlf:
-            new = new.replace("\n", "\r\n")
         name = path.name
         return SetupItem(
             id=f"{self.id}-compact-block", adapter_id=self.id,
@@ -408,7 +432,8 @@ class Adapter:
             why="Whole-file reprints, quoted code and recaps are paid for as output and again as history on "
                 "every later step. These rules cut the words and keep the facts.",
             changes=[{
-                "path": str(path), "kind": "modify" if there else "create", "content": new, "key": "compact block",
+                "path": str(path), "kind": "modify" if there else "create",
+                "content": new.encode("utf-8", errors="surrogateescape"), "key": "compact block",
                 "reason": "add a marked compact-mode block" if on else "remove the marked compact-mode block",
             }],
             done=f"added compact mode to {name}" if on else f"took compact mode out of {name}",
