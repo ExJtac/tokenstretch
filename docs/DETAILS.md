@@ -21,6 +21,7 @@ The full guide and implementation notes that used to be in the README. Start wit
 - **A weekly report.** `report --weekly` adds up your local usage logs per week: tokens by type and by model, your biggest session histories, waste spots, and a before/after view since setup. Cost appears only where your logs report it.
 - **A local dashboard.** `dashboard` opens one live page on your own machine with all of the above, updated every 5 seconds. See [Dashboard](#dashboard).
 - **Real measurements, never guesses.** `bench` compares before and after on a throwaway copy of your repo, using your agent's own usage logs. If there's no data, it says `no measurement`.
+- **Only what is new.** `doctor --new` and `watch` tell you only about findings that are new since the last check, with no model and no credits. See [New findings only, with no model](#new-findings-only-with-no-model).
 - **An update you ask for.** `update` shows what changed in a newer release and installs it after you say yes. Nothing checks in the background. See [Update](#update).
 - **Full undo.** Every changed file is backed up under `~/.tokenstretch/backups/`, and each change is recorded in a manifest.
 
@@ -158,6 +159,27 @@ When the session's start-up size is known, the long-history warning also says ab
 The cache warning comes in two forms. If the logs already show it (after a pause of 5+ minutes, the same model re-wrote most of the history to the cache and read almost none back), watch reports how often and how many tokens. If a session with 20K+ tokens of history is sitting idle past the cache lifetime right now (about an hour on a Claude subscription, about five minutes with an API key or a 5-minute cache setting), watch says the discount has probably expired, so you can `/clear` before your next message. That second form is a prediction from the clock, and it says so. Claude Code only for now.
 
 It's read-only and only looks at token counts, model names, tool-call counts, and the paths of files the agent read (never their contents). `--once` does a single pass. `--notify` also pops a desktop notification through your OS's own `osascript` or `notify-send`, if present. Claude Code is fully supported. Codex gets the history, top-model, and growth warnings (its logs don't record file reads). Other tools say "not supported yet".
+
+### New findings only, with no model
+
+`tokenstretch doctor` lists everything it finds, every time. Two ways to hear only about what is new:
+
+- `tokenstretch watch` also runs the doctor checks every 30 minutes (`--checkup MINUTES`, `0` turns it off) and prints a finding the first time it appears. With `--notify` it is also a desktop notification.
+- `tokenstretch doctor --new` lists only the findings that were not there at the last `doctor --new`. The first run records a starting point and lists nothing. `--notify` adds a desktop notification, so a scheduled job can run it with no terminal open:
+
+```bash
+# every hour, from cron: a desktop notification when a new finding appears
+0 * * * * "$HOME/.local/bin/tokenstretch" doctor --new --notify >/dev/null 2>&1
+```
+
+```text
+1 new finding(s) since the last check:
+MED W29 [claude-code]: 3 memory entries in this project's memory folder are named after another project.
+  fix: move them to that project's memory folder
+  source: ~/.claude/projects/-Users-me-app/memory
+```
+
+Both are plain scripts. No model runs, so they use no credits, and the notices go to you: the terminal or the desktop, never into an agent's conversation. What is remembered is one short hash per finding in `~/.tokenstretch/findings-seen.json`: no message, no path. A finding that goes away and comes back counts as new again, and so does one whose severity changes.
 
 ## Autopilot: shorter sessions with nothing to type
 
