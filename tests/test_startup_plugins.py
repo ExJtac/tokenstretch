@@ -63,6 +63,25 @@ def test_found_lists_enabled_plugins_and_app_skills(tmp_path):
     assert got[("plugin", "hooked", "terminal")]["hooks"] is True
 
 
+def _app_plugin(home, name, meta=None):
+    app = home / ".claude" / "plugins" / "synced" / "acct" / name
+    (app / ".claude-plugin").mkdir(parents=True)
+    _skill(app / "skills" / "go", "go")
+    if meta is not None:
+        (app.parent / f"{name}.meta.json").write_text(meta)
+
+
+def test_app_plugins_that_are_only_on_offer_are_left_out(tmp_path):
+    home = _home(tmp_path)
+    _app_plugin(home, "offered", json.dumps({"installation_preference": "available"}))
+    _app_plugin(home, "added", json.dumps({"installation_preference": "installed"}))
+    _app_plugin(home, "odd", "{not json")
+    _app_plugin(home, "listy", "[1, 2]")
+    names = {i["name"] for i in sp.found(home) if i["kind"] == "plugin" and i["where"] == "app"}
+    assert names == {"viewer", "added", "odd", "listy"}      # no note, another value or an unreadable note: still listed
+    assert "offered" not in {p["name"] for p in sp.parts(home, NOW)}
+
+
 def test_use_is_counted_from_logs(tmp_path):
     home = _home(tmp_path)
     _log(home, [_call("Skill", skill="tool:alpha"), _call("Skill", skill="anthropic-skills:sheet"),
