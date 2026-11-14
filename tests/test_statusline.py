@@ -575,30 +575,26 @@ def test_nudge_at_the_end_of_a_reply_is_a_message_for_the_user_only(tmp_path):
     assert again is None and looping is None
 
 
-def test_prompt_note_is_not_typed_twice_when_the_end_hook_is_installed(tmp_path):
+def test_prompt_note_is_still_typed_with_the_end_hook_installed(tmp_path):
+    # The desktop app folds the end hook's message under "Claude Code notice", so the typed note stays.
     from tokenstretch.nudge import build_nudge, end_hook_on
     w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
     home = w / "home"
-    payload = {"transcript_path": str(_log(w)), "hook_event_name": "UserPromptSubmit"}
-    with credential_guard():
-        before = build_nudge(_ctx(w), {**payload, "session_id": "abcd1234-0010"}, now=lambda: 1_000_000.0)
-    assert not end_hook_on(home)
-    assert "Then end your reply with these two lines" in before["hookSpecificOutput"]["additionalContext"]
     settings = home / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True, exist_ok=True)
     data = json.loads(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
-    data.setdefault("hooks", {})["Stop"] = [{"hooks": [{"type": "command", "command": "other-tool nudge"}]},
-                                            {"hooks": [{"type": "command",
+    assert not end_hook_on(home)
+    data.setdefault("hooks", {})["Stop"] = [{"hooks": [{"type": "command",
                                                         "command": "/x/tokenstretch nudge 2>/dev/null || true"}]}]
     settings.write_text(json.dumps(data), encoding="utf-8")
     assert end_hook_on(home)
+    payload = {"transcript_path": str(_log(w)), "hook_event_name": "UserPromptSubmit", "session_id": "abcd1234-0011"}
     with credential_guard():
-        after = build_nudge(_ctx(w), {**payload, "session_id": "abcd1234-0011"}, now=lambda: 1_000_000.0)
-    extra = after["hookSpecificOutput"]["additionalContext"]
-    assert "end your reply" not in extra and "Finish the current request first" in extra
-    assert "200K" in extra and "`tokenstretch doctor --usage`" in after["systemMessage"]   # the user still gets the fix
+        got = build_nudge(_ctx(w), payload, now=lambda: 1_000_000.0)
+    extra = got["hookSpecificOutput"]["additionalContext"]
+    assert "Then end your reply with these two lines" in extra and "high usage in this session" in extra
     settings.write_text("not json", encoding="utf-8")
-    assert not end_hook_on(home)                                # unreadable: the older behaviour
+    assert not end_hook_on(home)
 
 
 def test_startup_sizes_what_a_plugin_adds_by_difference(tmp_path, monkeypatch):
