@@ -164,7 +164,7 @@ def build_startup(ctx, adapters, scrub: Callable[[str], str]) -> dict:
     from . import startup
     explain = ("What every new session carries before you type anything: instruction files, skill and connector "
                "listings, and the tool's own prompt. It is re-sent on every step, so it is the cheapest thing to trim.")
-    data = startup.build(ctx, adapters, remember=False)
+    data = startup.build(ctx, adapters, remember=False, plugins=True)   # reads logs; this panel refreshes every 5 minutes
     tools = []
     for d in data:
         if not d["parts"] and not d["measured_start"]:
@@ -172,6 +172,8 @@ def build_startup(ctx, adapters, scrub: Callable[[str], str]) -> dict:
         tools.append({
             "tool": d["name"], "measured_start": d["measured_start"], "known": d["known"], "rest": d["rest"],
             "since_last": d["since_last"],
+            "unused": [{"name": scrub(u["name"]), "tokens": u["tokens"], "fix": scrub(u["fix"])}
+                       for u in (d.get("unused") or {}).get("items") or []],
             "parts": [{"kind": p["kind"], "name": scrub(p["name"]), "tokens": p["tokens"],
                        "fix": scrub(p.get("fix") or "")} for p in d["parts"][:8]],
             "price": ({"model": d["price"]["model"], "steps": d["price"]["steps"], "units": d["price"]["units"]}
@@ -179,7 +181,8 @@ def build_startup(ctx, adapters, scrub: Callable[[str], str]) -> dict:
     if not tools:
         return {"explain": explain, "tools": [],
                 "empty": "No supported tool with a readable start-up size found on this machine."}
-    return {"explain": explain, "tools": tools,
+    from .startup_plugins import USE_DAYS
+    return {"explain": explain, "tools": tools, "unused_days": USE_DAYS,
             "note": "File sizes are approximate (bytes / 4); the measured start is from the newest session's first step.",
             "todo": f"`{CLI_NAME} trim` shortens instruction files; turn off connectors you do not use."}
 
@@ -260,6 +263,10 @@ function renderPanels(s){
     p.tools.forEach(function(t){
       n.appendChild(el("p",null,t.tool+": "+(t.measured_start?"newest session started at ~"+fmt(t.measured_start)+" tokens (measured). ":"no measured start. ")+"~"+fmt(t.known)+" sized from local files"+(t.rest!=null?", ~"+fmt(t.rest)+" the tool's own prompt and connector lists.":".")));
       if(t.parts.length)n.appendChild(table(["Part","Name","Approx. tokens"],t.parts.map(function(x){return[x.kind,x.name,{num:"~"+fmt(x.tokens)}]})));
+      if(t.unused&&t.unused.length){
+        n.appendChild(el("p",null,"No use found in the last "+p.unused_days+" days. Each of these still loads into every new session:"));
+        t.unused.forEach(function(u){var d=el("div","w");d.appendChild(el("b",null,u.name+(u.tokens?" · listing ~"+fmt(u.tokens)+" tokens (estimate)":"")));d.appendChild(el("div","fix","How to switch it off: "+u.fix));n.appendChild(d)});
+        n.appendChild(el("div","sub","This counts calls in Claude Code's session logs on this computer only. If you use one of these in another app, such as the desktop app's chat, keep it. A switch takes effect in the next session."))}
       if(t.price)n.appendChild(el("div","sub","Re-read over "+t.price.steps+" steps on "+t.price.model+": about ~"+fmt(Math.round(t.price.units))+" new-input-token units (estimate)."))})});
   shell(s,"watch",function(n,p){
     n.appendChild(el("p",null,"Warns when history passes ~"+fmt(p.limits.history_tokens)+" tokens, a file is read "+p.limits.repeat_reads+"+ times, or a plan window is "+p.limits.pace_points+"+ points over its line."));

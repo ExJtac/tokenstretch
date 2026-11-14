@@ -114,3 +114,23 @@ def test_startup_report_names_the_unused(tmp_path):
          "unused": {"names": ["slides"], "tokens": 100}}
     text = "\n".join(format_report([d]))
     assert "No use found in the last 14 days: slides." in text and "are not counted" in text
+
+
+def test_app_plugin_fix_gives_the_app_steps(tmp_path):
+    home = _home(tmp_path)
+    _log(home, [_call("Read", file_path="x")])
+    fix = {p["name"]: p for p in sp.parts(home, NOW)}["viewer"]["fix"]
+    assert "Settings > Customize > Plugins" in fix and '"Yours"' in fix and "can change" in fix
+
+
+def test_dashboard_lists_the_unused_with_their_steps(tmp_path, monkeypatch):
+    from tokenstretch import dashboard_panels as dp, startup
+    row = {"name": "Claude Code", "measured_start": None, "known": 100, "rest": None, "since_last": None, "price": None,
+           "parts": [{"kind": "plugin (app)", "name": "viewer", "tokens": 100, "fix": sp.APP_PLUGIN_STEPS}],
+           "unused": {"names": ["viewer"], "tokens": 100,
+                      "items": [{"name": "viewer", "tokens": 100, "fix": sp.APP_PLUGIN_STEPS}]}}
+    monkeypatch.setattr(startup, "build", lambda *a, **k: [row])
+    got = dp.build_startup(None, None, lambda t: t)
+    assert got["unused_days"] == sp.USE_DAYS
+    assert got["tools"][0]["unused"] == [{"name": "viewer", "tokens": 100, "fix": sp.APP_PLUGIN_STEPS}]
+    assert "t.unused" in dp.PANEL_JS and "How to switch it off" in dp.PANEL_JS
