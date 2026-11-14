@@ -54,6 +54,7 @@ It checks your computer, lists every change in plain words, and asks once. Nothi
 | `tokenstretch start` | Checks your computer, lists every change in plain words, asks once, then applies the safe ones. |
 | `tokenstretch doctor` | 40+ read-only checks: wrong default model, giant sessions, duplicate instruction files, telemetry left on, proxy chains, terms-of-service risks. |
 | `tokenstretch undo` | Puts back every file setup changed. |
+| `tokenstretch update` | Shows what changed in a newer release and installs it after you say yes. Nothing checks in the background. |
 | `tokenstretch watch` / `statusline` | Live warnings while you work, in a terminal or your tool's status bar. |
 | `tokenstretch dashboard` | One live page on your own machine (127.0.0.1): sessions, warnings, weekly pace. |
 | `tokenstretch trim` | Shows what your CLAUDE.md, AGENTS.md, GEMINI.md cost per turn and proposes a safe trim (dry run unless `--apply`). |
@@ -66,8 +67,8 @@ For Claude Code, setup also adds `/handoff`, `/brief` and `/credits` shortcuts, 
 
 ## Privacy promises
 
-- **No telemetry, no analytics, no phone-home, no update checks.** No outbound network libraries. The only socket tokenstretch itself opens is the optional dashboard, bound to 127.0.0.1 with a one-time key, and tests block every non-loopback connection.
-- **No network calls**, except the pinned installs you confirm in a separate prompt.
+- **No telemetry, no analytics, no phone-home, no update checks unless you run `tokenstretch update`.** No outbound network libraries: that one command starts `curl` to read two public files and sends nothing about you. The only socket tokenstretch itself opens is the optional dashboard, bound to 127.0.0.1 with a one-time key, and tests block every non-loopback connection.
+- **No network calls**, except the pinned installs you confirm in a separate prompt and `tokenstretch update` when you run it.
 - **Never opens credential files.** Login files and tokens are only `stat`'d (checked for existence and permissions), never read, copied, symlinked, or proxied. Tests plant canary credentials and fail if any are opened.
 - **Your prompts, code, and logs never leave your machine because of this tool.** Session logs are read locally, only to show model and history size.
 - **Every file change is backed up**, and `undo` restores it.
@@ -176,6 +177,7 @@ Long reference material lives in [docs/DETAILS.md](docs/DETAILS.md):
 
 - [What `tokenstretch start` does](docs/DETAILS.md#what-tokenstretch-start-does)
 - [Install from a clone, and every command](docs/DETAILS.md#30-second-quickstart)
+- [Update to a newer release](docs/DETAILS.md#update)
 - [What setup changes, and how to undo it](docs/DETAILS.md#what-setup-changes-and-how-to-undo-it)
 - [Watch while you work](docs/DETAILS.md#watch-while-you-work)
 - [Autopilot: shorter sessions with nothing to type](docs/DETAILS.md#autopilot-shorter-sessions-with-nothing-to-type)

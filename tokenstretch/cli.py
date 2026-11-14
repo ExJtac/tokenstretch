@@ -346,6 +346,13 @@ def cmd_outputs(args) -> int:
     return 0
 
 
+def cmd_update(args) -> int:
+    from .update import run_update
+
+    home = Path(args.home) if args.home else Path.home()
+    return run_update(home, yes=args.yes, check_only=args.check, as_json=args.json)
+
+
 def cmd_auto(args) -> int:
     from .auto import run_auto
 
@@ -894,6 +901,16 @@ def main(argv=None) -> int:
     op.add_argument("--top", type=int, default=10, help="how many single outputs to list (default 10)")
     op.add_argument("--json", action="store_true")
 
+    up = sub.add_parser("update",
+                        help="see whether a newer release exists, show what changed, and install it after you "
+                             "say yes (the one command that uses the network)")
+    up.add_argument("--home", type=Path)
+    up.add_argument("--check", action="store_true",
+                    help="only look: exit 0 when up to date, 10 when a newer release exists; changes nothing")
+    up.add_argument("--yes", action="store_true", help="install the newer release without asking")
+    up.add_argument("--json", action="store_true", help="machine-readable result; never asks, never installs "
+                                                        "unless --yes is given")
+
     sub.add_parser("auto", help="hook entry: resumable compaction summaries and note pickup in a new chat "
                                 "(reads the tool's JSON on stdin)")
 
@@ -1095,5 +1112,7 @@ def main(argv=None) -> int:
         return cmd_connectors(a)
     if a.cmd == "outputs":
         return cmd_outputs(a)
+    if a.cmd == "update":
+        return cmd_update(a)
     print(f"{a.cmd}: not implemented yet", file=sys.stderr)
     return 3
