@@ -183,7 +183,8 @@ def run_update(home: Path, *, yes: bool = False, check_only: bool = False, as_js
                interactive: bool | None = None, input_fn: Callable[[], str] = input,
                fetcher: Callable[[str], str] = fetch, install: dict | None | str = "detect",
                runner: Callable[..., "subprocess.CompletedProcess"] = subprocess.run,
-               installed: str = VERSION, out: Callable[[str], None] = print) -> int:
+               installed: str = VERSION, out: Callable[[str], None] = print,
+               has_shell: bool | None = None) -> int:
     if interactive is None:
         interactive = sys.stdin.isatty() and sys.stdout.isatty()
     if install == "detect":
@@ -224,7 +225,9 @@ def run_update(home: Path, *, yes: bool = False, check_only: bool = False, as_js
         say("This copy was not put here by the tokenstretch installer, so it is not changed. "
             "Update it the way you installed it (for a git checkout: `git pull`).")
         return finish(EXIT_NEWER)
-    if os.name == "nt" or not shutil.which("sh"):
+    if has_shell is None:
+        has_shell = os.name != "nt" and bool(shutil.which("sh"))
+    if not has_shell:
         say(f"The installer needs a POSIX shell, which was not found. Install by hand: {REPO_URL}#install")
         return finish(EXIT_NEWER)
     if not yes:

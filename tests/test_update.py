@@ -67,6 +67,7 @@ def run(tmp_path, **kw):
     kw.setdefault("installed", "0.9.3")
     kw.setdefault("install", {"data_dir": tmp_path / "data", "bin_dir": tmp_path / "bin"})
     kw.setdefault("interactive", False)
+    kw.setdefault("has_shell", True)
     code = up.run_update(tmp_path, runner=runner, out=lines.append, **kw)
     return code, lines, ran
 
@@ -176,6 +177,12 @@ def test_unmanaged_copy_is_never_changed(tmp_path):
     code, lines, ran = run(tmp_path, yes=True, install=None)
     assert code == up.EXIT_NEWER and ran == []
     assert any("not put here by the tokenstretch installer" in line for line in lines)
+
+
+def test_no_posix_shell_reports_and_stops(tmp_path):
+    code, lines, ran = run(tmp_path, yes=True, has_shell=False)
+    assert code == up.EXIT_NEWER and ran == []
+    assert any("needs a POSIX shell" in line for line in lines)
 
 
 def test_offline_is_a_plain_error(tmp_path):
