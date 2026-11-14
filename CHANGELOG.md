@@ -4,8 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-11-13
+
 ### Added
-- A note for the agent when it starts a helper from a long conversation (about 50K tokens of history or more). Setup adds `tokenstretch nudge` as a `PreToolUse` hook for the `Agent` tool only. The note asks the agent to start helpers together in one message, to ask each for one short final report, and not to write a status reply each time one finishes. It never blocks the helper or changes its input, and it is said at most once every 20 minutes per session. Its effect on usage has not been measured.
+- A note for the agent when it starts a helper from a long conversation (about 50K tokens of history or more). Setup adds `tokenstretch nudge` as a `PreToolUse` hook for the tool that starts a helper only (`Agent` or `Task`). The note asks the agent to start helpers together in one message, to ask each for one short final report, and not to write a status reply each time one finishes. It never blocks the helper or changes its input, and it is said at most once every 20 minutes per session. Its effect on usage has not been measured.
 
 ### Fixed
 - `doctor` (W17) no longer reports the same instruction file in two separate copies of a project as duplicated text. A session loads only one of those copies. It now counts copies only when one session can load both: the same folder, one folder above the other, or a tool's own global folder.
