@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-11-14
+
 ### Added
 - An on-demand advisor for Claude Code. `tokenstretch setup` adds `~/.claude/agents/tokenstretch-advisor.md` (setup step `claude-advisor-agent`): a read-only helper with only the Bash and Read tools, on the cheapest model. Ask for it and it runs `doctor --new`, `watch --once --checkup 0` and `startup`, then reports to the user in under 200 words: what is new, what costs credits now, and up to three steps to do first. It changes no file and no setting and sends nothing to other agents. Nothing starts it on a schedule. Its description is listed in each session (about 30 tokens); the body is read only when it runs. An older copy written by this tool is updated, a helper of your own with that name is never touched, and `undo` removes it.
 - New findings only, with no model. `tokenstretch doctor --new` lists only the findings that were not there at the last `doctor --new`; the first run records a starting point. `--notify` adds a desktop notification, so cron or another scheduler can run it. `tokenstretch watch` now also runs the doctor checks every 30 minutes (`--checkup MINUTES`, `0` turns it off) and shows a finding the first time it appears. Notices go to the terminal or the desktop, never into an agent's conversation, and no model runs. What is remembered is one hash per finding in `~/.tokenstretch/findings-seen.json` (no message, no path). A finding that goes away and comes back is new again, and so is one whose severity changes.
