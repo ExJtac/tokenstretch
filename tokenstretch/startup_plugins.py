@@ -32,6 +32,9 @@ _TRUE = {"true", "yes", "on", "1"}
 APP_PLUGIN_STEPS = ('the desktop app adds it. To switch it off, open the Claude desktop app, go to Settings > Customize > '
                     'Plugins, change the list from "Discover" to "Yours", and switch the plugin off there. The menu '
                     "names are from November 2026 and can change.")
+# From Claude's help page "Using Skills in Claude" (read November 2026); not checked on screen here.
+APP_SKILL_STEPS = ("the desktop app adds it. Claude's help page says: open Customize > Skills and use the switch next "
+                   "to the skill. That page was read in November 2026 and the menu names can change.")
 _SKILL_RE = re.compile(r'"name"\s*:\s*"Skill"\s*,\s*"input"\s*:\s*\{[^{}]*?"skill"\s*:\s*"([^"]{1,120})"')
 _CMD_RE = re.compile(r"<command-name>/?([A-Za-z0-9:_.-]{1,120})</command-name>")
 _AGENT_RE = re.compile(r'"subagent_type"\s*:\s*"([A-Za-z0-9_.-]{1,80}):[^"]{1,120}"')
@@ -196,9 +199,10 @@ def parts(home: Path, now: float | None = None, use: dict | None = None) -> list
                 fix = APP_PLUGIN_STEPS
         else:
             what = f"skill added by the desktop app; {note}"
-            fix = "switch it off in the Claude desktop app's settings if you don't use it."
+            fix = APP_SKILL_STEPS
         if not calls and (it["hooks"] or not use["complete"]):
             fix = "check whether you use it before switching it off. " + fix
-        out.append({"kind": what, "name": it["name"], "tokens": max(1, it["bytes"] // 4) if it["bytes"] else None,
+        out.append({"item": f"plugin:{it['name']}" if it["kind"] == "plugin" else None,
+                    "kind": what, "name": it["name"], "tokens": max(1, it["bytes"] // 4) if it["bytes"] else None,
                     "fix": fix, "calls": calls, "unused": bool(use["complete"] and not calls and not it["hooks"])})
     return out

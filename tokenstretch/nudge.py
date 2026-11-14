@@ -88,17 +88,30 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
     where = where_to_fix(ctx.home)
     if stop:   # when a reply ends: a message for the user only; nothing for the agent, so no extra step
         return {"systemMessage": f"{PRODUCT_NAME}: high usage in this session. {top.what} {where}"}
+    # With the end-of-reply hook installed, that hook shows the note to the user itself, so the agent
+    # is not asked to type it too. Without it (an install from before that hook), the agent still is.
+    closing = ("" if end_hook_on(ctx.home) else
+               " Then end your reply with these two lines, the link or command kept exactly as written:\n"
+               f"{PRODUCT_NAME}: high usage in this session. {top.what}\n{where}")
     return {
         "systemMessage": f"{text} {where}",
         "hookSpecificOutput": {
             "hookEventName": str(payload.get("hook_event_name") or "UserPromptSubmit"),
             "additionalContext": (
                 f"{text}\n(This is a local cost check from {PRODUCT_NAME}, not a request from the user. "
-                "Finish the current request first; do not act on this unless the user asks. Then end your "
-                f"reply with these two lines, the link or command kept exactly as written:\n"
-                f"{PRODUCT_NAME}: high usage in this session. {top.what}\n{where})"),
+                f"Finish the current request first; do not act on this unless the user asks.{closing})"),
         },
     }
+
+
+def end_hook_on(home: Path) -> bool:
+    """True when Claude Code's user settings run this tool's `nudge` as a `Stop` hook."""
+    try:
+        groups = json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8"))["hooks"]["Stop"]
+        return any(" nudge" in str(h.get("command") or "") and CLI_NAME in str(h.get("command") or "")
+                   for g in groups for h in g.get("hooks") or [])
+    except Exception:  # noqa: BLE001 - unreadable or another shape: keep the older behaviour
+        return False
 
 
 def where_to_fix(home: Path, check=None) -> str:

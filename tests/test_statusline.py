@@ -446,7 +446,7 @@ def test_startup_sizes_a_connector_by_difference(tmp_path, monkeypatch):
     assert run(60_900, ["big", "small"], "--no-save")["since_last"] == 0
 
     off = run(42_000, ["small"])                                   # big turned off: 18K lighter
-    assert off["turned_off"] == [{"name": "big (project)", "tokens": 18_000}]
+    assert off["turned_off"] == [{"name": "big (project)", "tokens": 18_000, "plugin": False}]
     assert "big (project) is off: sessions now start ~18K tokens lighter" in "\n".join(st.format_report([off]))
 
     back = run(60_000, ["big", "small"], "--no-save")              # on again: sized from the remembered run
@@ -573,3 +573,69 @@ def test_nudge_at_the_end_of_a_reply_is_a_message_for_the_user_only(tmp_path):
     assert "high usage in this session" in end["systemMessage"] and "200K" in end["systemMessage"]
     assert "`tokenstretch doctor --usage`" in end["systemMessage"]
     assert again is None and looping is None
+
+
+def test_prompt_note_is_not_typed_twice_when_the_end_hook_is_installed(tmp_path):
+    from tokenstretch.nudge import build_nudge, end_hook_on
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
+    home = w / "home"
+    payload = {"transcript_path": str(_log(w)), "hook_event_name": "UserPromptSubmit"}
+    with credential_guard():
+        before = build_nudge(_ctx(w), {**payload, "session_id": "abcd1234-0010"}, now=lambda: 1_000_000.0)
+    assert not end_hook_on(home)
+    assert "Then end your reply with these two lines" in before["hookSpecificOutput"]["additionalContext"]
+    settings = home / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    data = json.loads(settings.read_text(encoding="utf-8")) if settings.is_file() else {}
+    data.setdefault("hooks", {})["Stop"] = [{"hooks": [{"type": "command", "command": "other-tool nudge"}]},
+                                            {"hooks": [{"type": "command",
+                                                        "command": "/x/tokenstretch nudge 2>/dev/null || true"}]}]
+    settings.write_text(json.dumps(data), encoding="utf-8")
+    assert end_hook_on(home)
+    with credential_guard():
+        after = build_nudge(_ctx(w), {**payload, "session_id": "abcd1234-0011"}, now=lambda: 1_000_000.0)
+    extra = after["hookSpecificOutput"]["additionalContext"]
+    assert "end your reply" not in extra and "Finish the current request first" in extra
+    assert "200K" in extra and "`tokenstretch doctor --usage`" in after["systemMessage"]   # the user still gets the fix
+    settings.write_text("not json", encoding="utf-8")
+    assert not end_hook_on(home)                                # unreadable: the older behaviour
+
+
+def test_startup_sizes_what_a_plugin_adds_by_difference(tmp_path, monkeypatch):
+    import tokenstretch.startup as st
+    w = _world(tmp_path, [_row(0, 0, read=20_000)])
+    home, root = w / "home", w / "root"
+    plug = home / ".claude" / "plugins" / "synced" / "acct" / "viewer"
+    parked = w / "viewer-off"
+    (plug / ".claude-plugin").mkdir(parents=True)
+    (plug / "skills" / "open").mkdir(parents=True)
+    (plug / "skills" / "open" / "SKILL.md").write_text("---\nname: open\ndescription: " + "x" * 396 + "\n---\nb\n",
+                                                      encoding="utf-8")
+    (plug / ".mcp.json").write_text(json.dumps({"mcpServers": {"one": {}, "two": {}}}), encoding="utf-8")
+    args = ["startup", "--home", str(home), "--root", str(root), "--sys-snapshot", str(w / "sys"), "--json"]
+
+    def run(start: int, *extra: str) -> dict:
+        monkeypatch.setattr(st, "measured_starts", lambda ctx, ad, limit=5: [start])
+        buf = io.StringIO()
+        with credential_guard(), redirect_stdout(buf):
+            assert main([*args, *extra]) == 0
+        return next(x for x in json.loads(buf.getvalue()) if x["adapter"] == "claude-code")
+
+    first = run(60_000)
+    viewer = next(p for p in first["parts"] if p["name"] == "viewer")
+    assert viewer["tokens"] == 100 and "2 connectors it brings (not sized)" in viewer["kind"]
+    hist = json.loads((home / ".tokenstretch" / "startup-history.json").read_text(encoding="utf-8"))
+    assert "plugin:viewer" in hist["claude-code"]
+
+    plug.rename(parked)                                            # switched off: 20K lighter, 100 of it the listing
+    off = run(40_000)
+    assert off["turned_off"] == [{"name": "the viewer plugin", "tokens": 19_900, "plugin": True}]
+    assert ("the viewer plugin is off: sessions now start ~20K tokens lighter, on top of its skill listing."
+            in "\n".join(st.format_report([off])))
+
+    parked.rename(plug)                                            # on again: sized from the remembered run
+    back = run(60_000, "--no-save")
+    viewer = next(p for p in back["parts"] if p["name"] == "viewer")
+    assert viewer["tokens"] == 20_000 and viewer["beyond_listing"] == 19_900
+    assert "2 connectors it brings (~20K tokens, measured by difference)" in viewer["kind"]
+    assert back["rest"] == first["rest"] - 19_900

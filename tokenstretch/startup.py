@@ -111,9 +111,13 @@ def build(ctx: Context, adapters=None, remember: bool = False, now: float | None
         turned_off: dict[str, int] = {}
         since_last = 0
         if start:
-            connectors = sorted(p["name"] for p in parts if p["kind"] == "connector")
+            # With plugins listed, a plugin is one more thing that can be switched: what it adds beyond
+            # its skill listing (its connectors' tool lists, mostly) is sized the same way.
+            hist_key = ad.id
+            connectors = sorted([p["name"] for p in parts if p["kind"] == "connector"]
+                                + [p["item"] for p in parts if p.get("item")])
             raw_rest = max(0, start - sum(p["tokens"] for p in parts if p.get("tokens")))
-            seen = history.get(ad.id) if isinstance(history.get(ad.id), dict) else {}
+            seen = history.get(hist_key) if isinstance(history.get(hist_key), dict) else {}
             on, turned_off = size_by_difference(seen, connectors, raw_rest)
             try:    # same local set as last time: a plugin or an app connector may have changed
                 delta = raw_rest - int(seen["|".join(connectors)]["rest"])
@@ -123,11 +127,17 @@ def build(ctx: Context, adapters=None, remember: bool = False, now: float | None
             for p in parts:
                 if p["kind"] == "connector" and p["name"] in on:
                     p.update(tokens=on[p["name"]], kind="connector (measured by difference)")
+                elif p.get("item") in on:
+                    more = on[p["item"]]
+                    p["kind"] = (p["kind"].replace("(not sized)", f"(~{_k(more)} tokens, measured by difference)")
+                                 if "(not sized)" in p["kind"] else
+                                 p["kind"] + f"; ~{_k(more)} tokens more than its listing, measured by difference")
+                    p.update(tokens=(p.get("tokens") or 0) + more, beyond_listing=more)
             if remember:
                 seen["|".join(connectors)] = {"connectors": connectors, "rest": raw_rest,
                                               "ts": time.time() if now is None else now}
                 keep = sorted(seen.items(), key=lambda kv: -(kv[1].get("ts") or 0))[:HISTORY_KEEP]
-                history[ad.id] = dict(keep)
+                history[hist_key] = dict(keep)
                 changed = True
         from .cost import startup_price
         price = startup_price(start, newest_model(ctx, ad)) if start else None
@@ -142,7 +152,9 @@ def build(ctx: Context, adapters=None, remember: bool = False, now: float | None
             "adapter": ad.id, "name": ad.display_name, "measured_start": start, "recent_starts": starts, "known": known,
             "rest": max(0, start - known) if start else None, "parts": sized, "unsized": unsized,
             "since_last": since_last, "price": price,
-            "turned_off": [{"name": n, "tokens": t} for n, t in sorted(turned_off.items(), key=lambda kv: -kv[1])],
+            "turned_off": [{"name": f"the {n[7:]} plugin" if n.startswith("plugin:") else n, "tokens": t,
+                            "plugin": n.startswith("plugin:")}
+                           for n, t in sorted(turned_off.items(), key=lambda kv: -kv[1])],
         })
     if changed:
         save_history(ctx.home, history)
@@ -186,14 +198,17 @@ def format_report(data: list[dict], top: int = 12) -> list[str]:
         if d["rest"] is not None:
             out.append(f"  The rest, ~{_k(d['rest'])} tokens, can't be sized from local files: the tool's own "
                        "system prompt and built-in tools, and connector tool lists.")
-            out.append("  To size a connector: turn it off, start a new session, and run this again. "
-                       "This command remembers the last run and shows the difference as that connector's size.")
+            out.append("  To size a connector, or what a plugin's connectors add: turn that one thing off, start a "
+                       "new session, and run this again. This command remembers the last run and shows the "
+                       "difference as its size.")
         for t in d.get("turned_off") or []:
-            out.append(f"  Since an earlier run, {t['name']} is off: sessions now start ~{_k(t['tokens'])} tokens lighter.")
+            out.append(f"  Since an earlier run, {t['name']} is off: sessions now start ~{_k(t['tokens'])} tokens lighter"
+                       + (", on top of its skill listing." if t.get("plugin") else "."))
         if d.get("since_last"):
             way = "lighter" if d["since_last"] < 0 else "heavier"
             out.append(f"  Since the last run, sessions start ~{_k(abs(d['since_last']))} tokens {way}, with the same "
-                       "local files and connectors. A plugin or an app connector changed.")
+                       "local files, connectors and plugins. Something not in local files changed, such as a "
+                       "connector an app adds.")
         for p in d["unsized"]:
             out.append(f"    size unknown  {p['kind']}: {p['name']}" + (f". {p['fix']}" if p.get("fix") else ""))
         out.append("")
