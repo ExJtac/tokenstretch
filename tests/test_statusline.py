@@ -329,6 +329,22 @@ def test_long_history_warning_says_when_a_fresh_start_pays_back(tmp_path):
     assert line == "⚠ 200K/150K history · /clear at the next task break (pays back in ~3 steps)"
 
 
+def test_no_long_history_warning_on_a_session_that_starts_near_the_limit(tmp_path):
+    """A session that starts above the price-scaled limit must not be told to start fresh at once."""
+    from tokenstretch.watch import context_limit
+    assert context_limit(75_000, 77_000) == 114_500 and context_limit(150_000, 30_000) == 150_000
+    assert context_limit(75_000, None) == 75_000 and context_limit(150_000, 100_000) == 175_000
+    prompt = {"type": "user", "message": {"role": "user", "content": "go"}}
+    cfg = WatchConfig(max_context=75_000)
+    w = _world(tmp_path, [prompt, _row(0, 0, read=77_000), _row(1, 40, read=105_000)])
+    with credential_guard():
+        assert [x for x in Watcher(_ctx(w), cfg).scan() if x.key[-1] == "context"] == []
+    w2 = _world(tmp_path / "b", [prompt, _row(0, 0, read=77_000), _row(1, 40, read=130_000)])
+    with credential_guard():
+        warn = [x for x in Watcher(_ctx(w2), cfg).scan() if x.key[-1] == "context"][0]
+    assert "history is ~130K tokens (over 115K)" in warn.what and "started at ~77K" in warn.fix
+
+
 # ---- nudge: the same warning, shown inside the session by a prompt hook ------------------------
 
 def test_nudge_says_the_top_warning_once_then_waits(tmp_path):
