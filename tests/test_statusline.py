@@ -597,6 +597,30 @@ def test_prompt_note_is_still_typed_with_the_end_hook_installed(tmp_path):
     assert not end_hook_on(home)
 
 
+def test_helper_launch_note_only_for_a_helper_from_a_long_conversation(tmp_path):
+    from tokenstretch.nudge import build_nudge
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
+    base = {"transcript_path": str(_log(w)), "hook_event_name": "PreToolUse", "session_id": "abcd1234-0022"}
+    with credential_guard():
+        assert build_nudge(_ctx(w), {**base, "tool_name": "Bash"}, now=lambda: 1_000_000.0) is None
+        got = build_nudge(_ctx(w), {**base, "tool_name": "Agent"}, now=lambda: 1_000_000.0)
+        again = build_nudge(_ctx(w), {**base, "tool_name": "Agent"}, now=lambda: 1_000_060.0)
+    out = got["hookSpecificOutput"]
+    assert set(got) == {"hookSpecificOutput"}                      # no message for the user, no decision
+    assert out["hookEventName"] == "PreToolUse" and "permissionDecision" not in out and "updatedInput" not in out
+    assert "~200K tokens" in out["additionalContext"] and "one message" in out["additionalContext"]
+    assert again is None                                           # not repeated for each helper
+
+
+def test_helper_launch_note_is_silent_in_a_short_conversation(tmp_path):
+    from tokenstretch.nudge import build_nudge
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=29_000, write=1_000)])
+    payload = {"transcript_path": str(_log(w)), "hook_event_name": "PreToolUse", "session_id": "abcd1234-0033",
+               "tool_name": "Agent"}
+    with credential_guard():
+        assert build_nudge(_ctx(w), payload, now=lambda: 1_000_000.0) is None
+
+
 def test_startup_sizes_what_a_plugin_adds_by_difference(tmp_path, monkeypatch):
     import tokenstretch.startup as st
     w = _world(tmp_path, [_row(0, 0, read=20_000)])

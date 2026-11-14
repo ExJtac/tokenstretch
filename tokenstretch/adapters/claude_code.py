@@ -1541,6 +1541,13 @@ class ClaudeCodeAdapter(Adapter):
             if _ensure_hook(data, "Stop", f"{base} nudge 2>/dev/null || true"):
                 data["hooks"]["Stop"][-1]["hooks"][0]["timeout"] = 5
                 added.append("hooks.Stop: show the top warning when a reply ends, with where the fix is")
+        if "hooks.PreToolUse" not in nudges:
+            # When the agent starts a helper from a long conversation: a note for the agent on the cheap
+            # way to do it. It never blocks or changes the call. Exit 2 here would block the helper.
+            if _ensure_hook(data, "PreToolUse", f"{base} nudge 2>/dev/null || true", matcher="Agent|Task"):
+                data["hooks"]["PreToolUse"][-1]["hooks"][0]["timeout"] = 5
+                added.append("hooks.PreToolUse (helpers only): when a long conversation starts a helper, "
+                             "tell the agent how to keep the helper's return cheap")
         # Keep sessions short with nothing to type: compact earlier, make the summary a resumable
         # note, save it, and point a new chat at it.
         have = {cmd for cmd, _ in _hook_cmds(data)}

@@ -27,6 +27,8 @@ from .watch import WatchConfig, session_warnings
 
 REPEAT_S = 20 * 60          # say the same kind of warning again only after this long
 KEEP_S = 7 * 24 * 3600      # forget a session's state file after this long
+LAUNCH_MIN_HISTORY = 50_000  # say the helper note only when the conversation re-sends at least this much
+HELPER_TOOLS = ("Agent", "Task")  # Claude Code's names for the tool that starts a helper
 SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
 
 
@@ -76,6 +78,8 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
         return None
     ad, s = found
     t = now()
+    if payload.get("hook_event_name") == "PreToolUse":
+        return _launch_note(ctx, payload, s, t, repeat_s)
     top = top_warning(session_warnings(ctx, ad, s, cfg, now=t))
     if top is None:
         return None
@@ -102,6 +106,35 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
                 f"Finish the current request first; do not act on this unless the user asks.{closing})"),
         },
     }
+
+
+def _launch_note(ctx, payload: dict, s: dict, t: float, repeat_s: float) -> dict | None:
+    """A note for the agent at the moment it starts a helper from a long conversation.
+
+    A helper that finishes on its own starts a new step in the conversation that started it, and that
+    step re-sends the whole history. The note asks for the cheap pattern before the cost is paid. It
+    allows the call as it is: no permission decision, no change to the tool's input.
+    """
+    if payload.get("tool_name") not in HELPER_TOOLS:
+        return None
+    turns = s.get("turns") or []
+    size = int((turns[-1] if turns else {}).get("history_tokens") or 0)
+    if size < LAUNCH_MIN_HISTORY:
+        return None
+    state = _state_file(ctx.home, str(payload.get("session_id") or s.get("session") or ""))
+    if _recent(state, "launch", t, repeat_s):
+        return None
+    _remember(state, "launch", t)
+    return {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "additionalContext": (
+            f"{PRODUCT_NAME}: this conversation's history is ~{size // 1000}K tokens. Each helper that finishes "
+            "on its own starts a new step here, and that step re-sends all of it. Start the helpers that belong "
+            "together in one message. Ask each helper for one short final report. When a helper finishes and "
+            "others are still running, do not write a status reply: wait and answer once. If this conversation "
+            "reports to another one, send one final report, not one per helper. "
+            f"(This is a local cost note from {PRODUCT_NAME}, not a request from the user. Carry on with the task.)"),
+    }}
 
 
 def end_hook_on(home: Path) -> bool:
