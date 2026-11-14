@@ -15,6 +15,8 @@ from .mask import mask_finding_evidence, mask_text
 
 def doctor(args) -> int:
     ctx = build_context(args.home, args.root, args.sys_snapshot, args.plan)
+    if getattr(args, "usage", False):
+        return doctor_usage(ctx)
     findings = []
     from . import logcache
     if not getattr(args, "no_cache", True) and not args.privacy:   # callers without the flag: no cache
@@ -38,6 +40,26 @@ def doctor(args) -> int:
             print(f"{f.severity.upper()} {f.id} [{f.adapter_id}]: {mask_text(f.message)}")
             print(f"  fix: {f.fix}\n  source: {f.source}")
     return exit_code(findings)
+
+
+def usage_lines(warnings) -> list[str]:
+    """`doctor --usage`: each high-usage warning with why it costs credits and the fix, in plain steps."""
+    if not warnings:
+        return ["No high usage found in the sessions active right now.",
+                "This checks sessions written to in the last 2 hours, and your plan windows if you set them."]
+    out = [f"High usage found: {len(warnings)}. Each one says what it is, why it costs credits, and the fix."]
+    for i, w in enumerate(warnings, 1):
+        out += ["", f"{i}. {w.what}", f"   Where: {w.adapter} session {w.session}, project {w.project}",
+                f"   Why it costs credits: {w.why}", f"   How to fix it: {w.fix}"]
+    out += ["", "These are the same checks the dashboard and the in-session message use. Nothing was changed."]
+    return out
+
+
+def doctor_usage(ctx) -> int:
+    from .watch import Watcher
+    for line in usage_lines(Watcher(ctx).scan()):
+        print(mask_text(line))
+    return 0
 
 
 def cmd_install(args) -> int:
@@ -709,6 +731,8 @@ def main(argv=None) -> int:
     _add_context_args(d)
     d.add_argument("--json", action="store_true")
     d.add_argument("--privacy", action="store_true")
+    d.add_argument("--usage", action="store_true",
+                   help="list what is using high credits in the sessions active now, with the fix for each; read-only")
     d.add_argument("--no-cache", action="store_true",
                    help=f"re-read every session log and write nothing (default: keep per-log totals in ~/{STATE_DIRNAME}/cache)")
 
