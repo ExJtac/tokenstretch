@@ -486,6 +486,7 @@ class ClaudeCodeAdapter(Adapter):
         "W13", "W14", "W15", "W16", "T01", "P01", "P03",
         # v0.3: gaps found comparing with rsaryev/tokendoctor.
         "W19", "W20", "W21", "W22", "W23", "W24", "W25", "W26", "W27",
+        "W28", "W29",
     })
     config_dir_env = ("CLAUDE_CONFIG_DIR",)
     headless_patterns = (r"\bclaude\b.*\s-p\b", r"\bclaude\b.*--print")
@@ -697,6 +698,7 @@ class ClaudeCodeAdapter(Adapter):
         out += self._w26(ctx)
         out += self._w27(ctx)
         out += self._w28(ctx)
+        out += self._w29(ctx)
         out += self._t01(ctx)
         return out
 
@@ -1333,6 +1335,59 @@ class ClaudeCodeAdapter(Adapter):
             "arrive in one step. Ask a team lead for one final report, not one per helper.",
             "CC-SUB, CC-CACHE",
             key="wakeup_resent_tokens", value=sent,
+        )]
+
+    MEMORY_WORD_MIN = 4     # shorter first words match too many folder names by chance
+    MEMORY_STRAY_MIN = 2    # one entry with a matching first word is too weak a sign
+
+    def _w29(self, ctx: Context) -> list[Finding]:
+        """Memory entries whose file name starts with the name of another project's folder.
+
+        Each project has its own memory folder, and every session in the project loads that folder's
+        index. An entry about another project is paid for by sessions that never need it. Only file and
+        folder names are compared; no memory file is opened.
+        """
+        proj = ctx.home / ".claude" / "projects"
+        try:
+            slugs = sorted(p.name for p in proj.iterdir() if p.is_dir())
+        except OSError:
+            return []
+        home_words = {w.lower() for w in re.split(r"[^A-Za-z0-9]+", str(ctx.home)) if w}
+        words = {s: {w.lower() for w in s.split("-") if w} - home_words for s in slugs}
+        stray: dict[str, int] = {}
+        folders = 0
+        for s in slugs:
+            try:
+                names = [p.stem for p in (proj / s / "memory").iterdir()
+                         if p.suffix == ".md" and p.name != "MEMORY.md"]
+            except OSError:
+                continue
+            other = set().union(*(w for o, w in words.items() if o != s)) - words[s] if len(words) > 1 else set()
+            first: dict[str, int] = {}
+            for n in names:
+                w = re.split(r"[^A-Za-z0-9]+", n.lower())[0]
+                if len(w) >= self.MEMORY_WORD_MIN and w in other:
+                    first[w] = first.get(w, 0) + 1
+            first = {w: c for w, c in first.items() if c >= self.MEMORY_STRAY_MIN}
+            if first:
+                folders += 1
+                for w, c in first.items():
+                    stray[w] = stray.get(w, 0) + c
+        if not stray:
+            return []
+        total = sum(stray.values())
+        top = ", ".join(f"{w}: {c}" for w, c in sorted(stray.items(), key=lambda kv: (-kv[1], kv[0]))[:4])
+        return [self.finding(
+            "W29", "memory-in-another-project", "info", "waste",
+            f"{total} memory entries in {folders} project memory folder{'s' if folders != 1 else ''} have a name "
+            f"that starts with the name of another project's folder ({top}). Every session in a project loads "
+            "that project's memory index, so an entry about another project is paid for by sessions that do "
+            "not need it.",
+            "Check each entry first: the match is by name only. Move an entry that is about another project to "
+            "that project's memory folder (~/.claude/projects/<project>/memory/) and move its line in "
+            "MEMORY.md with it, or delete it.",
+            "CC-MEM",
+            key="memory_entries_named_after_another_project", value=stray,
         )]
 
     def _t01(self, ctx: Context) -> list[Finding]:

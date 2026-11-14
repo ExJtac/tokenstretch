@@ -124,6 +124,21 @@ def test_w27_large_lockfile_stat_only_and_deny_rule_quiets_it(tmp_path):
     assert not [f for f in _doctor_tree(dest) if f["id"] == "W27"]
 
 
+def test_w29_memory_entries_named_after_another_project(tmp_path):
+    dest = _tree(tmp_path)
+    proj = dest / "home/.claude/projects"
+    mem = proj / "-work-garden/memory"
+    mem.mkdir(parents=True)
+    (proj / "-work-bakery").mkdir(parents=True)
+    for name in ("MEMORY.md", "garden-beds.md", "bakery-oven.md", "notes.md"):
+        (mem / name).write_text("x", encoding="utf-8")
+    assert not [f for f in _doctor_tree(dest) if f["id"] == "W29"]       # one matching entry: too weak a sign
+    (mem / "bakery_prices.md").write_text("x", encoding="utf-8")
+    w29 = [f for f in _doctor_tree(dest) if f["id"] == "W29"]
+    assert w29 and w29[0]["evidence"]["value"] == {"bakery": "2"}
+    assert "2 memory entries in 1 project memory folder " in w29[0]["message"]
+
+
 def test_new_checks_quiet_on_clean(tmp_path):
     _, findings, _, _ = run_doctor("clean", tmp_path)
     assert not (finding_ids(findings) & set(NEW))

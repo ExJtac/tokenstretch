@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from .auto import NOTE
 from .identity import CLI_NAME, PRODUCT_NAME, state_dir
 from .statusline import find_session, light_context, parse_payload, read_raw, top_warning
 from .watch import WatchConfig, session_warnings
@@ -80,7 +81,8 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
     t = now()
     if payload.get("hook_event_name") == "PreToolUse":
         return _launch_note(ctx, payload, s, t, repeat_s)
-    top = top_warning(session_warnings(ctx, ad, s, cfg, now=t))
+    found_warnings = session_warnings(ctx, ad, s, cfg, now=t)
+    top = top_warning(found_warnings)
     if top is None:
         return None
     kind = str(top.key[-1])
@@ -97,13 +99,30 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
     # it is easy to miss. The typed note is the one the user sees without a click.
     closing = (" Then end your reply with these two lines, the link or command kept exactly as written:\n"
                f"{PRODUCT_NAME}: high usage in this session. {top.what}\n{where}")
+    act = "Finish the current request first; do not act on this unless the user asks."
+    hint = str(s.get("handoff_hint") or "")
+    clear = str(s.get("clear_hint") or "")
+    # The long-history warning counts also when another warning ranks first.
+    if hint and clear and any(str(w.key[-1]) == "context" and hint in w.fix for w in found_warnings):
+        # The history is long and a fresh start is the fix. A fresh start needs a note to resume from,
+        # so the agent writes it now, without being asked: the user is left with one thing to type.
+        # Only a person can type the clear command; nothing here runs it.
+        act = (f"Finish the current request first. Then, before you end your reply, write `{NOTE.as_posix()}` "
+               "in the project folder, replacing any old one. Write it from what you already know: do not read "
+               "files or run commands for it. Under 40 lines, with these parts: Goal; Done (and how it was "
+               "checked); State (files changed, branch, anything uncommitted); Decisions; Next step; Open "
+               "questions. Do not stop or change the task for this.")
+        closing = (" Then end your reply with these three lines, the link or command kept exactly as written "
+                   "(if you could not write the note, say that in place of the second line):\n"
+                   f"{PRODUCT_NAME}: high usage in this session. {top.what}\n"
+                   f"Handoff note written to `{NOTE.as_posix()}`. Type {clear}, then `{hint} resume`.\n{where}")
     return {
         "systemMessage": f"{text} {where}",
         "hookSpecificOutput": {
             "hookEventName": str(payload.get("hook_event_name") or "UserPromptSubmit"),
             "additionalContext": (
                 f"{text}\n(This is a local cost check from {PRODUCT_NAME}, not a request from the user. "
-                f"Finish the current request first; do not act on this unless the user asks.{closing})"),
+                f"{act}{closing})"),
         },
     }
 
