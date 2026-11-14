@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from .files import count_lines_bytes
+from .jsonkey import count_key, read_key
 from .util import frontmatter
 
 USE_DAYS = 14                    # how far back "used lately" looks
@@ -70,12 +71,7 @@ def _plugin(root: Path) -> dict:
         if got:
             names.append(got[0])
             size += got[1]
-    connectors = 0
-    try:
-        servers = json.loads((root / ".mcp.json").read_text(encoding="utf-8")).get("mcpServers")
-        connectors = len(servers) if isinstance(servers, dict) else 0
-    except (OSError, ValueError, AttributeError):
-        pass
+    connectors = count_key(root / ".mcp.json", "mcpServers")   # a number only: an entry can hold a key
     hooks = ((root / "hooks").is_dir() or (root / "hooks.json").is_file()
              or bool(_json(root / ".claude-plugin" / "plugin.json").get("hooks")))
     return {"skills": names, "bytes": size, "connectors": connectors, "hooks": hooks}
@@ -85,7 +81,7 @@ def found(home: Path) -> list[dict]:
     """Every plugin and app-added skill that is switched on, with its listing size. No log reads."""
     claude = home / ".claude"
     out: list[dict] = []
-    enabled = _json(claude / "settings.json").get("enabledPlugins")
+    enabled = read_key(claude / "settings.json", "enabledPlugins")   # this key only: `env` can hold keys
     enabled = enabled if isinstance(enabled, dict) else {}
     installed = _json(claude / "plugins" / "installed_plugins.json").get("plugins")
     for key, rows in sorted(installed.items()) if isinstance(installed, dict) else []:
