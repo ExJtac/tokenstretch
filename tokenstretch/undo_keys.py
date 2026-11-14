@@ -4,7 +4,7 @@
 setup, that would wipe their edits, so this module takes out only what this tool put in:
 
 - an entry this tool added is removed: a hook or status line is matched by its own command string,
-  and any other key by the copy of the file that setup wrote (kept since 0.9.3 next to the backup);
+  and any other key by the copy of the file that setup wrote (kept next to the backup by versions after 0.9.3);
 - a key this tool changed goes back to the value in the backup, when it still has the value setup
   gave it;
 - everything else stays as it is now, including a key the user changed after setup.
