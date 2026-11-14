@@ -189,13 +189,13 @@ Most people will never type `/clear` or `/handoff`, so `tokenstretch setup` also
 
 1. **Long sessions are summarized automatically at about 200K tokens.** Setup sets `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000` under `env` in `~/.claude/settings.json`. Without it, a model with a large context window can carry several hundred thousand tokens on every step before anything trims it.
 2. **The automatic summary is written as a note you could resume from.** A `PreCompact` hook tells the summary what to keep (goal, what's done and how it was checked, files and branch, decisions, next step, open questions) and what to drop (file contents, command output, search results).
-3. **The summary is saved** to `.claude/handoff-auto.md` in the project by a `PostCompact` hook.
+3. **The summary is saved** to `.claude/handoff-auto.md` in the project by a `PostCompact` hook. The summary it replaces is kept as `.claude/handoff-auto.prev.md` (one copy, the newest).
 4. **The work restarts by itself after a summary.** The same `SessionStart` hook fires after a compaction and tells the agent to carry on with the summary's next step in the same turn, without stopping to report or asking for a go-ahead. Anything waiting on you still waits.
 5. **A new chat picks the work up.** A `SessionStart` hook tells the agent where the newest note is (that file, or the one `/handoff` writes) if it's less than 72 hours old. Say anything ("continue", "what's happening?") and the agent reads the note, tells you where things stand in a few lines, and does the next step without asking you to say go. Ask for something else and the note is left unread. Things the note lists as waiting on you still wait. You do have to send that one message: Claude Code doesn't let a hook start the first turn of an interactive chat.
 
 While autopilot is on, `watch`, the status line and the in-session warning stay quiet about long history below the automatic size: no tip to `/clear` by hand contradicts it. A session that is well past that size (it started before setup, so the setting never reached it) gets one tip instead: type `/compact` once.
 
-The three hooks are one command, `tokenstretch auto`. It makes no model calls, reads only what Claude Code passes it, never follows a link when writing, always exits 0, and its hook command ends in `|| true`, so it can't block a session, a prompt, or a compaction. Add `.claude/handoff-auto.md` to `.gitignore` if you don't want it committed.
+The three hooks are one command, `tokenstretch auto`. It makes no model calls, reads only what Claude Code passes it, never follows a link when writing, always exits 0, and its hook command ends in `|| true`, so it can't block a session, a prompt, or a compaction. The notes are kept out of commits; see [Handoff notes and git](#handoff-notes-and-git).
 
 Setup leaves your own choices alone: if you already set `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `DISABLE_AUTO_COMPACT`, `autoCompactWindow`, or turned `autoCompactEnabled` off, the size isn't touched. To use a different size, change the number in `settings.json` (Claude Code accepts 100000 to 1000000).
 
@@ -215,7 +215,16 @@ The note is at most 40 lines, written from what the agent already knows (it's to
 
 **The note is also written without you asking.** When the prompt hook reports that the history is long and the `/handoff` shortcut is installed, it asks the agent to write `.claude/handoff.md` at the end of its reply, and to tell you: type `/clear`, then `/handoff resume`. That leaves you one thing to type. Writing the note costs one extra step, at most once every 20 minutes per session. tokenstretch does not run `/clear` for you: a hook cannot run it. The request is not made while the history is in the range that Claude Code's own automatic summary handles (see "Autopilot" above), and it is advice to the agent: an agent can skip it. Covered by tests; how often agents follow it has not been measured.
 
-The shortcut is a manual-only skill (`disable-model-invocation: true`), so it adds nothing to each turn and the agent never runs it on its own. Once it's installed, `watch` and `statusline` say `/handoff then /clear` instead of `/clear`. Setup never replaces a `handoff` skill or command you already have, and `tokenstretch undo` deletes the file. The note lives in the project's `.claude/` folder; add `.claude/handoff.md` to `.gitignore` if you don't want it committed. Claude Code only for now. The saving isn't measured yet: it depends on how often you clear.
+The shortcut is a manual-only skill (`disable-model-invocation: true`), so it adds nothing to each turn and the agent never runs it on its own. Once it's installed, `watch` and `statusline` say `/handoff then /clear` instead of `/clear`. Setup never replaces a `handoff` skill or command you already have (it does update an older copy that it wrote itself), and `tokenstretch undo` deletes the file. Claude Code only for now. The saving isn't measured yet: it depends on how often you clear.
+
+### Handoff notes and git
+
+The notes live in the project's `.claude/` folder. Two things keep an old note and your commits safe:
+
+- **The note before the last one is kept.** `/handoff` renames an existing `.claude/handoff.md` to `.claude/handoff.prev.md` before it writes the new one (one `mv` command by the agent). When the prompt hook asks for the note, the hook makes that copy itself. The `PostCompact` hook does the same for `.claude/handoff-auto.md` (`.claude/handoff-auto.prev.md`). One copy is kept per note: a third note replaces the oldest.
+- **The notes stay out of commits.** The hooks add one line, `**/.claude/handoff*.md`, to the clone's own `.git/info/exclude`. Git reads that file like a `.gitignore`, but it is local to your clone and is never committed, so your tracked `.gitignore` is not edited and your teammates see no change. The line is added when a hook saves a note, asks for one, or finds one at the start of a chat. It is added once.
+
+To commit the notes, put `#` in front of that line in `.git/info/exclude`; tokenstretch sees the line and does not add it again. Limits: a note that git already tracks stays tracked (run `git rm --cached .claude/handoff.md` once), a folder that is not a git clone gets nothing, and `/handoff` typed by hand in a project where no hook has run yet is covered from the next `/clear` or new chat. `tokenstretch undo` does not remove the line; delete it by hand if you want it gone.
 
 ## In your status bar
 

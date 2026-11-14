@@ -631,3 +631,116 @@ def test_setup_leaves_a_project_agent_of_the_same_name_alone(tmp_path):
     mine.parent.mkdir(parents=True)
     mine.write_text("project copy\n", encoding="utf-8")
     assert "claude-advisor-agent" not in {i.id for i in build_plan(_ctx(w))[0]}
+
+
+# ---- handoff notes: the old one is kept, and neither reaches a commit -----------------------------
+
+def test_auto_note_keeps_the_previous_summary(tmp_path):
+    import io as _io
+    from tokenstretch.auto import run_auto
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    for text in ("Goal: first.", "Goal: second.", "Goal: third."):
+        run_auto(stdin=_io.StringIO(json.dumps(
+            {"hook_event_name": "PostCompact", "cwd": str(proj), "compact_summary": text})))
+    assert (proj / ".claude" / "handoff-auto.md").read_text().endswith("Goal: third.\n")
+    assert (proj / ".claude" / "handoff-auto.prev.md").read_text().endswith("Goal: second.\n")   # one copy, the newest
+    assert sorted(p.name for p in (proj / ".claude").iterdir()) == ["handoff-auto.md", "handoff-auto.prev.md"]
+    assert not (proj / ".git").exists()                       # not a git clone: nothing is created for git
+
+
+def test_keep_previous_never_follows_a_link_and_skips_an_empty_note(tmp_path):
+    from tokenstretch.auto import keep_previous, prev_path
+    note = tmp_path / "handoff.md"
+    assert prev_path(note).name == "handoff.prev.md" and keep_previous(note) is None      # no note yet
+    note.write_text("old note\n", encoding="utf-8")
+    assert keep_previous(note) == tmp_path / "handoff.prev.md"
+    note.write_text("  \n", encoding="utf-8")
+    assert keep_previous(note) is None and prev_path(note).read_text() == "old note\n"    # empty never replaces a copy
+    target = tmp_path / "secret.txt"
+    target.write_text("keep", encoding="utf-8")
+    prev_path(note).unlink()
+    prev_path(note).symlink_to(target)
+    note.write_text("new note\n", encoding="utf-8")
+    assert keep_previous(note) is None and target.read_text() == "keep"
+
+
+def test_handoff_notes_are_kept_out_of_commits_without_touching_gitignore(tmp_path):
+    import io as _io
+    import shutil
+    import subprocess
+    from tokenstretch.auto import GIT_PATTERN, keep_out_of_git, run_auto
+    proj = tmp_path / "proj"
+    (proj / ".git" / "info").mkdir(parents=True)
+    (proj / ".git" / "info" / "exclude").write_text("*.log", encoding="utf-8")            # no newline at the end
+    (proj / ".gitignore").write_text("node_modules\n", encoding="utf-8")
+    sub = proj / "pkg"
+    sub.mkdir()
+    run_auto(stdin=_io.StringIO(json.dumps(
+        {"hook_event_name": "PostCompact", "cwd": str(sub), "compact_summary": "Goal: x."})))
+    exclude = (proj / ".git" / "info" / "exclude").read_text()
+    assert exclude.startswith("*.log\n# tokenstretch:") and exclude.endswith(GIT_PATTERN + "\n")
+    assert (proj / ".gitignore").read_text() == "node_modules\n"                          # the tracked file is not edited
+    assert keep_out_of_git(sub) is False and (proj / ".git" / "info" / "exclude").read_text() == exclude   # added once
+    # A # in front of the line turns it off: it is not added again.
+    (proj / ".git" / "info" / "exclude").write_text("# " + GIT_PATTERN + "\n", encoding="utf-8")
+    assert keep_out_of_git(proj) is False
+    assert (proj / ".git" / "info" / "exclude").read_text() == "# " + GIT_PATTERN + "\n"
+    # Never through a link.
+    target = tmp_path / "elsewhere.txt"
+    target.write_text("keep", encoding="utf-8")
+    (proj / ".git" / "info" / "exclude").unlink()
+    (proj / ".git" / "info" / "exclude").symlink_to(target)
+    assert keep_out_of_git(proj) is False and target.read_text() == "keep"
+    if shutil.which("git"):                                   # the pattern does what it says in real git
+        real = tmp_path / "real"
+        (real / "pkg" / ".claude").mkdir(parents=True)
+        (real / ".claude").mkdir()
+        subprocess.run(["git", "init", "-q", str(real)], check=True)
+        assert keep_out_of_git(real / "pkg") is True
+        for rel in (".claude/handoff.md", ".claude/handoff.prev.md", ".claude/handoff-auto.md",
+                    ".claude/handoff-auto.prev.md", "pkg/.claude/handoff.md"):
+            assert subprocess.run(["git", "-C", str(real), "check-ignore", "-q", rel]).returncode == 0, rel
+        assert subprocess.run(["git", "-C", str(real), "check-ignore", "-q", ".claude/settings.json"]).returncode == 1
+        wt = tmp_path / "wt"                                  # a worktree shares the main clone's exclude file
+        meta = real / ".git" / "worktrees" / "wt"             # the layout `git worktree add` makes
+        meta.mkdir(parents=True)
+        wt.mkdir()
+        (meta / "commondir").write_text("../..\n", encoding="utf-8")
+        (wt / ".git").write_text(f"gitdir: {meta}\n", encoding="utf-8")
+        assert keep_out_of_git(wt) is False                   # found the same file: already there
+
+
+def test_new_chat_with_a_handoff_note_adds_the_exclude_line(tmp_path):
+    import io as _io
+    from tokenstretch.auto import GIT_PATTERN, run_auto
+    proj = tmp_path / "proj"
+    (proj / ".git").mkdir(parents=True)
+    (proj / ".claude").mkdir()
+    out = []
+    run_auto(stdin=_io.StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj)})),
+             out=out.append, home=tmp_path / "home")
+    assert not (proj / ".git" / "info").exists()              # no note: nothing is written
+    (proj / ".claude" / "handoff.md").write_text("Goal: x\n", encoding="utf-8")
+    run_auto(stdin=_io.StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "clear", "cwd": str(proj)})),
+             out=out.append, home=tmp_path / "home")
+    assert GIT_PATTERN in (proj / ".git" / "info" / "exclude").read_text()
+
+
+def test_setup_updates_its_own_older_handoff_skill_and_never_yours(tmp_path):
+    w = _world(tmp_path)
+    skill = w / "home" / ".claude" / "skills" / "handoff" / "SKILL.md"
+    _run(w, yes=True, installs=False)
+    current = skill.read_text(encoding="utf-8")
+    assert "first rename it to `.claude/handoff.prev.md`" in current and "replacing any old one" not in current
+    assert "Do not add either file to a commit" in current
+    items = build_plan(_ctx(w))[0]
+    assert "claude-handoff-skill" not in {i.id for i in items}                             # current: nothing to do
+    skill.write_text(current.replace("first rename it", "OLDER TEXT"), encoding="utf-8")   # an older copy of ours
+    item = next(i for i in build_plan(_ctx(w))[0] if i.id == "claude-handoff-skill")
+    assert item.changes[0]["kind"] == "modify" and item.title.startswith("Update the /handoff shortcut")
+    _run(w, yes=True, installs=False)
+    assert skill.read_text(encoding="utf-8") == current
+    skill.write_text("my own handoff, no marker\n", encoding="utf-8")
+    assert "claude-handoff-skill" not in {i.id for i in build_plan(_ctx(w))[0]}
+    assert skill.read_text(encoding="utf-8") == "my own handoff, no marker\n"
