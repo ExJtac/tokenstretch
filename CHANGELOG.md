@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- The handoff note is written without the user asking. When the prompt hook reports a long history and the `/handoff` shortcut is installed, it asks the agent to write `.claude/handoff.md` at the end of its reply and to tell the user to type `/clear`, then `/handoff resume`. It costs one extra step, at most once every 20 minutes per session. tokenstretch does not run `/clear`: a hook cannot. How often agents follow the request has not been measured.
+- `doctor` W29 `memory-in-another-project` (Claude Code): reports memory entries whose file name starts with the name of another project's folder, when a project's memory folder holds two or more for the same name. Every session in a project loads that project's memory index, so such an entry is paid for by sessions that do not need it. Only file and folder names are compared; no memory file is opened. The match is by name only, so check each entry before moving it.
+
 ## [0.9.2] - 2026-11-13
 
 ### Added

@@ -288,6 +288,8 @@ Every step re-sends the whole conversation, so the biggest saving is a fresh ses
 
 The note is at most 40 lines, written from what the agent already knows (it's told not to read files or run commands for it), so the handoff itself is one cheap step. After `/clear` you re-send a page instead of the whole history.
 
+**The note is also written without you asking.** When the prompt hook reports that the history is long and the `/handoff` shortcut is installed, it asks the agent to write `.claude/handoff.md` at the end of its reply, and to tell you: type `/clear`, then `/handoff resume`. That leaves you one thing to type. Writing the note costs one extra step, at most once every 20 minutes per session. tokenstretch does not run `/clear` for you: a hook cannot run it. The request is not made while the history is in the range that Claude Code's own automatic summary handles (see "Autopilot" above), and it is advice to the agent: an agent can skip it. Covered by tests; how often agents follow it has not been measured.
+
 The shortcut is a manual-only skill (`disable-model-invocation: true`), so it adds nothing to each turn and the agent never runs it on its own. Once it's installed, `watch` and `statusline` say `/handoff then /clear` instead of `/clear`. Setup never replaces a `handoff` skill or command you already have, and `tokenstretch undo` deletes the file. The note lives in the project's `.claude/` folder; add `.claude/handoff.md` to `.gitignore` if you don't want it committed. Claude Code only for now. The saving isn't measured yet: it depends on how often you clear.
 
 ## In your status bar

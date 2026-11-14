@@ -597,6 +597,25 @@ def test_prompt_note_is_still_typed_with_the_end_hook_installed(tmp_path):
     assert not end_hook_on(home)
 
 
+def test_prompt_note_asks_the_agent_to_write_the_handoff_note_when_history_is_long(tmp_path):
+    from tokenstretch.nudge import build_nudge
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
+    payload = {"transcript_path": str(_log(w)), "hook_event_name": "UserPromptSubmit"}
+    with credential_guard():
+        plain = build_nudge(_ctx(w), {**payload, "session_id": "abcd1234-0044"}, now=lambda: 1_000_000.0)
+    extra = plain["hookSpecificOutput"]["additionalContext"]
+    assert "do not act on this unless the user asks" in extra and "handoff.md" not in extra   # no shortcut installed
+    skill = w / "home" / ".claude" / "skills" / "handoff" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\\nname: handoff\\n---\\n", encoding="utf-8")
+    with credential_guard():
+        got = build_nudge(_ctx(w), {**payload, "session_id": "abcd1234-0055"}, now=lambda: 1_000_000.0)
+    extra = got["hookSpecificOutput"]["additionalContext"]
+    assert "write `.claude/handoff.md`" in extra and "do not read files or run commands" in extra
+    assert "Type /clear, then `/handoff resume`." in extra and "high usage in this session" in extra
+    assert "do not act on this unless the user asks" not in extra
+
+
 def test_helper_launch_note_only_for_a_helper_from_a_long_conversation(tmp_path):
     from tokenstretch.nudge import build_nudge
     w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
