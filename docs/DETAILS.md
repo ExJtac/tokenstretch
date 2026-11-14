@@ -21,6 +21,7 @@ The full guide and implementation notes that used to be in the README. Start wit
 - **A weekly report.** `report --weekly` adds up your local usage logs per week: tokens by type and by model, your biggest session histories, waste spots, and a before/after view since setup. Cost appears only where your logs report it.
 - **A local dashboard.** `dashboard` opens one live page on your own machine with all of the above, updated every 5 seconds. See [Dashboard](#dashboard).
 - **Real measurements, never guesses.** `bench` compares before and after on a throwaway copy of your repo, using your agent's own usage logs. If there's no data, it says `no measurement`.
+- **An update you ask for.** `update` shows what changed in a newer release and installs it after you say yes. Nothing checks in the background. See [Update](#update).
 - **Full undo.** Every changed file is backed up under `~/.tokenstretch/backups/`, and each change is recorded in a manifest.
 
 ## What `tokenstretch start` does
@@ -78,6 +79,30 @@ Plan (3 changes, all local, every file backed up first):
 Apply these 3 change(s)? [y/N] y
 ✔ switched default model to sonnet, backed up ~/.claude/settings.json → ~/.tokenstretch/backups/…/home/.claude/settings.json
 ```
+
+## Update
+
+```bash
+tokenstretch update
+```
+
+It looks at the project's GitHub page for a newer release. When there is one, it lists what changed and asks before it installs anything. Enter means no.
+
+```text
+Installed: 0.9.2. Newest release: 0.9.3.
+What changed:
+[0.9.3] - 2026-11-14
+  - `tokenstretch update`: see whether a newer release exists, show what changed, ask, install it.
+Release notes: https://github.com/ExJtac/tokenstretch/releases/tag/v0.9.3
+Install 0.9.3 now? The release is checked against its pinned commit first. [y/N]
+```
+
+- `tokenstretch update --check` only looks. It exits 0 when you are up to date and 10 when a newer release exists.
+- `tokenstretch update --yes` installs without asking. `--json` prints one JSON document and never asks.
+- The install is the same pinned installer as a first install, run for the folders your copy already lives in. Your settings, hooks and backups are not touched.
+- It only changes a copy that the installer put there. A git checkout or any other copy is left alone: update that one the way you installed it.
+- Nothing checks for updates unless you run this command. It downloads two public files with `curl` (or `wget`): the installer script and the changelog. It sends nothing about you or your computer.
+- On Windows there is no installer script, so it reports the newer release and stops.
 
 ## What setup changes, and how to undo it
 
@@ -667,7 +692,7 @@ Tests run the server on 127.0.0.1 with the socket guard narrowed to loopback onl
 These are the product guarantees. What is actually enforced in this tree today is listed after the block.
 
 > **Privacy guarantees**
-> - **Zero network calls from the kit itself.** `doctor` and `bench` read local files only. The kit has no telemetry, analytics, crash reporting, update checks, or "phone home." The only network traffic is the install step you run yourself, which downloads pinned versions (exact tags, with checksums where upstream publishes them).
+> - **Zero network calls from the kit itself.** `doctor` and `bench` read local files only. The kit has no telemetry, analytics, crash reporting, update checks, or "phone home." The only network traffic is the install step you run yourself, which downloads pinned versions (exact tags, with checksums where upstream publishes them), and `tokenstretch update`, which checks for a newer release only when you run it.
 > - **Your prompts, code, and logs never leave your machine because of this kit.** Your agent still talks to your own provider (Anthropic or OpenAI), exactly as it did before.
 > - **The default profile ships only tools that run fully local with telemetry off:** RTK (OSS edition; telemetry off by default), the Caveman skill (no CLI, no cloud), Microsoft TokenEconomizer, and ccusage in `--offline` mode.
 > - **No credential handling.** The kit never reads, copies, or proxies your Claude/ChatGPT login, API keys, or tokens. There is no proxy on your subscription login and no MITM certificates.
