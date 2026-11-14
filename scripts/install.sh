@@ -19,7 +19,7 @@ set -eu
 # own hash). Nothing else in this file changes per release. Empty means "no release pinned yet".
 TS_PIN_TAG="v0.8.0"            # release tag, e.g. v0.1.0
 TS_PIN_COMMIT="8c8b37ac0a2db3a4303c0b8ab901367222a5c6ba"         # full 40-character commit the tag must point at
-TS_PIN_TARBALL_SHA256="4b6c06a4f7a42f2e5fca809deb3e48407e165cdcb5edaf61acea0696fc06fc10" # SHA-256 of $TS_REPO/archive/$TS_PIN_COMMIT.tar.gz (tarball method only)
+TS_PIN_TARBALL_SHA256="ec7321cd62eb39fe3f578cb4938cd2340bbf91f044e40edf20c473247e89af76" # SHA-256 of $TS_REPO/archive/$TS_PIN_COMMIT.tar.gz (tarball method only)
 # ==============================================================================================
 
 TS_REPO="https://github.com/ExJtac/tokenstretch"
