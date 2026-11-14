@@ -427,6 +427,8 @@ class Watcher:
         self.notifier = notifier
         self.seen: set[tuple] = set()
         self._pace_at = 0.0
+        self.checkup_every_s = 0.0      # 0: no doctor pass (run_watch turns it on)
+        self._checkup_at: float | None = None
 
     def coverage(self) -> tuple[list[str], list[str]]:
         """(watched tool names, detected but not supported yet)."""
@@ -461,7 +463,30 @@ class Watcher:
                 new.append(w)
                 if self.notifier:
                     self.notifier(f"{PRODUCT_NAME}: pace", f"{w.what} Fix: {w.fix}")
+        for w in self.checkup_scan():
+            new.append(w)
+            if self.notifier:
+                self.notifier(f"{PRODUCT_NAME}: new finding", f"{w.what} Fix: {w.fix}")
         return new
+
+    def checkup_scan(self) -> list[WatchWarning]:
+        """Every `checkup_every_s`, run the doctor checks and return findings that were not there last time.
+        The first pass only records a starting point. Never raises: a failed check must not stop the watch."""
+        now = self.now()
+        if not self.checkup_every_s or (self._checkup_at is not None and now - self._checkup_at < self.checkup_every_s):
+            return []
+        self._checkup_at = now
+        try:
+            from . import checkup
+            from .mask import mask_text
+            fresh, _first = checkup.new_since_last(self.ctx.home, checkup.collect(self.ctx, use_cache=True), now)
+        except Exception:  # noqa: BLE001
+            return []
+        return [WatchWarning(("checkup", checkup.finding_key(f)), adapter=f.adapter_id or "doctor", session=f.id,
+                             project="", what=f"new finding ({f.severity}): {mask_text(f.message)}",
+                             why=f"it was not there at the last check. `{CLI_NAME} doctor` lists every finding.",
+                             fix=f.fix, short=f"new finding {f.id}: `{CLI_NAME} doctor --new`")
+                for f in fresh]
 
     def pace_scan(self) -> list[WatchWarning]:
         """Check `pace` (a stored plan window over its line). Silent with no reading or a finished window."""
@@ -493,8 +518,9 @@ class Watcher:
 
 def run_watch(ctx: Context, cfg: WatchConfig | None = None, *, interval: float = 10.0, once: bool = False,
               notify: bool = False, out: Callable[[str], None] = print, sleep: Callable[[float], None] = time.sleep,
-              adapters=None) -> int:
+              adapters=None, checkup_min: float = 0.0) -> int:
     w = Watcher(ctx, cfg, adapters=adapters, notifier=_notify if notify else None)
+    w.checkup_every_s = checkup_min * 60
     yes, no = w.coverage()
     every = "one pass" if once else f"every {interval:g}s; Ctrl-C to stop"
     out(f"{PRODUCT_NAME} watch ({every}). Read-only: local session logs only, nothing leaves this machine.")

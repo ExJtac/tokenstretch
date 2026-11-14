@@ -56,6 +56,7 @@ It checks your computer, lists every change in plain words, and asks once. Nothi
 | `tokenstretch undo` | Puts back every file setup changed. |
 | `tokenstretch update` | Shows what changed in a newer release and installs it after you say yes. Nothing checks in the background. |
 | `tokenstretch watch` / `statusline` | Live warnings while you work, in a terminal or your tool's status bar. |
+| `tokenstretch doctor --new` | Only the findings that are new since the last check. No model, no credits. `watch` does the same every 30 minutes. |
 | `tokenstretch dashboard` | One live page on your own machine (127.0.0.1): sessions, warnings, weekly pace. |
 | `tokenstretch trim` | Shows what your CLAUDE.md, AGENTS.md, GEMINI.md cost per turn and proposes a safe trim (dry run unless `--apply`). |
 | `tokenstretch startup` / `connectors` / `outputs` | What every session carries before the first prompt, which connectors you never call, and which tool outputs fill your sessions. |
@@ -180,6 +181,7 @@ Long reference material lives in [docs/DETAILS.md](docs/DETAILS.md):
 - [Update to a newer release](docs/DETAILS.md#update)
 - [What setup changes, and how to undo it](docs/DETAILS.md#what-setup-changes-and-how-to-undo-it)
 - [Watch while you work](docs/DETAILS.md#watch-while-you-work)
+- [New findings only, with no model](docs/DETAILS.md#new-findings-only-with-no-model)
 - [Autopilot: shorter sessions with nothing to type](docs/DETAILS.md#autopilot-shorter-sessions-with-nothing-to-type)
 - [Start fresh without losing the task (`/handoff`)](docs/DETAILS.md#start-fresh-without-losing-the-task)
 - [In your status bar](docs/DETAILS.md#in-your-status-bar)

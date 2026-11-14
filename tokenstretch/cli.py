@@ -17,20 +17,27 @@ def doctor(args) -> int:
     ctx = build_context(args.home, args.root, args.sys_snapshot, args.plan)
     if getattr(args, "usage", False):
         return doctor_usage(ctx)
-    findings = []
-    from . import logcache
-    if not getattr(args, "no_cache", True) and not args.privacy:   # callers without the flag: no cache
-        logcache.open_disk_memo(ctx.home / STATE_DIRNAME / "cache" / "doctor-logs.json", VERSION)
-    try:
-        for ad in REGISTRY:
-            if not ad.detect(ctx):
-                continue
-            findings += ad.privacy_checks(ctx) if args.privacy else ad.checks(ctx) + ad.privacy_checks(ctx)
-    finally:
-        logcache.save_disk_memo()
-    findings.sort(key=lambda f: (SEVERITY_ORDER.get(f.severity, 9), f.id))
-    for f in findings:
-        f.evidence = mask_finding_evidence(f.evidence)
+    from . import checkup
+
+    if getattr(args, "new", False) and args.privacy:
+        print("--new compares the full checkup, so it cannot be combined with --privacy.", file=sys.stderr)
+        return 2
+    findings = checkup.collect(ctx, privacy=args.privacy, use_cache=not getattr(args, "no_cache", True))
+    if getattr(args, "new", False):   # callers without the flag: the full list
+        total = len(findings)
+        findings, first = checkup.new_since_last(ctx.home, findings)
+        if findings and getattr(args, "notify", False):
+            from .watch import _notify
+            _notify(f"{PRODUCT_NAME}: {len(findings)} new finding(s)", checkup.notice(findings))
+        if not args.json:
+            if first:
+                print(f"First check: {total} finding(s) recorded as the starting point. "
+                      f"Run `{CLI_NAME} doctor` to see them. Later runs of `doctor --new` list only new ones.")
+                return 0
+            if not findings:
+                print(f"No new findings since the last check ({total} known).")
+                return 0
+            print(f"{len(findings)} new finding(s) since the last check:")
     if args.json:
         print(json.dumps([f.to_json() for f in findings], indent=2, default=str))
     else:
@@ -269,7 +276,8 @@ def cmd_watch(args) -> int:
     ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
     cfg = WatchConfig(max_context=args.max_context, max_reads=args.max_reads, max_start=args.max_start,
                       wake_min=max(1, args.wake_min))
-    return run_watch(ctx, cfg, interval=max(1.0, args.interval), once=bool(args.once), notify=bool(args.notify))
+    return run_watch(ctx, cfg, interval=max(1.0, args.interval), once=bool(args.once), notify=bool(args.notify),
+                     checkup_min=max(0.0, args.checkup))
 
 
 def cmd_statusline(args) -> int:
@@ -740,6 +748,11 @@ def main(argv=None) -> int:
     d.add_argument("--privacy", action="store_true")
     d.add_argument("--usage", action="store_true",
                    help="list what is using high credits in the sessions active now, with the fix for each; read-only")
+    d.add_argument("--new", action="store_true",
+                   help=f"list only findings that were not there at the last `doctor --new` (remembered as hashes "
+                        f"in ~/{STATE_DIRNAME}/findings-seen.json); the first run records a starting point")
+    d.add_argument("--notify", action="store_true",
+                   help="with --new: also show a local desktop notification when something new is found")
     d.add_argument("--no-cache", action="store_true",
                    help=f"re-read every session log and write nothing (default: keep per-log totals in ~/{STATE_DIRNAME}/cache)")
 
@@ -859,6 +872,8 @@ def main(argv=None) -> int:
     w.add_argument("--wake-min", type=int, default=3,
                    help="warn when finished helpers woke a conversation this many times (default 3)")
     w.add_argument("--notify", action="store_true", help="also show a local desktop notification (osascript/notify-send)")
+    w.add_argument("--checkup", type=float, default=30.0, metavar="MINUTES",
+                   help="also run the doctor checks this often and show findings that are new (default 30; 0 turns it off)")
 
     sl = sub.add_parser("statusline",
                         help="one read-only line for a status bar: history size and the top watch warning")
