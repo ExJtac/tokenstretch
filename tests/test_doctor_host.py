@@ -71,6 +71,23 @@ def test_w17_dup_instructions(tmp_path):
     assert "CLAUDE.md" in names and "AGENTS.md" in names
 
 
+def test_w17_ignores_the_same_file_in_separate_checkouts(tmp_path):
+    # Two checkouts of one project hold the same AGENTS.md; a session loads only one of them.
+    from tokenstretch.adapters.host import HostAdapter
+    from tokenstretch.context import Context
+    home = tmp_path / "home"
+    for name in ("copy-a", "copy-b"):
+        (home / "work" / name).mkdir(parents=True)
+        (home / "work" / name / "AGENTS.md").write_text("Rule one.\nRule two.\n", encoding="utf-8")
+    root = home / "work" / "copy-a"
+    ctx = Context(home=home, root=root)
+    assert HostAdapter()._w17(ctx) == []
+    # The same text in a folder above is loaded together with the copy below it: counted.
+    (home / "work" / "AGENTS.md").write_text("Rule one.\nRule two.\n", encoding="utf-8")
+    got = HostAdapter()._w17(ctx)
+    assert len(got) == 1 and "1 set" in got[0].message
+
+
 def test_w18_auto_approve_default(tmp_path):
     _, findings, _, _ = _ecosystem(tmp_path)
     hits = findings_with(findings, "W18", "cline")
