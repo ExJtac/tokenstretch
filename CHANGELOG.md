@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+- The prompt hook asks the agent to type the high-usage note at the end of its reply again, also when the `Stop` hook is installed. 0.9.0 stopped that, but the Claude desktop app folds the `Stop` hook's message under a "Claude Code notice" line that has to be clicked open (seen November 2026), so the note was easy to miss.
+
 ## [0.9.0] - 2026-11-13
 
 ### Added

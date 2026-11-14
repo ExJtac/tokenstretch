@@ -88,10 +88,10 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
     where = where_to_fix(ctx.home)
     if stop:   # when a reply ends: a message for the user only; nothing for the agent, so no extra step
         return {"systemMessage": f"{PRODUCT_NAME}: high usage in this session. {top.what} {where}"}
-    # With the end-of-reply hook installed, that hook shows the note to the user itself, so the agent
-    # is not asked to type it too. Without it (an install from before that hook), the agent still is.
-    closing = ("" if end_hook_on(ctx.home) else
-               " Then end your reply with these two lines, the link or command kept exactly as written:\n"
+    # The agent is asked to type the note even with the end-of-reply hook installed: the desktop app
+    # folds that hook's message under a "Claude Code notice" line (seen November 2026), so on its own
+    # it is easy to miss. The typed note is the one the user sees without a click.
+    closing = (" Then end your reply with these two lines, the link or command kept exactly as written:\n"
                f"{PRODUCT_NAME}: high usage in this session. {top.what}\n{where}")
     return {
         "systemMessage": f"{text} {where}",
