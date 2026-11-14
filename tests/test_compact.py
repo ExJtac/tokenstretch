@@ -118,6 +118,21 @@ def test_adapter_round_trip(tmp_path, adapter_id, text):
     assert _snapshot(w) == before
 
 
+def test_crlf_file_keeps_its_line_endings_and_comes_back_byte_for_byte(tmp_path):
+    w, path = _world_for(tmp_path, "claude-code", "# Project\n")
+    path.write_bytes(b"# Project\r\n\r\nRule one.\r\n")
+    ad, ctx = BY_ID["claude-code"], _ctx(w)
+    before = _snapshot(w)
+    with credential_guard():
+        apply_changes(ctx, ad.compact_item(ctx, True).changes, stamp="c-on")
+    on = path.read_bytes()
+    assert COMPACT_START.encode() in on and b"\n" not in on.replace(b"\r\n", b"")   # every line still ends CRLF
+    assert ad.compact_item(ctx, True) is None
+    with credential_guard():
+        apply_changes(ctx, ad.compact_item(ctx, False).changes, stamp="c-off")
+    assert _snapshot(w) == before
+
+
 def test_files_that_are_never_created_and_the_home_folder(tmp_path):
     w = _world(tmp_path)
     _gemini_home(w)

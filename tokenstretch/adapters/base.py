@@ -384,7 +384,10 @@ class Adapter:
         if path is None or ctx.root.resolve() == ctx.home.resolve():
             return None      # no project folder; never write an instruction file in the home folder
         there = path.is_file()
-        existing = path.read_text(encoding="utf-8", errors="replace") if there else ""
+        # read the bytes as they are: text mode would turn CRLF into LF, and `off` must restore the file exactly
+        existing = path.read_bytes().decode("utf-8", errors="replace") if there else ""
+        crlf = "\r\n" in existing
+        existing = existing.replace("\r\n", "\n")
         if on:
             if not there and not self.COMPACT_CREATE:
                 return None
@@ -396,6 +399,8 @@ class Adapter:
             new = remove_compact_block(existing)
         if new is None:
             return None
+        if crlf:
+            new = new.replace("\n", "\r\n")
         name = path.name
         return SetupItem(
             id=f"{self.id}-compact-block", adapter_id=self.id,
