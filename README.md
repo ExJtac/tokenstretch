@@ -64,7 +64,7 @@ It checks your computer, lists every change in plain words, and asks once. Nothi
 | `tokenstretch brief` / `queue` / `pace` | Cheap task briefs, a file-based task queue for agent teams, and pacing a plan's weekly limit. |
 | `tokenstretch report` / `bench` | A local HTML report, and real before/after measurements on your own repo. |
 
-For Claude Code, setup also adds `/handoff`, `/brief` and `/credits` shortcuts, and can summarize long sessions automatically so a new chat carries on from a note. Every feature in detail: [docs/DETAILS.md](docs/DETAILS.md#what-you-get).
+For Claude Code, setup also adds `/handoff`, `/brief` and `/credits` shortcuts and a read-only `tokenstretch-advisor` helper you can ask for a credit review, and can summarize long sessions automatically so a new chat carries on from a note. Every feature in detail: [docs/DETAILS.md](docs/DETAILS.md#what-you-get).
 
 ## Privacy promises
 

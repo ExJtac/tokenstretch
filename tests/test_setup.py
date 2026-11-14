@@ -13,6 +13,7 @@ from tokenstretch.cli import main
 from tokenstretch.context import build_context
 from tokenstretch.runner import FakeRunner
 from tokenstretch.setup import build_plan, collect_status, run_setup, write_report
+from tokenstretch.util import frontmatter
 
 SETTINGS = {"model": "opus", "theme": "dark"}
 
@@ -93,7 +94,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     w = _world(tmp_path)
     before = _snapshot(w)
     res, out = _run(w, yes=True, installs=False)
-    assert res.mode == "applied" and len(res.manifests) == 7
+    assert res.mode == "applied" and len(res.manifests) == 8
     assert "✔ switched default model to sonnet and turned on live warnings, backed up ~/.claude/settings.json" in out
     assert "/model opus" in out
     s = json.loads((w / "home" / ".claude" / "settings.json").read_text())
@@ -123,7 +124,7 @@ def test_yes_applies_with_progress_and_undo_restores(tmp_path):
     buf = io.StringIO()
     with credential_guard(), redirect_stdout(buf):
         code = main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
-    assert code == 0 and "Restored 3 file(s), deleted 4 created file(s)" in buf.getvalue()
+    assert code == 0 and "Restored 3 file(s), deleted 5 created file(s)" in buf.getvalue()
     assert _snapshot(w) == before
 
 
@@ -586,3 +587,47 @@ def test_auto_hook_never_fails_or_writes_where_it_should_not(tmp_path):
     (tmp_path / ".claude" / "handoff-auto.md").symlink_to(target)
     run_auto(stdin=_io.StringIO(json.dumps({"hook_event_name": "PostCompact", "cwd": str(tmp_path), "compact_summary": "x"})))
     assert target.read_text() == "keep"
+
+
+def test_setup_adds_the_advisor_agent_and_undo_removes_it(tmp_path):
+    w = _world(tmp_path)
+    agent = w / "home" / ".claude" / "agents" / "tokenstretch-advisor.md"
+    _, out = _run(w, yes=True, installs=False)
+    assert "✔ added the tokenstretch-advisor helper" in out
+    text = agent.read_text(encoding="utf-8")
+    fm = frontmatter(text)
+    assert fm.get("name") == "tokenstretch-advisor" and fm.get("model") == "haiku" and fm.get("tools") == "Bash, Read"
+    assert "Use only when the user asks" in fm.get("description", "") and len(fm["description"]) < 160
+    for cmd in ("`tokenstretch doctor --new`", "`tokenstretch watch --once --checkup 0`", "`tokenstretch startup`"):
+        assert cmd in text
+    assert "Change no file and no setting." in text and "Your reader is the user" in text
+    assert "do not send messages to other agents" in text
+    assert len(text) < 2400 + len(str(tmp_path))
+    assert "claude-advisor-agent" not in {i.id for i in build_plan(_ctx(w))[0]}      # a second run plans nothing
+    with credential_guard(), redirect_stdout(io.StringIO()):
+        main(["undo", "--home", str(w / "home"), "--root", str(w / "root"), "--sys-snapshot", str(w / "sys")])
+    assert not agent.exists()
+
+
+def test_setup_updates_its_own_older_advisor_but_not_yours(tmp_path):
+    w = _world(tmp_path)
+    agent = w / "home" / ".claude" / "agents" / "tokenstretch-advisor.md"
+    agent.parent.mkdir(parents=True)
+    agent.write_text("---\nname: tokenstretch-advisor\n---\n<!-- added by tokenstretch; `tokenstretch undo` removes it -->\nold\n",
+                     encoding="utf-8")
+    item = next(i for i in build_plan(_ctx(w))[0] if i.id == "claude-advisor-agent")
+    assert item.title.startswith("Update") and item.changes[0]["kind"] == "modify"
+    _, out = _run(w, yes=True, only=["claude-advisor-agent"])
+    assert "✔ updated the tokenstretch-advisor helper, backed up" in out
+    assert "claude-advisor-agent" not in {i.id for i in build_plan(_ctx(w))[0]}
+    agent.write_text("my own advisor\n", encoding="utf-8")               # no marker: it is yours
+    assert "claude-advisor-agent" not in {i.id for i in build_plan(_ctx(w))[0]}
+    assert agent.read_text(encoding="utf-8") == "my own advisor\n"
+
+
+def test_setup_leaves_a_project_agent_of_the_same_name_alone(tmp_path):
+    w = _world(tmp_path)
+    mine = w / "root" / ".claude" / "agents" / "tokenstretch-advisor.md"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("project copy\n", encoding="utf-8")
+    assert "claude-advisor-agent" not in {i.id for i in build_plan(_ctx(w))[0]}
