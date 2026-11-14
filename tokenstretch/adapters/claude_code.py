@@ -1339,6 +1339,32 @@ class ClaudeCodeAdapter(Adapter):
 
     MEMORY_WORD_MIN = 4     # shorter first words match too many folder names by chance
     MEMORY_STRAY_MIN = 2    # one entry with a matching first word is too weak a sign
+    MEMORY_USE_LOGS = 5             # newest session logs looked at per folder ...
+    MEMORY_USE_TAIL = 2_000_000     # ... bytes from the end of each ...
+    MEMORY_USE_ROWS = 20            # ... and log rows naming the other project that count as work on it
+
+    def _memory_word_in_use(self, folder: Path, word: str) -> bool:
+        """True when the folder's recent sessions work on the project the word names.
+
+        Counts log rows that hold the word; nothing from a log is kept or shown. A session that only
+        loads the memory index names the word in a few rows, so a low count is not use.
+        """
+        try:
+            logs = sorted((p for p in folder.iterdir() if p.suffix == ".jsonl"),
+                          key=lambda p: p.stat().st_mtime, reverse=True)[:self.MEMORY_USE_LOGS]
+        except OSError:
+            return False
+        needle = word.encode("utf-8")
+        for log in logs:
+            try:
+                with log.open("rb") as fh:
+                    fh.seek(max(0, log.stat().st_size - self.MEMORY_USE_TAIL))
+                    rows = fh.read().lower().split(b"\n")
+            except OSError:
+                continue
+            if sum(1 for r in rows if needle in r) >= self.MEMORY_USE_ROWS:
+                return True
+        return False
 
     def _w29(self, ctx: Context) -> list[Finding]:
         """Memory entries whose file name starts with the name of another project's folder.
@@ -1356,6 +1382,7 @@ class ClaudeCodeAdapter(Adapter):
         words = {s: {w.lower() for w in s.split("-") if w} - home_words for s in slugs}
         stray: dict[str, int] = {}
         folders = 0
+        used = 0    # entries left out: the folder's own recent sessions work on that project
         for s in slugs:
             try:
                 names = [p.stem for p in (proj / s / "memory").iterdir()
@@ -1369,6 +1396,8 @@ class ClaudeCodeAdapter(Adapter):
                 if len(w) >= self.MEMORY_WORD_MIN and w in other:
                     first[w] = first.get(w, 0) + 1
             first = {w: c for w, c in first.items() if c >= self.MEMORY_STRAY_MIN}
+            for w in [w for w in first if self._memory_word_in_use(proj / s, w)]:
+                used += first.pop(w)
             if first:
                 folders += 1
                 for w, c in first.items():
@@ -1382,7 +1411,8 @@ class ClaudeCodeAdapter(Adapter):
             f"{total} memory entries in {folders} project memory folder{'s' if folders != 1 else ''} have a name "
             f"that starts with the name of another project's folder ({top}). Every session in a project loads "
             "that project's memory index, so an entry about another project is paid for by sessions that do "
-            "not need it.",
+            "not need it."
+            + (f" {used} more are not counted: recent sessions in their folder work on that project." if used else ""),
             "Check each entry first: the match is by name only. Move an entry that is about another project to "
             "that project's memory folder (~/.claude/projects/<project>/memory/) and move its line in "
             "MEMORY.md with it, or delete it.",

@@ -137,6 +137,20 @@ def test_w29_memory_entries_named_after_another_project(tmp_path):
     w29 = [f for f in _doctor_tree(dest) if f["id"] == "W29"]
     assert w29 and w29[0]["evidence"]["value"] == {"bakery": "2"}
     assert "2 memory entries in 1 project memory folder " in w29[0]["message"]
+    assert "not counted" not in w29[0]["message"]
+    # A session that only loads the memory index names the project in a few rows: still stray.
+    (proj / "-work-garden/old.jsonl").write_text('{"text": "bakery-oven.md"}\n' * 3, encoding="utf-8")
+    assert [f for f in _doctor_tree(dest) if f["id"] == "W29"]
+    # Recent sessions in the folder work on the bakery: its entries are in use there, not stray.
+    (proj / "-work-garden/new.jsonl").write_text('{"text": "Bakery oven fix"}\n' * 25, encoding="utf-8")
+    assert not [f for f in _doctor_tree(dest) if f["id"] == "W29"]
+    # Another name in the same folder is still reported, with the left-out count.
+    (proj / "-work-orchard").mkdir()
+    for name in ("orchard-trees.md", "orchard-pests.md"):
+        (mem / name).write_text("x", encoding="utf-8")
+    w29 = [f for f in _doctor_tree(dest) if f["id"] == "W29"]
+    assert w29 and w29[0]["evidence"]["value"] == {"orchard": "2"}
+    assert "2 more are not counted" in w29[0]["message"]
 
 
 def test_new_checks_quiet_on_clean(tmp_path):
