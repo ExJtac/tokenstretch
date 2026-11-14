@@ -123,6 +123,14 @@ def test_app_plugin_fix_gives_the_app_steps(tmp_path):
     assert "Settings > Customize > Plugins" in fix and '"Yours"' in fix and "can change" in fix
 
 
+def test_app_skill_fix_gives_the_help_page_steps(tmp_path):
+    home = _home(tmp_path)
+    _log(home, [_call("Read", file_path="x")])
+    got = {p["name"]: p for p in sp.parts(home, NOW)}
+    assert "Customize > Skills" in got["sheet"]["fix"] and "help page" in got["sheet"]["fix"]
+    assert got["sheet"]["item"] is None and got["viewer"]["item"] == "plugin:viewer"
+
+
 def test_dashboard_lists_the_unused_with_their_steps(tmp_path, monkeypatch):
     from tokenstretch import dashboard_panels as dp, startup
     row = {"name": "Claude Code", "measured_start": None, "known": 100, "rest": None, "since_last": None, "price": None,

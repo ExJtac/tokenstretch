@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-13
+
+### Added
+- Dashboard, Start-up size card: lists the plugins and app-added skills with no use found in the last 14 days of Claude Code logs on this computer, each with its listing size and the steps to switch it off. For a plugin the desktop app adds, the steps are: Settings > Customize > Plugins, change the list from "Discover" to "Yours", switch the plugin off (menu names from November 2026).
+- `doctor --usage`: lists each warning for the sessions active in the last 2 hours, with why it costs credits and how to fix it. It changes nothing.
+- High-usage note when a reply ends: setup adds `tokenstretch nudge` as a Claude Code `Stop` hook. When a session has a warning, the hook prints one message for you: what is using the credits, and the link to your running dashboard or the `tokenstretch dashboard` command. It passes nothing to the agent, so it adds no step. Checked in Claude Code's session log, which records the hook's message; where an app displays it is up to the app. Setup adds the hook to existing installs too.
+- `startup`: what a plugin adds beyond its skill listing (mostly its connectors' tool lists) is now sized by difference, the same way as a connector. Run `tokenstretch startup`, switch one plugin off, start a new session and run it again: the second run prints how much lighter sessions start. A change under 2K tokens is treated as noise and not shown. Covered by tests; not yet measured on a real plugin by the authors.
+
+### Changed
+- With the `Stop` hook installed, the prompt hook no longer asks the agent to type the high-usage note at the end of its reply, since the `Stop` hook shows it. Installs without that hook keep the older behaviour.
+- A skill the desktop app adds now comes with the steps from Claude's help page: open Customize > Skills and use the switch next to the skill (page read in November 2026; not checked on screen by the authors).
+- The prompt note and the dashboard now say where the fix is: the dashboard link when it is running, or the command that opens it, and `doctor --usage` for the exact steps.
+
 ## [0.8.0] - 2026-11-13
 
 ### Added
