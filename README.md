@@ -6,6 +6,8 @@ tokenstretch looks at how Claude Code, Codex, Gemini CLI, and Copilot CLI are se
 
 It doesn't replace your tools. It checks, configures, and measures them, including RTK and Caveman.
 
+**It also shuts off the data collection hiding in your other AI tools.** Some popular token savers report on you by default. The Caveman CLI, for example, sends usage reports that include your IP address. tokenstretch finds that and switches it off, with a backup. [See what it turns off](#it-turns-off-the-tracking-in-your-other-tools).
+
 ## Support tokenstretch
 
 tokenstretch is free and stays free, with no paid tier and no tracking. If it saves you credits and you'd like to say thanks:
@@ -65,6 +67,24 @@ It checks your computer, lists every change in plain words, and asks once. Nothi
 | `tokenstretch report` / `bench` | A local HTML report, and real before/after measurements on your own repo. |
 
 For Claude Code, setup also adds `/handoff`, `/brief` and `/credits` shortcuts and a read-only `tokenstretch-advisor` helper you can ask for a credit review, and can summarize long sessions automatically so a new chat carries on from a note. Every feature in detail: [docs/DETAILS.md](docs/DETAILS.md#what-you-get).
+
+## It turns off the tracking in your other tools
+
+Many token-saving add-ons and AI tools quietly send usage data home unless you find the right setting. tokenstretch finds those settings and turns them off for you.
+
+| Tool | What it collects by default | What tokenstretch does |
+|---|---|---|
+| **Caveman** (CLI) | Usage reports, including your IP address | Sets `telemetry.enabled` to off in `~/.caveman/cloud.json`. If you install Caveman through tokenstretch, you get the skill only, with no CLI and no cloud. |
+| **RTK** | Off by default, but easy to switch on | Turns telemetry back off if anything switched it on, and installs only the open-source edition. |
+| **ccusage** | Goes online for pricing data, plus npm update notices | Locks it to `--offline` and turns npm's notices off. |
+| **Headroom** (optional proxy) | A usage beacon, telemetry, and update checks | Starts it with all three turned off, plus `--no-telemetry` and `DO_NOT_TRACK`. |
+| **Copilot CLI** | Client telemetry | It can only be turned off with a command-line flag, so `doctor` tells you how to pass that flag. |
+
+How it works:
+
+- **Shown first, then fixed with undo.** `tokenstretch doctor` lists every tool it finds with telemetry on. `tokenstretch start` explains each fix and asks before changing anything. Every file is backed up, and `tokenstretch undo` puts it back.
+- **Found on a real machine.** On one developer's computer, it found Caveman's telemetry switched on and sending reports, and nobody had noticed.
+- **tokenstretch never phones home itself.** It has no telemetry or analytics, never sends your prompts, code, or logs anywhere, and never opens your credential files.
 
 ## Ways it cuts waste
 
