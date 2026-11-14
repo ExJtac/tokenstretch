@@ -337,8 +337,9 @@ def cmd_connectors(args) -> int:
         print(f"Left alone: {n} ({why}).")
     if res["applied"]:
         back = "off" if action == "on" else "on"
-        print("It takes effect in the next session. A copy of the settings file from before the change is in "
-              f"~/.tokenstretch/backups/. Undo: `{CLI_NAME} connectors {back} {' '.join(res['moved'])} --apply`.")
+        print("It takes effect in the next session. A copy of both files from before the change is in "
+              f"~/.tokenstretch/backups/, readable by you only. Undo: `{CLI_NAME} undo` while this is the "
+              f"latest change, or `{CLI_NAME} connectors {back} {' '.join(res['moved'])} --apply` at any time.")
         print("If a session was open during the change it can write the old settings back: run "
               f"`{CLI_NAME} connectors` to check.")
     elif res["moved"]:

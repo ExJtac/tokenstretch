@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -373,8 +374,33 @@ def _now_stamp() -> str:
     return datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%z")
 
 
+def _write_private(path: Path, data: bytes) -> None:
+    """Write a file that only its owner can read, whole or not at all (a temporary file, then a rename).
+
+    For files that can hold keys, such as `~/.claude.json` and its copies: the file never exists
+    with wider permissions, not even for a moment.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+    try:
+        os.chmod(tmp, 0o600)                 # the temporary file may have been there already
+    except OSError:
+        pass
+    os.replace(tmp, path)
+
+
+def _put(path: Path, data: bytes, private: bool) -> None:
+    _write_private(path, data) if private else path.write_bytes(data)
+
+
 def apply_changes(ctx: Context, changes: list[dict[str, str]], stamp: str | None = None, *, profile: str = "clean", extra_manifest: dict | None = None) -> dict[str, Any]:
-    """Write planned changes, backing up every touched existing file first."""
+    """Write planned changes, backing up every touched existing file first.
+
+    A change with `"private": True` is for a file that can hold keys: the file, its backup and the
+    copy of what was written are all created readable by the owner only, and undo keeps it so.
+    """
     stamp = stamp or _now_stamp()
     root = kit_root(ctx)
     backup_dir = root / "backups" / stamp
@@ -388,6 +414,7 @@ def apply_changes(ctx: Context, changes: list[dict[str, str]], stamp: str | None
         path = Path(ch["path"])
         if not _writable(path, ctx):
             raise PermissionError(f"refusing to write outside the home/project tree: {path}")
+        private = bool(ch.get("private"))
         existed = path.is_file()
         before = path.read_bytes() if existed else None
         before_hash = sha256_bytes(before) if before is not None else None
@@ -396,7 +423,7 @@ def apply_changes(ctx: Context, changes: list[dict[str, str]], stamp: str | None
             backup_rel = _rel_backup_path(path, ctx.home, ctx.root)
             bpath = backup_dir / backup_rel
             bpath.parent.mkdir(parents=True, exist_ok=True)
-            bpath.write_bytes(before or b"")
+            _put(bpath, before or b"", private)
         # mkdir parents; record new directories
         parent = path.parent
         to_make = []
@@ -411,21 +438,20 @@ def apply_changes(ctx: Context, changes: list[dict[str, str]], stamp: str | None
                 dirs_created.append(str(parent))
         content = ch.get("content") or ""
         data = content.encode("utf-8") if isinstance(content, str) else content
-        path.write_bytes(data)
+        _put(path, data, private)
         mode = ch.get("mode")
         if mode is not None:
             path.chmod(int(mode, 8) if isinstance(mode, str) else int(mode))
         after_hash = sha256_bytes(path.read_bytes())
         kind = "created" if not existed else "modified"
         after_rel = None
-        if path.suffix == ".json" and len(data) <= AFTER_COPY_MAX:
+        if path.suffix == ".json" and (private or len(data) <= AFTER_COPY_MAX):
             # What setup wrote, kept so that undo can tell this tool's keys from later edits when
             # the file has changed since. Same content as the file itself, readable by the user only.
             after_rel = str(Path("after") / _rel_backup_path(path, ctx.home, ctx.root))
             apath = backup_dir / after_rel
             apath.parent.mkdir(parents=True, exist_ok=True)
-            apath.write_bytes(data)
-            apath.chmod(0o600)
+            _write_private(apath, data)
         records.append({
             "path": str(path),
             "action": kind,
@@ -434,6 +460,7 @@ def apply_changes(ctx: Context, changes: list[dict[str, str]], stamp: str | None
             "backup": backup_rel,
             "after": after_rel,
             "reason": ch.get("reason") or "",
+            **({"private": True} if private else {}),
         })
 
     manifest = {
@@ -558,7 +585,7 @@ def undo_manifest(manifest_path: Path, *, force: bool = False) -> dict[str, Any]
                 elif text == path.read_bytes():
                     skipped.append(str(path))   # nothing of ours left in it
                 else:
-                    path.write_bytes(text)
+                    _put(path, text, bool(rec.get("private")))
                     partial.append(str(path))
             except OSError as exc:
                 raise RuntimeError(f"could not update {path}: {exc}") from exc
@@ -585,7 +612,7 @@ def undo_manifest(manifest_path: Path, *, force: bool = False) -> dict[str, Any]
                 raise RuntimeError(f"no backup recorded for {path}")
             bpath = backup_dir / backup_rel
             try:
-                path.write_bytes(bpath.read_bytes())
+                _put(path, bpath.read_bytes(), bool(rec.get("private")))
             except OSError as exc:
                 raise RuntimeError(f"could not restore {path} from {bpath}: {exc}") from exc
             restored.append(str(path))
