@@ -43,6 +43,7 @@ Running it twice is safe: the second run says it is already set up and changes n
 |---|---|
 | `--yes`, `-y` | Apply without asking. |
 | `--detail` | Also print the full `tokenstretch pace` output. |
+| `--compact` | Also turn on [compact mode](#compact-mode-optional). Without it, `start` only mentions the command. |
 | `--json` | Print one JSON result (checks, planned changes, whether anything was applied, the plan summary). It never asks and changes nothing without `--yes`. |
 | `--home`, `--root`, `--plan` | Same meaning as in `setup`. |
 
@@ -440,6 +441,36 @@ The proposed edit never rewrites or summarizes your prose. It only removes exact
 
 `tokenstretch trim --to-skills` is a separate mode for Claude Code. It finds workflow-style sections in your CLAUDE.md files (a numbered list of 3+ steps, a code block of commands, or a heading like "release" or "deploy") and moves each into a skill (`.claude/skills/<name>/SKILL.md` in the project, `~/.claude/skills/<name>/SKILL.md` for your user file), leaving a one-line pointer. Sections that read like standing rules (they mention "never", "always", "private", "security", and similar) stay where they are, and the dry run lists them with the reason. It never overwrites a skill folder that already exists, and `--min-tokens` (default 150) sets the smallest section it will move. The dry run shows the diff and a net per-turn count (tokens removed minus the pointer lines and skill descriptions that Claude Code still loads), all approx. Skills load only when the assistant picks them from their one-line description, so a moved section is no longer guaranteed to be read: keep rules that must hold every turn in CLAUDE.md, and review each description. `--apply` backs up the files, and `tokenstretch undo` restores them and removes the skills it created. It cannot be combined with `--move-blocks`.
 
+## Compact mode (optional)
+
+Compact mode is a short rules block for your project instruction file. It asks the agent for the same answer in fewer tokens. It is not terse or broken speech: the conclusion, the caveats and the next steps all stay. It is off by default.
+
+```sh
+tokenstretch compact on        # add the rules to this project
+tokenstretch compact off       # take them out
+tokenstretch compact           # say whether it is on, and in which file
+tokenstretch compact on --dry-run
+tokenstretch start --compact   # set up and turn it on in one step
+```
+
+The rules:
+
+1. Change files with targeted edits or diffs. Never reprint a whole file to change a few lines.
+2. Point to code (`auth.py:40-60`). Quote only the lines under discussion.
+3. Don't restate the question, the plan, or earlier messages. No intros, no recaps.
+4. Fewer words, never fewer facts: keep the full conclusion, caveats, and next steps.
+5. End each finished task with one line: what changed, where, what is next.
+6. Hand work to another agent as: goal / done / files / next / open questions.
+7. Search first, then read only the line ranges you need.
+
+Where it goes: the project `CLAUDE.md` (Claude Code) and `AGENTS.md` (Codex), which are created if missing; an existing `GEMINI.md` (Gemini CLI) and an existing `.github/copilot-instructions.md` (Copilot CLI), which are never created. A tool that already loads a file with the block does not get a second copy. Nothing is written in your home folder.
+
+If the file already has the credit-saving rules block from setup, the compact rules go inside that block, without rule 7, because the block already says it. So there is one block and no rule twice. The block is paid for on every step, so it is kept small: about 175 tokens alone, about 140 inside the rules block (approx. tokens = characters / 4), and a test fails if it reaches 200.
+
+Each file is backed up before it is changed. `tokenstretch compact off` takes the block out at any time. `tokenstretch undo` right after `compact on` puts the file back byte for byte; after `start --compact`, one `undo` reverses the whole run. A session that is already open keeps the rules it started with; the change applies to new sessions.
+
+What is not known yet: how much this saves. A rules block changes what the agent writes, and the block itself costs tokens on every step, so the net effect has to be measured with the same model on both sides and several runs a side. Until that is done, tokenstretch makes no saving claim for compact mode.
+
 ## Write a brief that stays cheap
 
 Most wasted steps start with a prompt that leaves the agent to guess: where to work, what to read, when to stop. `tokenstretch brief` turns a one-line task into a brief that answers those, and tells you what your task text is missing.
@@ -632,7 +663,8 @@ python -m tokenstretch doctor --home PATH --root PATH --sys-snapshot DIR
 python -m tokenstretch doctor --privacy --json
 python -m tokenstretch bench --from-logs
 python -m tokenstretch bench --bench --prompt '…'
-python -m tokenstretch start [--yes] [--detail] [--json]   # one-command setup: lists changes, asks once; no flags and no terminal changes nothing; exit 0 fine, 1 failure
+python -m tokenstretch start [--yes] [--detail] [--compact] [--json]   # one-command setup: lists changes, asks once; no flags and no terminal changes nothing; exit 0 fine, 1 failure
+python -m tokenstretch compact [on|off] [--dry-run] [--json]   # optional compact-mode rules block in the project instruction file; no word: where it is now
 python -m tokenstretch install    # dry-run (no writes); add --apply to write
 python -m tokenstretch install --apply
 python -m tokenstretch install --profile api-proxy --proxy headroom   # dry-run; never part of Clean

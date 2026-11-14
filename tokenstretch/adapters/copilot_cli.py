@@ -626,6 +626,12 @@ class CopilotCliAdapter(DoctorOnlyAdapter):
                                 command=["rtk", "init", "-g", "--copilot"], manual=True)]
         return None
 
+    def compact_file(self, ctx: Context) -> Path | None:
+        return ctx.root / ".github" / "copilot-instructions.md"   # never created: only an existing file is edited
+
+    def compact_also_loads(self, ctx: Context) -> list[Path]:
+        return [ctx.root / n for n in ("AGENTS.md", "CLAUDE.md", "GEMINI.md")]
+
     def setup_items(self, ctx: Context) -> list[SetupItem]:
         if not self.detect(ctx) or ctx.root.resolve() == ctx.home.resolve():
             return []

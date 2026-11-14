@@ -651,6 +651,11 @@ class CodexAdapter(Adapter):
                         "last_write": s["last_write"], "path": s["path"], "clear_hint": s["clear_hint"]})
         return out
 
+    COMPACT_CREATE = True
+
+    def compact_file(self, ctx: Context) -> Path | None:
+        return ctx.root / "AGENTS.md"
+
     def setup_items(self, ctx: Context) -> list[SetupItem]:
         """Credit-saving rules in the project AGENTS.md. Plans only; the core writes with backups."""
         if ctx.root.resolve() == ctx.home.resolve():

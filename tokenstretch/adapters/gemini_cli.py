@@ -842,6 +842,13 @@ class GeminiCliAdapter(DoctorOnlyAdapter):
                         ))
         return items
 
+    def compact_file(self, ctx: Context) -> Path | None:
+        # Only when Gemini CLI is set to load GEMINI.md; the file is never created.
+        return ctx.root / "GEMINI.md" if "GEMINI.md" in self._instruction_names(ctx) else None
+
+    def compact_also_loads(self, ctx: Context) -> list[Path]:
+        return [ctx.root / n for n in self._instruction_names(ctx) if n != "GEMINI.md"]
+
     # ---- model picker ----------------------------------------------------------------------
     def model_tiers(self) -> dict[str, str]:
         # Documented aliases (docs/cli/model.md, modelDefinitions in configuration.md).

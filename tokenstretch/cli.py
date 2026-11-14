@@ -577,7 +577,15 @@ def cmd_start(args) -> int:
     if getattr(args, "now", None):
         from . import pace as pc
         now = pc.parse_time(args.now)
-    return run_start(ctx, yes=bool(args.yes), as_json=bool(args.json), detail=bool(args.detail), flags=flags, now=now)
+    return run_start(ctx, yes=bool(args.yes), as_json=bool(args.json), detail=bool(args.detail), flags=flags, now=now,
+                     compact=bool(args.compact))
+
+
+def cmd_compact(args) -> int:
+    from .compact import run_compact
+
+    ctx = build_context(args.home, args.root, args.sys_snapshot, getattr(args, "plan", None))
+    return run_compact(ctx, args.action, dry_run=bool(args.dry_run), as_json=bool(args.json))
 
 
 def cmd_brief(args) -> int:
@@ -822,6 +830,8 @@ def main(argv=None) -> int:
     _add_context_args(sp)
     sp.add_argument("--yes", "-y", action="store_true", help="apply without asking")
     sp.add_argument("--detail", action="store_true", help="also print the full `pace` output")
+    sp.add_argument("--compact", action="store_true",
+                    help="also turn on compact mode (optional rules for shorter, complete answers; see `compact`)")
     sp.add_argument("--json", action="store_true", help="machine-readable result; never asks, changes nothing without --yes")
     sp.add_argument("--now", help=argparse.SUPPRESS)
 
@@ -970,6 +980,13 @@ def main(argv=None) -> int:
     tr.add_argument("--yes", "-y", action="store_true", help="with --apply, don't ask")
     tr.add_argument("--no-diff", action="store_true", help="don't print the unified diff")
     tr.add_argument("--json", action="store_true")
+
+    cp = sub.add_parser("compact", help="optional rules block for complete answers in fewer tokens: "
+                                        "on, off, or (with neither) where it is now")
+    _add_context_args(cp)
+    cp.add_argument("action", nargs="?", choices=["on", "off"], help="turn compact mode on or off in this project")
+    cp.add_argument("--dry-run", action="store_true", help="show what would change; write nothing")
+    cp.add_argument("--json", action="store_true")
 
     br = sub.add_parser("brief", help="turn a one-line task into a brief that keeps an agent or helper cheap (local rules, no model calls)")
     br.add_argument("task", nargs="*", help="the task, in a sentence")
@@ -1126,6 +1143,8 @@ def main(argv=None) -> int:
         return cmd_brief(a)
     if a.cmd == "trim":
         return cmd_trim(a)
+    if a.cmd == "compact":
+        return cmd_compact(a)
     if a.cmd == "queue":  # --- team queue block ---
         return cmd_queue(a)
     if a.cmd == "pace":
