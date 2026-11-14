@@ -66,6 +66,21 @@ It checks your computer, lists every change in plain words, and asks once. Nothi
 
 For Claude Code, setup also adds `/handoff`, `/brief` and `/credits` shortcuts and a read-only `tokenstretch-advisor` helper you can ask for a credit review, and can summarize long sessions automatically so a new chat carries on from a note. Every feature in detail: [docs/DETAILS.md](docs/DETAILS.md#what-you-get).
 
+## Ways it cuts waste
+
+Biggest first. The order is an estimate from model price ratios and real usage logs, not a per-feature measurement.
+
+1. **The right model for the job.** Everyday work goes to the mid-tier model, and helpers run on a cheaper one. The same tokens cost about 3x less on the mid model than on the top one (`model suggest`, `model default`).
+2. **Shorter sessions.** Every step re-sends the whole conversation history, and on long chats that re-read can be a third or more of the cost. `/handoff` + `/clear`, autopilot summaries, `watch`, and in-chat warnings tell you when to start fresh without losing your place.
+3. **A lighter start-up.** Connectors, plugins, and skills you never use are loaded and re-sent on every step. `startup` and `connectors` show what each one costs and switch off the unused ones.
+4. **Less new content per step.** A short rules block tells the agent to search before reading, read line ranges instead of whole files, and keep output short. `outputs` shows which tool outputs fill your sessions.
+5. **Disciplined helpers.** Narrow `brief`s and a note when a helper starts keep sub-agents from re-reading everything.
+6. **Trimmed instruction files.** `trim` and `trim --to-skills` shrink CLAUDE.md, AGENTS.md, and GEMINI.md, which are paid for on every step.
+7. **Effort and cache warnings.** It flags high reasoning effort on simple tasks, and a break long enough for the cache to expire, which makes the next step re-send the history at full price.
+8. **Pacing.** `pace` and `queue` spread work across your weekly limit. They don't cut usage, but they help you avoid hitting the wall mid-week.
+
+The telemetry and terms-of-service checks are about privacy and safety, not savings. To see what it does for you, run `tokenstretch report --weekly` a week after setup, or `tokenstretch bench` on your own repo.
+
 ## Privacy promises
 
 - **No telemetry, no analytics, no phone-home, no update checks unless you run `tokenstretch update`.** No outbound network libraries: that one command starts `curl` to read two public files and sends nothing about you. The only socket tokenstretch itself opens is the optional dashboard, bound to 127.0.0.1 with a one-time key, and tests block every non-loopback connection.
