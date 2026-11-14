@@ -556,3 +556,20 @@ def test_doctor_usage_lists_each_fix():
     text = "\n".join(usage_lines([w]))
     assert "1. History is ~200K tokens." in text and "How to fix it: Type /clear." in text
     assert "Why it costs credits: Every step re-reads it." in text
+
+
+def test_nudge_at_the_end_of_a_reply_is_a_message_for_the_user_only(tmp_path):
+    from tokenstretch.nudge import build_nudge
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
+    base = {"transcript_path": str(_log(w)), "session_id": "abcd1234-0002"}
+    with credential_guard():
+        prompt = build_nudge(_ctx(w), {**base, "hook_event_name": "UserPromptSubmit"}, now=lambda: 1_000_000.0)
+        end = build_nudge(_ctx(w), {**base, "hook_event_name": "Stop"}, now=lambda: 1_000_030.0)
+        again = build_nudge(_ctx(w), {**base, "hook_event_name": "Stop"}, now=lambda: 1_000_090.0)
+        looping = build_nudge(_ctx(w), {**base, "hook_event_name": "Stop", "stop_hook_active": True,
+                                        "session_id": "abcd1234-0003"}, now=lambda: 1_000_000.0)
+    assert prompt is not None                                   # the prompt note does not silence the end note
+    assert set(end) == {"systemMessage"}                        # nothing for the agent: no extra step
+    assert "high usage in this session" in end["systemMessage"] and "200K" in end["systemMessage"]
+    assert "`tokenstretch doctor --usage`" in end["systemMessage"]
+    assert again is None and looping is None

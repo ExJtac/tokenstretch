@@ -1,6 +1,7 @@
 """`tokenstretch nudge`: the top watch warning, printed inside the session itself.
 
-A coding tool runs this as a hook when you send a prompt. When the session has a warning that
+A coding tool runs this as a hook when you send a prompt, and again when a reply ends. The
+end-of-reply form is a message for you only: it passes nothing to the agent. When the session has a warning that
 `watch` would show, it prints one short message that the tool shows to you and passes to the agent,
 so nobody needs a second terminal. No warning, no output.
 
@@ -29,8 +30,11 @@ KEEP_S = 7 * 24 * 3600      # forget a session's state file after this long
 SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
 
 
-def _state_file(home: Path, session: str) -> Path | None:
-    return state_dir(home) / "nudge" / f"{session}.json" if SAFE_ID.fullmatch(session or "") else None
+def _state_file(home: Path, session: str, stop: bool = False) -> Path | None:
+    """One file per session and per hook, so the end-of-reply note is not silenced by the prompt one."""
+    if not SAFE_ID.fullmatch(session or ""):
+        return None
+    return state_dir(home) / "nudge" / f"{session}{'.stop' if stop else ''}.json"
 
 
 def _recent(path: Path | None, kind: str, now: float, repeat_s: float) -> bool:
@@ -62,6 +66,9 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
     from .setup import detected_adapters
     if not isinstance(payload.get("transcript_path"), str) or not payload["transcript_path"]:
         return None  # a hook always names its session; never guess one
+    stop = payload.get("hook_event_name") == "Stop"
+    if stop and payload.get("stop_hook_active"):
+        return None  # the tool is already continuing because of a stop hook: add nothing
     cfg = cfg or WatchConfig()
     adapters = adapters if adapters is not None else detected_adapters(ctx)
     found = find_session(ctx, adapters, payload, cfg.active_s)
@@ -73,12 +80,14 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
     if top is None:
         return None
     kind = str(top.key[-1])
-    state = _state_file(ctx.home, str(payload.get("session_id") or s.get("session") or ""))
+    state = _state_file(ctx.home, str(payload.get("session_id") or s.get("session") or ""), stop)
     if _recent(state, kind, t, repeat_s):
         return None
     _remember(state, kind, t)
     text = f"{PRODUCT_NAME}: {top.what} {top.fix}".strip()
     where = where_to_fix(ctx.home)
+    if stop:   # when a reply ends: a message for the user only; nothing for the agent, so no extra step
+        return {"systemMessage": f"{PRODUCT_NAME}: high usage in this session. {top.what} {where}"}
     return {
         "systemMessage": f"{text} {where}",
         "hookSpecificOutput": {
