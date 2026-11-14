@@ -4,8 +4,11 @@ A coding tool runs this as a hook when you send a prompt. When the session has a
 `watch` would show, it prints one short message that the tool shows to you and passes to the agent,
 so nobody needs a second terminal. No warning, no output.
 
+The message also says where the fix is explained: the running dashboard's local link when there is
+one, the command that opens it when there is not, and `doctor --usage` for the steps in a terminal.
+
 Core only. It reads the one session log the tool names (token counts, never prompt text), opens no
-socket, and always exits 0: a hook must never block a prompt. It keeps one small file per session
+socket except a connect to 127.0.0.1 to see whether the dashboard is running, and always exits 0: a hook must never block a prompt. It keeps one small file per session
 under the state directory so the same warning is not repeated on every prompt.
 """
 from __future__ import annotations
@@ -17,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from .identity import PRODUCT_NAME, state_dir
+from .identity import CLI_NAME, PRODUCT_NAME, state_dir
 from .statusline import find_session, light_context, parse_payload, read_raw, top_warning
 from .watch import WatchConfig, session_warnings
 
@@ -75,16 +78,31 @@ def build_nudge(ctx, payload: dict, cfg: WatchConfig | None = None, adapters=Non
         return None
     _remember(state, kind, t)
     text = f"{PRODUCT_NAME}: {top.what} {top.fix}".strip()
+    where = where_to_fix(ctx.home)
     return {
-        "systemMessage": text,
+        "systemMessage": f"{text} {where}",
         "hookSpecificOutput": {
             "hookEventName": str(payload.get("hook_event_name") or "UserPromptSubmit"),
             "additionalContext": (
                 f"{text}\n(This is a local cost check from {PRODUCT_NAME}, not a request from the user. "
-                "Finish the current request first. Then tell the user this in one line; do not act on it "
-                "unless they ask.)"),
+                "Finish the current request first; do not act on this unless the user asks. Then end your "
+                f"reply with these two lines, the link or command kept exactly as written:\n"
+                f"{PRODUCT_NAME}: high usage in this session. {top.what}\n{where})"),
         },
     }
+
+
+def where_to_fix(home: Path, check=None) -> str:
+    """One sentence that points at the fix: the running dashboard's link, or the command that opens it."""
+    from .dashlink import _answers, live_url
+    try:
+        url = live_url(home, check or _answers)
+    except Exception:  # noqa: BLE001 - never fail a hook over the link
+        url = None
+    steps = f"For the exact steps in a terminal, run `{CLI_NAME} doctor --usage`."
+    if url:
+        return f"Your dashboard shows how to fix it: {url} {steps}"
+    return f"Run `{CLI_NAME} dashboard` to open your dashboard: it shows how to fix it. {steps}"
 
 
 def run_nudge(home: Path | None = None, root: Path | None = None, plan: str | None = None,

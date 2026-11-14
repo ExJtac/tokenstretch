@@ -28,6 +28,10 @@ from .util import frontmatter
 USE_DAYS = 14                    # how far back "used lately" looks
 USE_MAX_BYTES = 4 * 1024 * 1024 * 1024  # stop reading logs after this much; the report then says so
 _TRUE = {"true", "yes", "on", "1"}
+# Where the desktop app keeps the switch. The menu names are the app's own, as of November 2026.
+APP_PLUGIN_STEPS = ('the desktop app adds it. To switch it off, open the Claude desktop app, go to Settings > Customize > '
+                    'Plugins, change the list from "Discover" to "Yours", and switch the plugin off there. The menu '
+                    "names are from November 2026 and can change.")
 _SKILL_RE = re.compile(r'"name"\s*:\s*"Skill"\s*,\s*"input"\s*:\s*\{[^{}]*?"skill"\s*:\s*"([^"]{1,120})"')
 _CMD_RE = re.compile(r"<command-name>/?([A-Za-z0-9:_.-]{1,120})</command-name>")
 _AGENT_RE = re.compile(r'"subagent_type"\s*:\s*"([A-Za-z0-9_.-]{1,80}):[^"]{1,120}"')
@@ -189,7 +193,7 @@ def parts(home: Path, now: float | None = None, use: dict | None = None) -> list
                 fix = (f'to switch it off, set "{it["key"]}": false under `enabledPlugins` in ~/.claude/settings.json; '
                        "set it back to true to undo.")
             else:
-                fix = "the desktop app adds it: switch it off in the Claude desktop app's settings."
+                fix = APP_PLUGIN_STEPS
         else:
             what = f"skill added by the desktop app; {note}"
             fix = "switch it off in the Claude desktop app's settings if you don't use it."

@@ -527,3 +527,32 @@ def test_doctor_w28_reports_helper_wakeups_from_the_logs(tmp_path):
     assert len(hit) == 1 and hit[0]["severity"] == "med" and str(hit[0]["evidence"]["value"]) == "450040"
     assert "woke the main conversation 4 times" in hit[0]["message"] and "about 0.5M tokens" in hit[0]["message"]
     assert ids(_world(tmp_path / "b", rows[:5])) == []            # two wake-ups: under the floor
+
+
+def test_nudge_points_at_the_dashboard_and_the_doctor(tmp_path):
+    from tokenstretch import dashlink
+    from tokenstretch.nudge import build_nudge, where_to_fix
+    w = _world(tmp_path, [_row(0, 0, read=20_000), _row(1, 40, read=199_000, write=1_000)])
+    home = w / "home"
+    payload = {"transcript_path": str(_log(w)), "session_id": "abcd1234-0001", "hook_event_name": "UserPromptSubmit"}
+    with credential_guard():
+        got = build_nudge(_ctx(w), payload, now=lambda: 1_000_000.0)
+    assert "Run `tokenstretch dashboard` to open your dashboard" in got["systemMessage"]      # no dashboard running
+    extra = got["hookSpecificOutput"]["additionalContext"]
+    assert "high usage in this session" in extra and "`tokenstretch doctor --usage`" in extra
+    assert "Finish the current request first" in extra
+    url = "http://127.0.0.1:8123/abcdefgh12345678/"
+    assert dashlink.write_link(home, url, 8123)
+    assert url in where_to_fix(home, check=lambda port: True)                 # running: the link itself
+    assert url not in where_to_fix(home, check=lambda port: False)            # stale file: no dead link
+
+
+def test_doctor_usage_lists_each_fix():
+    from tokenstretch.cli import usage_lines
+    from tokenstretch.watch import WatchWarning
+    assert "No high usage found" in usage_lines([])[0]
+    w = WatchWarning(key=("a", "s", "context"), adapter="Claude Code", session="abcd1234", project="proj",
+                     what="History is ~200K tokens.", why="Every step re-reads it.", fix="Type /clear.")
+    text = "\n".join(usage_lines([w]))
+    assert "1. History is ~200K tokens." in text and "How to fix it: Type /clear." in text
+    assert "Why it costs credits: Every step re-reads it." in text

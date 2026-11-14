@@ -136,7 +136,9 @@ def build(ctx: Context, adapters=None, remember: bool = False, now: float | None
         known = sum(p["tokens"] for p in sized)
         idle = [p for p in parts if p.get("unused")]
         out.append({
-            "unused": {"names": [p["name"] for p in idle], "tokens": sum(p.get("tokens") or 0 for p in idle)},
+            "unused": {"names": [p["name"] for p in idle], "tokens": sum(p.get("tokens") or 0 for p in idle),
+                       "items": [{"name": p["name"], "tokens": p.get("tokens"), "fix": p.get("fix") or ""}
+                                 for p in idle]},
             "adapter": ad.id, "name": ad.display_name, "measured_start": start, "recent_starts": starts, "known": known,
             "rest": max(0, start - known) if start else None, "parts": sized, "unsized": unsized,
             "since_last": since_last, "price": price,
